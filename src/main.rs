@@ -29,6 +29,18 @@ enum GameCommands {
     Story {
         game_id: String,
     },
+    /// Fetch a game boxscore by game ID
+    Boxscore {
+        game_id: String,
+    },
+    /// Fetch a game summary by game ID
+    Summary {
+        game_id: String,
+    },
+    /// Fetch play-by-play data by game ID
+    PlayByPlay {
+        game_id: String,
+    },
 }
 
 fn main() {
@@ -38,6 +50,21 @@ fn main() {
         Commands::Game { subcommand } => match subcommand {
             GameCommands::Story { game_id } => {
                 if let Err(e) = ingest::fetch_game_story(&game_id) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            GameCommands::Boxscore { game_id } => {
+                if let Err(e) = ingest::fetch_game_boxscore(&game_id) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            GameCommands::Summary { game_id } => {
+                if let Err(e) = ingest::fetch_game_summary(&game_id) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            GameCommands::PlayByPlay { game_id } => {
+                if let Err(e) = ingest::fetch_game_play_by_play(&game_id) {
                     eprintln!("Error: {}", e);
                 }
             }
