@@ -1,23 +1,15 @@
 use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-pub fn read_from_cache(path: &Path) -> Option<String> {
-    fs::read_to_string(path).ok()
+pub fn read_from_cache(file_path: &PathBuf) -> Option<String> {
+    fs::read_to_string(file_path).ok()
 }
 
-pub fn write_to_cache(path: &Path, content: &str) -> Result<(), std::io::Error> {
-    if let Some(parent) = path.parent() {
+pub fn write_to_cache(file_path: &PathBuf, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent)?;
     }
-
-    let mut file = fs::File::create(path)?;
-    file.write_all(content.as_bytes())?;
+    fs::write(file_path, content)?;
     Ok(())
-}
-
-pub fn get_game_cache_path(game_id: &str, file_type: &str) -> PathBuf {
-    let path = format!("data/raw/games/{}/{}.json", game_id, file_type);
-    PathBuf::from(path)
 }
 
