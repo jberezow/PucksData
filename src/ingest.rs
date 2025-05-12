@@ -2,15 +2,7 @@ use crate::api;
 use crate::cache;
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-const GAME_STORY_API_URL: &str = "https://api-web.nhle.com/v1/wsc/game-story/{game_id}";
-const GAME_BOXSCORE_API_URL: &str = "https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore";
-const GAME_PLAY_BY_PLAY_API_URL: &str = "https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play";
-const GAME_ALL_GAMES_API_URL: &str = "https://api.nhle.com/stats/rest/en/game";
-const GAME_ALL_METADATA_API_URL: &str = "https://api.nhle.com/stats/rest/en/game/meta";
-const PLAYER_SUMMARY_API_URL: &str = "https://api-web.nhle.com/v1/player/{player_id}/landing";
-const TEAM_CURRENT_STATS_API_URL: &str = "https://api-web.nhle.com/v1/club-stats/{team_code}/now";
-const TEAM_STATS_BY_SEASON_API_URL: &str = "https://api-web.nhle.com/v1/club-stats/{team_code}/{season_id}/{game_type}";
+use crate::api_urls;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DataType {
@@ -108,41 +100,41 @@ fn handle_fetch_and_cache(file_path: PathBuf, endpoint: &str, url_template: &str
 pub fn fetch_game_story(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
     params.add_param("game_id", game_id);
-    fetch_and_cache(DataType::Games, "story", GAME_STORY_API_URL, &params)
+    fetch_and_cache(DataType::Games, "story", api_urls::GAME_STORY_API_URL, &params)
 }
 
 pub fn fetch_game_boxscore(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
     params.add_param("game_id", game_id);
-    fetch_and_cache(DataType::Games, "boxscore", GAME_BOXSCORE_API_URL, &params)
+    fetch_and_cache(DataType::Games, "boxscore", api_urls::GAME_BOXSCORE_API_URL, &params)
 }
 
 pub fn fetch_game_play_by_play(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
     params.add_param("game_id", game_id);
-    fetch_and_cache(DataType::Games, "playbyplay", GAME_PLAY_BY_PLAY_API_URL, &params)
+    fetch_and_cache(DataType::Games, "playbyplay", api_urls::GAME_PLAY_BY_PLAY_API_URL, &params)
 }
 
 pub fn fetch_game_all_games() -> Result<(), Box<dyn std::error::Error>> {
     let params = ApiParams::new();
-    fetch_and_cache(DataType::Games, "all", GAME_ALL_GAMES_API_URL, &params)
+    fetch_and_cache(DataType::Games, "all", api_urls::GAME_ALL_GAMES_API_URL, &params)
 }
 
 pub fn fetch_game_metadata() -> Result<(), Box<dyn std::error::Error>> {
     let params = ApiParams::new();
-    fetch_and_cache(DataType::Games, "metadata", GAME_ALL_METADATA_API_URL, &params)
+    fetch_and_cache(DataType::Games, "metadata", api_urls::GAME_ALL_METADATA_API_URL, &params)
 }
 
 pub fn fetch_player_summary(player_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
     params.add_param("player_id", player_id);
-    fetch_and_cache(DataType::Players, "summary", PLAYER_SUMMARY_API_URL, &params)
+    fetch_and_cache(DataType::Players, "summary", api_urls::PLAYER_SUMMARY_API_URL, &params)
 }
 
 pub fn fetch_team_current_stats(team_code: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
     params.add_param("team_code", team_code);
-    fetch_and_cache(DataType::Teams, "current_stats", TEAM_CURRENT_STATS_API_URL, &params)
+    fetch_and_cache(DataType::Teams, "current_stats", api_urls::TEAM_CURRENT_STATS_API_URL, &params)
 }
 
 pub fn fetch_team_stats_by_season(team_code: &str, season_id: &str, game_type: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -150,5 +142,5 @@ pub fn fetch_team_stats_by_season(team_code: &str, season_id: &str, game_type: &
     params.add_param("team_code", team_code);
     params.add_param("season_id", season_id);
     params.add_param("game_type", game_type);
-    fetch_and_cache(DataType::Teams, "season_stats", TEAM_STATS_BY_SEASON_API_URL, &params)
+    fetch_and_cache(DataType::Teams, "season_stats", api_urls::TEAM_STATS_BY_SEASON_API_URL, &params)
 }
