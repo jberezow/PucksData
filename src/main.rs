@@ -1,9 +1,6 @@
 // src/main.rs
 
-mod ingest;
-mod api;
-mod cache;
-
+use pucksdata::{ingest, api, cache, inspect, api_urls};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -51,6 +48,14 @@ enum Commands {
     Season {
         #[command(subcommand)]
         subcommand: SeasonCommands,
+    },
+    Inspect {
+        /// The data type (games, players, etc.)
+        data_type: String,
+        /// The endpoint (e.g. story, boxscore)
+        endpoint: String,
+        /// A valid ID to call the API (e.g. game_id or player_id)
+        id: String,
     },
 }
 
@@ -222,5 +227,10 @@ fn main() {
                 println!("Season data fetching not yet implemented");
             }
         },
+        Commands::Inspect { data_type, endpoint, id } => {
+            if let Err(e) = inspect::inspect_keys(&data_type, &endpoint, &id) {
+                eprintln!("Error: {}", e);
+            }
+        }
     }
 }
