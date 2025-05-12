@@ -33,6 +33,16 @@ enum Commands {
         #[command(subcommand)]
         subcommand: PlayerCommands,
     },
+    /// Skater-related data operations
+    Skater {
+        #[command(subcommand)]
+        subcommand: SkaterCommands,
+    },
+    /// Goalie-related data operations
+    Goalie {
+        #[command(subcommand)]
+        subcommand: GoalieCommands,
+    },
     /// Team-related data operations
     /// 
     /// Fetch team statistics and information.
@@ -40,6 +50,16 @@ enum Commands {
     Team {
         #[command(subcommand)]
         subcommand: TeamCommands,
+    },
+    /// Schedule-related data operations
+    Schedule {
+        #[command(subcommand)]
+        subcommand: ScheduleCommands,
+    },
+    /// Playoff-related data operations
+    Playoff {
+        #[command(subcommand)]
+        subcommand: PlayoffCommands,
     },
     /// Season-related data operations
     /// 
@@ -49,6 +69,20 @@ enum Commands {
         #[command(subcommand)]
         subcommand: SeasonCommands,
     },
+    /// Draft-related data operations
+    /// 
+    /// Fetch draft rankings and information.
+    /// All draft data is cached in data/raw/draft/.
+    Draft {
+        #[command(subcommand)]
+        subcommand: DraftCommands,
+    },
+    /// Miscellaneous data operations
+    Misc {
+        #[command(subcommand)]
+        subcommand: MiscCommands,
+    },
+    /// Inspect API endpoints
     Inspect {
         /// The data type (games, players, etc.)
         data_type: String,
@@ -98,6 +132,30 @@ enum GameCommands {
     /// 
     /// This command fetches metadata about games, including available seasons and game types.
     Metadata,
+    /// Fetch game content
+    Content {
+        /// The NHL game ID
+        game_id: String,
+    },
+    /// Fetch goal replay
+    GoalReplay {
+        /// The NHL game ID
+        game_id: String,
+        /// The event ID
+        event_id: String,
+    },
+    /// Fetch game odds
+    Odds {
+        /// The NHL game ID
+        game_id: String,
+    },
+    /// Fetch current scores
+    ScoresNow,
+    /// Fetch scores by date
+    ScoresDate {
+        /// The date (YYYY-MM-DD)
+        date: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -116,7 +174,46 @@ enum PlayerCommands {
     /// 
     /// This command fetches the complete list of players from the NHL API.
     All,
-    
+    /// Fetch player game log
+    GameLog {
+        /// The NHL player ID
+        player_id: String,
+        /// The season (e.g., 20232024)
+        season: String,
+    },
+    /// Fetch current player game log
+    GameLogNow {
+        /// The NHL player ID
+        player_id: String,
+    },
+    /// Fetch player spotlight
+    Spotlight,
+}
+
+#[derive(Subcommand)]
+enum SkaterCommands {
+    /// Fetch current skater leaders
+    LeadersNow,
+    /// Fetch skater leaders by season
+    Leaders {
+        /// The season (e.g., 20232024)
+        season: String,
+        /// The game type (2 for Regular Season, 3 for Playoffs)
+        game_type: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum GoalieCommands {
+    /// Fetch current goalie leaders
+    LeadersNow,
+    /// Fetch goalie leaders by season
+    Leaders {
+        /// The season (e.g., 20232024)
+        season: String,
+        /// The game type (2 for Regular Season, 3 for Playoffs)
+        game_type: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -151,6 +248,44 @@ enum TeamCommands {
     /// 
     /// This command fetches the complete list of teams from the NHL API.
     All,
+    /// Fetch current standings
+    StandingsNow,
+    /// Fetch standings by date
+    StandingsDate {
+        /// The date (YYYY-MM-DD)
+        date: String,
+    },
+    /// Fetch current roster
+    RosterNow {
+        /// The NHL team code
+        team_code: String,
+    },
+    /// Fetch roster by season
+    RosterSeason {
+        /// The NHL team code
+        team_code: String,
+        /// The season (e.g., 20232024)
+        season: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ScheduleCommands {
+    /// Fetch current schedule
+    Now,
+    /// Fetch schedule by date
+    Date {
+        /// The date (YYYY-MM-DD)
+        date: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PlayoffCommands {
+    /// Fetch playoff bracket
+    Bracket,
+    /// Fetch playoff series schedule
+    SeriesSchedule,
 }
 
 #[derive(Subcommand)]
@@ -161,6 +296,34 @@ enum SeasonCommands {
     /// 
     /// This command fetches the complete list of seasons from the NHL API.
     All,
+}
+
+#[derive(Subcommand)]
+enum DraftCommands {
+    /// Fetch current draft rankings
+    /// 
+    /// Example: pucksdata draft current-rankings
+    /// 
+    /// This command fetches the current NHL draft rankings.
+    CurrentRankings,
+    /// Fetch current draft tracker
+    TrackerNow,
+    /// Fetch current draft picks
+    PicksNow,
+    /// Fetch draft picks by year
+    Picks {
+        /// The draft year
+        year: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum MiscCommands {
+    /// Fetch postal code information
+    PostalCode {
+        /// The postal code
+        code: String,
+    },
 }
 
 fn main() {
@@ -193,14 +356,79 @@ fn main() {
                     eprintln!("Error: {}", e);
                 }
             }
+            GameCommands::Content { game_id } => {
+                if let Err(e) = ingest::fetch_game_content(&game_id) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            GameCommands::GoalReplay { game_id, event_id } => {
+                if let Err(e) = ingest::fetch_game_goal_replay(&game_id, &event_id) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            GameCommands::Odds { game_id } => {
+                if let Err(e) = ingest::fetch_game_odds(&game_id) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            GameCommands::ScoresNow => {
+                if let Err(e) = ingest::fetch_game_scores_now() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            GameCommands::ScoresDate { date } => {
+                if let Err(e) = ingest::fetch_game_scores_date(&date) {
+                    eprintln!("Error: {}", e);
+                }
+            }
         },
         Commands::Player { subcommand } => match subcommand {
             PlayerCommands::All => {
-                // TODO: Implement player data fetching
-                println!("Player data fetching not yet implemented");
+                if let Err(e) = ingest::fetch_player_all() {
+                    eprintln!("Error: {}", e);
+                }
             }
-            PlayerCommands::Summary {player_id} => {
+            PlayerCommands::Summary { player_id } => {
                 if let Err(e) = ingest::fetch_player_summary(&player_id) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            PlayerCommands::GameLog { player_id, season } => {
+                if let Err(e) = ingest::fetch_player_game_log(&player_id, &season) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            PlayerCommands::GameLogNow { player_id } => {
+                if let Err(e) = ingest::fetch_player_game_log_now(&player_id) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            PlayerCommands::Spotlight => {
+                if let Err(e) = ingest::fetch_player_spotlight() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+        },
+        Commands::Skater { subcommand } => match subcommand {
+            SkaterCommands::LeadersNow => {
+                if let Err(e) = ingest::fetch_skater_leaders_now() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            SkaterCommands::Leaders { season, game_type } => {
+                if let Err(e) = ingest::fetch_skater_leaders(&season, &game_type) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+        },
+        Commands::Goalie { subcommand } => match subcommand {
+            GoalieCommands::LeadersNow => {
+                if let Err(e) = ingest::fetch_goalie_leaders_now() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            GoalieCommands::Leaders { season, game_type } => {
+                if let Err(e) = ingest::fetch_goalie_leaders(&season, &game_type) {
                     eprintln!("Error: {}", e);
                 }
             }
@@ -220,11 +448,85 @@ fn main() {
                     eprintln!("Error: {}", e);
                 }
             }
+            TeamCommands::StandingsNow => {
+                if let Err(e) = ingest::fetch_team_standings_now() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            TeamCommands::StandingsDate { date } => {
+                if let Err(e) = ingest::fetch_team_standings_date(&date) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            TeamCommands::RosterNow { team_code } => {
+                if let Err(e) = ingest::fetch_team_roster_now(&team_code) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            TeamCommands::RosterSeason { team_code, season } => {
+                if let Err(e) = ingest::fetch_team_roster_season(&team_code, &season) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+        },
+        Commands::Schedule { subcommand } => match subcommand {
+            ScheduleCommands::Now => {
+                if let Err(e) = ingest::fetch_schedule_now() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            ScheduleCommands::Date { date } => {
+                if let Err(e) = ingest::fetch_schedule_date(&date) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+        },
+        Commands::Playoff { subcommand } => match subcommand {
+            PlayoffCommands::Bracket => {
+                if let Err(e) = ingest::fetch_playoff_bracket() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            PlayoffCommands::SeriesSchedule => {
+                if let Err(e) = ingest::fetch_playoff_series_schedule() {
+                    eprintln!("Error: {}", e);
+                }
+            }
         },
         Commands::Season { subcommand } => match subcommand {
             SeasonCommands::All => {
-                // TODO: Implement season data fetching
-                println!("Season data fetching not yet implemented");
+                if let Err(e) = ingest::fetch_season_all() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+        },
+        Commands::Draft { subcommand } => match subcommand {
+            DraftCommands::CurrentRankings => {
+                if let Err(e) = ingest::fetch_draft_current_rankings() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            DraftCommands::TrackerNow => {
+                if let Err(e) = ingest::fetch_draft_tracker_now() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            DraftCommands::PicksNow => {
+                if let Err(e) = ingest::fetch_draft_picks_now() {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            DraftCommands::Picks { year } => {
+                if let Err(e) = ingest::fetch_draft_picks(&year) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+        },
+        Commands::Misc { subcommand } => match subcommand {
+            MiscCommands::PostalCode { code } => {
+                if let Err(e) = ingest::fetch_postal_code(&code) {
+                    eprintln!("Error: {}", e);
+                }
             }
         },
         Commands::Inspect { data_type, endpoint, id } => {
