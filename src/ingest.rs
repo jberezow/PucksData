@@ -163,13 +163,49 @@ fn fetch_and_cache(data_type: DataType, endpoint: &str, url_template: &str, para
         url = url.replace(&format!("{{{}}}", key), value);
     }
     
-    let json = api::fetch_api_json(&url)?;
-
-    cache::write_to_cache(&file_path, &json)?;
-
-    println!("💾 Saved {} data to {:?}", endpoint, file_path);
-
-    Ok(())
+    match api::fetch_api_json(&url) {
+        Ok(json) => {
+            cache::write_to_cache(&file_path, &json)?;
+            println!("💾 Saved {} data to {:?}", endpoint, file_path);
+            Ok(())
+        }
+        Err(api::ApiError::NotFound) => {
+            // Clean up the parameter-specific directory if it exists and is empty
+            if file_path.parent().map_or(false, |p| p.exists()) {
+                if let Ok(entries) = std::fs::read_dir(file_path.parent().unwrap()) {
+                    if entries.count() == 0 {
+                        let _ = std::fs::remove_dir(file_path.parent().unwrap());
+                    }
+                }
+            }
+            println!("❌ Resource not found at {}", url);
+            Err("Resource not found (404)".into())
+        }
+        Err(api::ApiError::NetworkError(e)) => {
+            // Clean up the parameter-specific directory if it exists and is empty
+            if file_path.parent().map_or(false, |p| p.exists()) {
+                if let Ok(entries) = std::fs::read_dir(file_path.parent().unwrap()) {
+                    if entries.count() == 0 {
+                        let _ = std::fs::remove_dir(file_path.parent().unwrap());
+                    }
+                }
+            }
+            println!("❌ Network error while fetching {}: {}", url, e);
+            Err(Box::new(e))
+        }
+        Err(api::ApiError::Other(code)) => {
+            // Clean up the parameter-specific directory if it exists and is empty
+            if file_path.parent().map_or(false, |p| p.exists()) {
+                if let Ok(entries) = std::fs::read_dir(file_path.parent().unwrap()) {
+                    if entries.count() == 0 {
+                        let _ = std::fs::remove_dir(file_path.parent().unwrap());
+                    }
+                }
+            }
+            println!("❌ HTTP error {} while fetching {}", code, url);
+            Err(format!("HTTP error: {}", code).into())
+        }
+    }
 }
 
 pub fn fetch_game_story(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {

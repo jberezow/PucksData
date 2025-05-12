@@ -1,6 +1,6 @@
 // src/main.rs
 
-use pucksdata::{ingest, api, cache, inspect, api_urls};
+use pucksdata::{ingest, inspect};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -99,25 +99,31 @@ enum GameCommands {
     /// 
     /// Example: pucksdata game story 2023020001
     /// 
-    /// The game ID format is typically: YYYYGGGGGG where:
-    /// - YYYY is the season year
-    /// - GGGGGG is the game number
+    /// The game ID format is: YYYYTTGGGG where:
+    /// - YYYY is the season year (e.g., 2023)
+    /// - TT is the type (01 for regular season, 02 for playoffs)
+    /// - GGGG is the game number (e.g., 0001)
     Story {
-        /// The NHL game ID (e.g., 2023020001)
+        /// The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)
+        #[arg(value_name = "GAME_ID")]
         game_id: String,
     },
     /// Fetch a game boxscore by game ID
     /// 
     /// Example: pucksdata game boxscore 2023020001
+    /// 
+    /// The game ID format is: YYYYTTGGGG
     Boxscore {
-        /// The NHL game ID (e.g., 2023020001)
+        /// The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)
+        #[arg(value_name = "GAME_ID")]
         game_id: String,
     },
     /// Fetch play-by-play data by game ID
     /// 
     /// Example: pucksdata game play-by-play 2023020001
     PlayByPlay {
-        /// The NHL game ID (e.g., 2023020001)
+        /// The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)
+        #[arg(value_name = "GAME_ID")]
         game_id: String,
     },
     /// Fetch all games data
@@ -134,26 +140,31 @@ enum GameCommands {
     Metadata,
     /// Fetch game content
     Content {
-        /// The NHL game ID
+        /// The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)
+        #[arg(value_name = "GAME_ID")]
         game_id: String,
     },
     /// Fetch goal replay
     GoalReplay {
-        /// The NHL game ID
+        /// The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)
+        #[arg(value_name = "GAME_ID")]
         game_id: String,
-        /// The event ID
+        /// The event ID for the goal (format: numeric, e.g., 401)
+        #[arg(value_name = "EVENT_ID")]
         event_id: String,
     },
     /// Fetch game odds
     Odds {
-        /// The NHL game ID
+        /// The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)
+        #[arg(value_name = "GAME_ID")]
         game_id: String,
     },
     /// Fetch current scores
     ScoresNow,
     /// Fetch scores by date
     ScoresDate {
-        /// The date (YYYY-MM-DD)
+        /// The date (format: YYYY-MM-DD, e.g., 2024-02-15)
+        #[arg(value_name = "DATE")]
         date: String,
     },
 }
@@ -165,7 +176,8 @@ enum PlayerCommands {
     /// Example: pucksdata player summary 8478402
     /// 
     Summary {
-        /// The NHL player ID (e.g., 8478402)
+        /// The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)
+        #[arg(value_name = "PLAYER_ID")]
         player_id: String,
     },
     /// Fetch all players data
@@ -176,14 +188,17 @@ enum PlayerCommands {
     All,
     /// Fetch player game log
     GameLog {
-        /// The NHL player ID
+        /// The NHL player ID (format: numeric, e.g., 8478402)
+        #[arg(value_name = "PLAYER_ID")]
         player_id: String,
-        /// The season (e.g., 20232024)
+        /// The season (format: YYYYYYYY, e.g., 20232024)
+        #[arg(value_name = "SEASON")]
         season: String,
     },
     /// Fetch current player game log
     GameLogNow {
-        /// The NHL player ID
+        /// The NHL player ID (format: numeric, e.g., 8478402)
+        #[arg(value_name = "PLAYER_ID")]
         player_id: String,
     },
     /// Fetch player spotlight
@@ -196,9 +211,11 @@ enum SkaterCommands {
     LeadersNow,
     /// Fetch skater leaders by season
     Leaders {
-        /// The season (e.g., 20232024)
+        /// The season (format: YYYYYYYY, e.g., 20232024)
+        #[arg(value_name = "SEASON")]
         season: String,
         /// The game type (2 for Regular Season, 3 for Playoffs)
+        #[arg(value_name = "GAME_TYPE")]
         game_type: String,
     },
 }
@@ -209,9 +226,11 @@ enum GoalieCommands {
     LeadersNow,
     /// Fetch goalie leaders by season
     Leaders {
-        /// The season (e.g., 20232024)
+        /// The season (format: YYYYYYYY, e.g., 20232024)
+        #[arg(value_name = "SEASON")]
         season: String,
         /// The game type (2 for Regular Season, 3 for Playoffs)
+        #[arg(value_name = "GAME_TYPE")]
         game_type: String,
     },
 }
@@ -224,7 +243,8 @@ enum TeamCommands {
     /// 
     /// Team codes are typically 3-letter abbreviations (e.g., TOR, BOS, NYR)
     CurrentStats {
-        /// The NHL team code (e.g., TOR, BOS, NYR)
+        /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
+        #[arg(value_name = "TEAM_CODE")]
         team_code: String,
     },
     /// Fetch team statistics for a specific season
@@ -235,11 +255,14 @@ enum TeamCommands {
     /// - 2: Regular Season
     /// - 3: Playoffs
     SeasonStats {
-        /// The NHL team code (e.g., TOR, BOS, NYR)
+        /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
+        #[arg(value_name = "TEAM_CODE")]
         team_code: String,
-        /// The season ID (e.g., 20232024)
+        /// The season ID (format: YYYYYYYY, e.g., 20232024)
+        #[arg(value_name = "SEASON")]
         season_id: String,
         /// The game type (2 for Regular Season, 3 for Playoffs)
+        #[arg(value_name = "GAME_TYPE")]
         game_type: String,
     },
     /// Fetch all teams data
@@ -252,19 +275,23 @@ enum TeamCommands {
     StandingsNow,
     /// Fetch standings by date
     StandingsDate {
-        /// The date (YYYY-MM-DD)
+        /// The date (format: YYYY-MM-DD, e.g., 2024-02-15)
+        #[arg(value_name = "DATE")]
         date: String,
     },
     /// Fetch current roster
     RosterNow {
-        /// The NHL team code
+        /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
+        #[arg(value_name = "TEAM_CODE")]
         team_code: String,
     },
     /// Fetch roster by season
     RosterSeason {
-        /// The NHL team code
+        /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
+        #[arg(value_name = "TEAM_CODE")]
         team_code: String,
-        /// The season (e.g., 20232024)
+        /// The season (format: YYYYYYYY, e.g., 20232024)
+        #[arg(value_name = "SEASON")]
         season: String,
     },
 }
@@ -275,7 +302,8 @@ enum ScheduleCommands {
     Now,
     /// Fetch schedule by date
     Date {
-        /// The date (YYYY-MM-DD)
+        /// The date (format: YYYY-MM-DD, e.g., 2024-02-15)
+        #[arg(value_name = "DATE")]
         date: String,
     },
 }
@@ -312,7 +340,8 @@ enum DraftCommands {
     PicksNow,
     /// Fetch draft picks by year
     Picks {
-        /// The draft year
+        /// The draft year (format: YYYY, e.g., 2024)
+        #[arg(value_name = "YEAR")]
         year: String,
     },
 }
@@ -321,7 +350,8 @@ enum DraftCommands {
 enum MiscCommands {
     /// Fetch postal code information
     PostalCode {
-        /// The postal code
+        /// The postal/zip code (format: 5-6 characters, e.g., M5V2K4 or 10001)
+        #[arg(value_name = "CODE")]
         code: String,
     },
 }
