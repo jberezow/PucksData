@@ -100,7 +100,7 @@ fn test_player_endpoints() {
     let tests: Vec<(&str, TestFn)> = vec![
         ("player_summary", Box::new(|| ingest::fetch_player_summary(TEST_PLAYER_ID))),
         ("player_all", Box::new(|| ingest::fetch_player_all())),
-        ("player_game_log", Box::new(|| ingest::fetch_player_game_log(TEST_PLAYER_ID, TEST_SEASON))),
+        ("player_game_log", Box::new(|| ingest::fetch_player_game_log(TEST_PLAYER_ID, TEST_SEASON, TEST_GAME_TYPE))),
         ("player_game_log_now", Box::new(|| ingest::fetch_player_game_log_now(TEST_PLAYER_ID))),
         ("player_spotlight", Box::new(|| ingest::fetch_player_spotlight())),
     ];
@@ -222,7 +222,7 @@ fn test_all_endpoints() {
         // Player endpoints
         ("player_summary", Box::new(|| ingest::fetch_player_summary(TEST_PLAYER_ID))),
         ("player_all", Box::new(|| ingest::fetch_player_all())),
-        ("player_game_log", Box::new(|| ingest::fetch_player_game_log(TEST_PLAYER_ID, TEST_SEASON))),
+        ("player_game_log", Box::new(|| ingest::fetch_player_game_log(TEST_PLAYER_ID, TEST_SEASON, TEST_GAME_TYPE))),
         ("player_game_log_now", Box::new(|| ingest::fetch_player_game_log_now(TEST_PLAYER_ID))),
         ("player_spotlight", Box::new(|| ingest::fetch_player_spotlight())),
         

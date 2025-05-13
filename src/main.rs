@@ -189,6 +189,9 @@ enum PlayerCommands {
         /// The season (format: YYYYYYYY, e.g., 20232024)
         #[arg(value_name = "SEASON")]
         season: String,
+        /// The game type (2 for Regular Season, 3 for Playoffs)
+        #[arg(value_name = "GAME_TYPE")]
+        game_type: String,
     },
     /// Fetch current player game log
     GameLogNow {
@@ -408,8 +411,8 @@ fn main() {
                     eprintln!("Error: {}", e);
                 }
             }
-            PlayerCommands::GameLog { player_id, season } => {
-                if let Err(e) = ingest::fetch_player_game_log(&player_id, &season) {
+            PlayerCommands::GameLog { player_id, season, game_type } => {
+                if let Err(e) = ingest::fetch_player_game_log(&player_id, &season, &game_type) {
                     eprintln!("Error: {}", e);
                 }
             }
