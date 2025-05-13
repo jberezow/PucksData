@@ -256,9 +256,9 @@ enum TeamCommands {
         /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
         #[arg(value_name = "TEAM_CODE")]
         team_code: String,
-        /// The season ID (format: YYYYYYYY, e.g., 20232024)
+        /// The season (format: YYYYYYYY, e.g., 20232024)
         #[arg(value_name = "SEASON")]
-        season_id: String,
+        season: String,
         /// The game type (2 for Regular Season, 3 for Playoffs)
         #[arg(value_name = "GAME_TYPE")]
         game_type: String,
@@ -461,8 +461,8 @@ fn main() {
                     eprintln!("Error: {}", e);
                 }
             }
-            TeamCommands::SeasonStats { team_code, season_id, game_type } => {
-                if let Err(e) = ingest::fetch_team_stats_by_season(&team_code, &season_id, &game_type) {
+            TeamCommands::SeasonStats { team_code, season, game_type } => {
+                if let Err(e) = ingest::fetch_team_stats_by_season(&team_code, &season, &game_type) {
                     eprintln!("Error: {}", e);
                 }
             }
