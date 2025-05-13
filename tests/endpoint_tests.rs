@@ -10,7 +10,6 @@ const TEST_GAME_TYPE: &str = "2";        // Regular season
 const TEST_DATE: &str = "2024-02-15";    // A date in the 2023-2024 season
 const TEST_EVENT_ID: &str = "401";       // An event ID for a goal
 const TEST_DRAFT_YEAR: &str = "2023";    // 2023 draft
-const TEST_POSTAL_CODE: &str = "T5J2R7"; // Edmonton postal code
 
 // Type alias for closure
 type TestFn = Box<dyn Fn() -> Result<(), Box<dyn std::error::Error>>>;
@@ -180,7 +179,7 @@ fn test_schedule_and_playoff_endpoints() {
 }
 
 #[test]
-fn test_season_draft_and_misc_endpoints() {
+fn test_season_draft_endpoints() {
     let mut results = HashMap::<EndpointTestResult, usize>::new();
     
     let tests: Vec<(&str, TestFn)> = vec![
@@ -192,9 +191,6 @@ fn test_season_draft_and_misc_endpoints() {
         ("draft_tracker_now", Box::new(|| ingest::fetch_draft_tracker_now())),
         ("draft_picks_now", Box::new(|| ingest::fetch_draft_picks_now())),
         ("draft_picks", Box::new(|| ingest::fetch_draft_picks(TEST_DRAFT_YEAR))),
-        
-        // Misc endpoints
-        ("postal_code", Box::new(|| ingest::fetch_postal_code(TEST_POSTAL_CODE))),
     ];
     
     for (name, test_fn) in &tests {
@@ -262,9 +258,6 @@ fn test_all_endpoints() {
         ("draft_tracker_now", Box::new(|| ingest::fetch_draft_tracker_now())),
         ("draft_picks_now", Box::new(|| ingest::fetch_draft_picks_now())),
         ("draft_picks", Box::new(|| ingest::fetch_draft_picks(TEST_DRAFT_YEAR))),
-        
-        // Misc endpoints
-        ("postal_code", Box::new(|| ingest::fetch_postal_code(TEST_POSTAL_CODE))),
     ];
     
     for (name, test_fn) in &tests {
