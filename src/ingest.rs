@@ -85,49 +85,64 @@ fn fetch_and_cache(data_type: DataType, endpoint: &str, url_template: &str, para
             }
         },
 
-        // Team endpoints with seasons
-        (DataType::Teams, "roster_season") => {
+        // Team endpoints - always team_code first, then other parameters
+        (DataType::Teams, _) => {
+            // Always put team_code at the top level for team endpoints
             if let Some(team_code) = params.get_param("team_code") {
                 file_path.push(team_code);
-            }
-            if let Some(season) = params.get_param("season") {
-                file_path.push(season);
-            }
-        },
-        (DataType::Teams, "standings_date") => {
-            if let Some(team_code) = params.get_param("team_code") {
-                file_path.push(team_code);
-            }
-            if let Some(date) = params.get_param("date") {
-                file_path.push("standings");
-                file_path.push("dates");
-                file_path.push(date);
-            }
-        },
-        (DataType::Teams, "standings_season") => {
-            if let Some(team_code) = params.get_param("team_code") {
-                file_path.push(team_code);
-            }
-            if let Some(season) = params.get_param("season") {
-                file_path.push("standings");
-                file_path.push("seasons");
-                file_path.push(season);
-            }
-        },
-        (DataType::Teams, "schedule_season") => {
-            if let Some(team_code) = params.get_param("team_code") {
-                file_path.push(team_code);
-            }
-            if let Some(season) = params.get_param("season") {
-                file_path.push(season);
-            }
-        },
-        (DataType::Teams, "schedule_month") => {
-            if let Some(team_code) = params.get_param("team_code") {
-                file_path.push(team_code);
-            }
-            if let Some(date) = params.get_param("date") {
-                file_path.push(date);
+                
+                // Then add season or date as a subdirectory if available
+                match endpoint {
+                    "roster_season" => {
+                        if let Some(season) = params.get_param("season") {
+                            file_path.push(season);
+                        }
+                    },
+                    "standings_date" => {
+                        if let Some(date) = params.get_param("date") {
+                            file_path.push(date);
+                        }
+                    },
+                    "standings_season" => {
+                        if let Some(season) = params.get_param("season") {
+                            file_path.push(season);
+                        }
+                    },
+                    "schedule_season" => {
+                        if let Some(season) = params.get_param("season") {
+                            file_path.push(season);
+                        }
+                    },
+                    "schedule_month" => {
+                        if let Some(date) = params.get_param("date") {
+                            file_path.push(date);
+                        }
+                    },
+                    "season_stats" => {
+                        if let Some(season) = params.get_param("season") {
+                            file_path.push(season);
+                            if let Some(game_type) = params.get_param("game_type") {
+                                file_path.push(game_type);
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+            } else if endpoint == "standings_now" || endpoint == "standings_date" || endpoint == "standings_season" {
+                // Standings endpoints that don't have team_code
+                match endpoint {
+                    "standings_date" => {
+                        if let Some(date) = params.get_param("date") {
+                            file_path.push(date);
+                        }
+                    },
+                    "standings_season" => {
+                        if let Some(season) = params.get_param("season") {
+                            file_path.push(season);
+                        }
+                    },
+                    _ => {}
+                }
             }
         },
 
@@ -161,11 +176,10 @@ fn fetch_and_cache(data_type: DataType, endpoint: &str, url_template: &str, para
             }
         },
 
-        // For IDs (game_id, player_id, team_code), create a subdirectory
+        // For IDs (game_id, player_id), create a subdirectory
         _ => {
             if let Some(id) = params.get_param("game_id")
-                .or_else(|| params.get_param("player_id"))
-                .or_else(|| params.get_param("team_code")) {
+                .or_else(|| params.get_param("player_id")) {
                 file_path.push(id);
             }
         }
@@ -271,10 +285,10 @@ pub fn fetch_team_current_stats(team_code: &str) -> Result<(), Box<dyn std::erro
     fetch_and_cache(DataType::Teams, "current_stats", api_urls::TEAM_CURRENT_STATS_API_URL, &params)
 }
 
-pub fn fetch_team_stats_by_season(team_code: &str, season_id: &str, game_type: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn fetch_team_stats_by_season(team_code: &str, season: &str, game_type: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
     params.add_param("team_code", team_code);
-    params.add_param("season_id", season_id);
+    params.add_param("season", season);
     params.add_param("game_type", game_type);
     fetch_and_cache(DataType::Teams, "season_stats", api_urls::TEAM_STATS_BY_SEASON_API_URL, &params)
 }
@@ -292,20 +306,20 @@ pub fn fetch_season_all() -> Result<(), Box<dyn std::error::Error>> {
 // Game functions
 pub fn fetch_game_content(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
-    params.add_param("id", game_id);
+    params.add_param("game_id", game_id);
     fetch_and_cache(DataType::Games, "content", api_urls::GAME_CONTENT_API_URL, &params)
 }
 
 pub fn fetch_game_goal_replay(game_id: &str, event_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
-    params.add_param("id", game_id);
+    params.add_param("game_id", game_id);
     params.add_param("event_id", event_id);
     fetch_and_cache(DataType::Games, "goal_replay", api_urls::GAME_GOAL_REPLAY_API_URL, &params)
 }
 
 pub fn fetch_game_odds(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
-    params.add_param("id", game_id);
+    params.add_param("game_id", game_id);
     fetch_and_cache(DataType::Games, "odds", api_urls::GAME_ODDS_API_URL, &params)
 }
 
@@ -323,7 +337,7 @@ pub fn fetch_game_scores_date(date: &str) -> Result<(), Box<dyn std::error::Erro
 // Player functions
 pub fn fetch_player_game_log(player_id: &str, season: &str, game_type: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
-    params.add_param("id", player_id);
+    params.add_param("player_id", player_id);
     params.add_param("season", season);
     params.add_param("game_type", game_type);
     fetch_and_cache(DataType::Players, "game_log", api_urls::PLAYER_GAME_LOG_API_URL, &params)
@@ -331,7 +345,7 @@ pub fn fetch_player_game_log(player_id: &str, season: &str, game_type: &str) -> 
 
 pub fn fetch_player_game_log_now(player_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
-    params.add_param("id", player_id);
+    params.add_param("player_id", player_id);
     fetch_and_cache(DataType::Players, "game_log_now", api_urls::PLAYER_GAME_LOG_NOW_API_URL, &params)
 }
 
