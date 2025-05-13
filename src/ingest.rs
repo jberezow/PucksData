@@ -15,7 +15,6 @@ pub enum DataType {
     Playoffs,
     Seasons,
     Draft,
-    Misc,
 }
 
 impl DataType {
@@ -30,7 +29,6 @@ impl DataType {
             DataType::Playoffs => "playoffs",
             DataType::Seasons => "seasons",
             DataType::Draft => "draft",
-            DataType::Misc => "misc",
         }
     }
 }
@@ -89,26 +87,45 @@ fn fetch_and_cache(data_type: DataType, endpoint: &str, url_template: &str, para
 
         // Team endpoints with seasons
         (DataType::Teams, "roster_season") => {
+            if let Some(team_code) = params.get_param("team_code") {
+                file_path.push(team_code);
+            }
             if let Some(season) = params.get_param("season") {
                 file_path.push(season);
             }
         },
         (DataType::Teams, "standings_date") => {
+            if let Some(team_code) = params.get_param("team_code") {
+                file_path.push(team_code);
+            }
             if let Some(date) = params.get_param("date") {
+                file_path.push("standings");
+                file_path.push("dates");
                 file_path.push(date);
             }
         },
         (DataType::Teams, "standings_season") => {
+            if let Some(team_code) = params.get_param("team_code") {
+                file_path.push(team_code);
+            }
             if let Some(season) = params.get_param("season") {
+                file_path.push("standings");
+                file_path.push("seasons");
                 file_path.push(season);
             }
         },
         (DataType::Teams, "schedule_season") => {
+            if let Some(team_code) = params.get_param("team_code") {
+                file_path.push(team_code);
+            }
             if let Some(season) = params.get_param("season") {
                 file_path.push(season);
             }
         },
         (DataType::Teams, "schedule_month") => {
+            if let Some(team_code) = params.get_param("team_code") {
+                file_path.push(team_code);
+            }
             if let Some(date) = params.get_param("date") {
                 file_path.push(date);
             }
@@ -266,11 +283,6 @@ pub fn fetch_season_all() -> Result<(), Box<dyn std::error::Error>> {
     fetch_and_cache(DataType::Seasons, "all", api_urls::SEASON_ALL_SEASONS_API_URL, &params)
 }
 
-pub fn fetch_draft_current_rankings() -> Result<(), Box<dyn std::error::Error>> {
-    let params = ApiParams::new();
-    fetch_and_cache(DataType::Draft, "current_rankings", api_urls::DRAFT_CURRENT_RANKINGS_API_URL, &params)
-}
-
 // Game functions
 pub fn fetch_game_content(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
@@ -396,6 +408,11 @@ pub fn fetch_playoff_series_schedule() -> Result<(), Box<dyn std::error::Error>>
 }
 
 // Draft functions
+pub fn fetch_draft_current_rankings() -> Result<(), Box<dyn std::error::Error>> {
+    let params = ApiParams::new();
+    fetch_and_cache(DataType::Draft, "current_rankings", api_urls::DRAFT_CURRENT_RANKINGS_API_URL, &params)
+}
+
 pub fn fetch_draft_tracker_now() -> Result<(), Box<dyn std::error::Error>> {
     let params = ApiParams::new();
     fetch_and_cache(DataType::Draft, "tracker_now", api_urls::DRAFT_TRACKER_NOW_API_URL, &params)
@@ -410,11 +427,4 @@ pub fn fetch_draft_picks(year: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
     params.add_param("year", year);
     fetch_and_cache(DataType::Draft, "picks", api_urls::DRAFT_PICKS_API_URL, &params)
-}
-
-// Misc functions
-pub fn fetch_postal_code(code: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut params = ApiParams::new();
-    params.add_param("code", code);
-    fetch_and_cache(DataType::Misc, "postal_code", api_urls::POSTAL_CODE_API_URL, &params)
 }

@@ -77,11 +77,6 @@ enum Commands {
         #[command(subcommand)]
         subcommand: DraftCommands,
     },
-    /// Miscellaneous data operations
-    Misc {
-        #[command(subcommand)]
-        subcommand: MiscCommands,
-    },
     /// Inspect API endpoints
     Inspect {
         /// The data type (games, players, etc.)
@@ -346,16 +341,6 @@ enum DraftCommands {
     },
 }
 
-#[derive(Subcommand)]
-enum MiscCommands {
-    /// Fetch postal code information
-    PostalCode {
-        /// The postal/zip code (format: 5-6 characters, e.g., M5V2K4 or 10001)
-        #[arg(value_name = "CODE")]
-        code: String,
-    },
-}
-
 fn main() {
     let cli = Cli::parse();
 
@@ -548,13 +533,6 @@ fn main() {
             }
             DraftCommands::Picks { year } => {
                 if let Err(e) = ingest::fetch_draft_picks(&year) {
-                    eprintln!("Error: {}", e);
-                }
-            }
-        },
-        Commands::Misc { subcommand } => match subcommand {
-            MiscCommands::PostalCode { code } => {
-                if let Err(e) = ingest::fetch_postal_code(&code) {
                     eprintln!("Error: {}", e);
                 }
             }
