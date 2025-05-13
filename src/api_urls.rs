@@ -1,7 +1,7 @@
 // Player endpoints
 pub const PLAYER_SUMMARY_API_URL: &str = "https://api-web.nhle.com/v1/player/{id}/landing";
 pub const PLAYER_ALL_PLAYERS_API_URL: &str = "https://api.nhle.com/stats/rest/en/players";
-pub const PLAYER_GAME_LOG_API_URL: &str = "https://api-web.nhle.com/v1/player/{id}/game-log/{season}";
+pub const PLAYER_GAME_LOG_API_URL: &str = "https://api-web.nhle.com/v1/player/{id}/game-log/{season}/{game_type}";
 pub const PLAYER_GAME_LOG_NOW_API_URL: &str = "https://api-web.nhle.com/v1/player/{id}/game-log/now";
 pub const PLAYER_SPOTLIGHT_API_URL: &str = "https://api-web.nhle.com/v1/player-spotlight";
 pub const SKATER_STATS_LEADERS_NOW_API_URL: &str = "https://api-web.nhle.com/v1/skater-stats-leaders/current";

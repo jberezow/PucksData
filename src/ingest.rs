@@ -133,8 +133,14 @@ fn fetch_and_cache(data_type: DataType, endpoint: &str, url_template: &str, para
 
         // Player endpoints with seasons
         (DataType::Players, "game_log") => {
+            if let Some(player_id) = params.get_param("player_id") {
+                file_path.push(player_id);
+            }
             if let Some(season) = params.get_param("season") {
                 file_path.push(season);
+            }
+            if let Some(game_type) = params.get_param("game_type") {
+                file_path.push(game_type);
             }
         },
 
@@ -315,10 +321,11 @@ pub fn fetch_game_scores_date(date: &str) -> Result<(), Box<dyn std::error::Erro
 }
 
 // Player functions
-pub fn fetch_player_game_log(player_id: &str, season: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn fetch_player_game_log(player_id: &str, season: &str, game_type: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
     params.add_param("id", player_id);
     params.add_param("season", season);
+    params.add_param("game_type", game_type);
     fetch_and_cache(DataType::Players, "game_log", api_urls::PLAYER_GAME_LOG_API_URL, &params)
 }
 
