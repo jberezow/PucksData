@@ -297,8 +297,7 @@ pub fn fetch_game_all_games() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn fetch_game_metadata() -> Result<(), Box<dyn std::error::Error>> {
-    let params = ApiParams::new();
-    fetch_and_cache(DataType::Games, "metadata", api_urls::GAME_ALL_METADATA_API_URL, &params)
+    Err("API endpoint for game metadata has been deprecated and removed.".into())
 }
 
 pub fn fetch_player_summary(player_id: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -346,9 +345,7 @@ pub fn fetch_game_goal_replay(game_id: &str, event_id: &str) -> Result<(), Box<d
 }
 
 pub fn fetch_game_odds(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut params = ApiParams::new();
-    params.add_param("game_id", game_id);
-    fetch_and_cache(DataType::Games, "odds", api_urls::GAME_ODDS_API_URL, &params)
+    Err("API endpoint for game odds has been deprecated and removed.".into())
 }
 
 pub fn fetch_game_scores_now() -> Result<(), Box<dyn std::error::Error>> {
@@ -492,4 +489,66 @@ pub fn fetch_draft_picks(year: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut params = ApiParams::new();
     params.add_param("year", year);
     fetch_and_cache(DataType::Draft, "picks", api_urls::DRAFT_PICKS_API_URL, &params)
+}
+
+pub fn fetch_team_standings_season(season: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ApiParams::new();
+    params.add_param("season", season);
+
+    fetch_and_cache(
+        DataType::Teams,
+        "standings_season",
+        api_urls::TEAM_STANDINGS_SEASON_API_URL,
+        &params,
+    )
+}
+
+pub fn fetch_team_prospects(team_code: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ApiParams::new();
+    params.add_param("team_code", team_code);
+
+    fetch_and_cache(
+        DataType::Teams,
+        "prospects",
+        api_urls::TEAM_PROSPECTS_API_URL,
+        &params,
+    )
+}
+
+pub fn fetch_team_schedule_now(team_code: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ApiParams::new();
+    params.add_param("team_code", team_code);
+
+    fetch_and_cache(
+        DataType::Teams,
+        "schedule_now",
+        api_urls::TEAM_SCHEDULE_NOW_API_URL,
+        &params,
+    )
+}
+
+pub fn fetch_team_schedule_season(team_code: &str, season: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ApiParams::new();
+    params.add_param("team_code", team_code);
+    params.add_param("season", season);
+
+    fetch_and_cache(
+        DataType::Teams,
+        "schedule_season",
+        api_urls::TEAM_SCHEDULE_SEASON_API_URL,
+        &params,
+    )
+}
+
+pub fn fetch_team_schedule_month(team_code: &str, date: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ApiParams::new();
+    params.add_param("team_code", team_code);
+    params.add_param("date", date);
+
+    fetch_and_cache(
+        DataType::Teams,
+        "schedule_month",
+        api_urls::TEAM_SCHEDULE_MONTH_API_URL,
+        &params,
+    )
 }

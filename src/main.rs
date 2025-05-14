@@ -277,6 +277,12 @@ enum TeamCommands {
         #[arg(value_name = "DATE")]
         date: String,
     },
+    /// Fetch standings by season
+    StandingsSeason {
+        /// The season (format: YYYYYYYY, e.g., 20232024)
+        #[arg(value_name = "SEASON")]
+        season: String,
+    },
     /// Fetch current roster
     RosterNow {
         /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
@@ -291,6 +297,36 @@ enum TeamCommands {
         /// The season (format: YYYYYYYY, e.g., 20232024)
         #[arg(value_name = "SEASON")]
         season: String,
+    },
+    /// Fetch team prospects
+    Prospects {
+        /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
+        #[arg(value_name = "TEAM_CODE")]
+        team_code: String,
+    },
+    /// Fetch current schedule for a team
+    ScheduleNow {
+        /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
+        #[arg(value_name = "TEAM_CODE")]
+        team_code: String,
+    },
+    /// Fetch season schedule for a team
+    ScheduleSeason {
+        /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
+        #[arg(value_name = "TEAM_CODE")]
+        team_code: String,
+        /// The season (format: YYYYYYYY, e.g., 20232024)
+        #[arg(value_name = "SEASON")]
+        season: String,
+    },
+    /// Fetch month schedule for a team
+    ScheduleMonth {
+        /// The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)
+        #[arg(value_name = "TEAM_CODE")]
+        team_code: String,
+        /// The date (format: YYYY-MM-DD, e.g., 2024-02-15)
+        #[arg(value_name = "DATE")]
+        date: String,
     },
 }
 
@@ -502,6 +538,11 @@ fn main() {
                     eprintln!("Error: {}", e);
                 }
             }
+            TeamCommands::StandingsSeason { season } => {
+                if let Err(e) = ingest::fetch_team_standings_season(&season) {
+                    eprintln!("Error: {}", e);
+                }
+            }
             TeamCommands::RosterNow { team_code } => {
                 if let Err(e) = ingest::fetch_team_roster_now(&team_code) {
                     eprintln!("Error: {}", e);
@@ -509,6 +550,26 @@ fn main() {
             }
             TeamCommands::RosterSeason { team_code, season } => {
                 if let Err(e) = ingest::fetch_team_roster_season(&team_code, &season) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            TeamCommands::Prospects { team_code } => {
+                if let Err(e) = ingest::fetch_team_prospects(&team_code) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            TeamCommands::ScheduleNow { team_code } => {
+                if let Err(e) = ingest::fetch_team_schedule_now(&team_code) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            TeamCommands::ScheduleSeason { team_code, season } => {
+                if let Err(e) = ingest::fetch_team_schedule_season(&team_code, &season) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            TeamCommands::ScheduleMonth { team_code, date } => {
+                if let Err(e) = ingest::fetch_team_schedule_month(&team_code, &date) {
                     eprintln!("Error: {}", e);
                 }
             }
