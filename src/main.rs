@@ -309,9 +309,35 @@ enum ScheduleCommands {
 #[derive(Subcommand)]
 enum PlayoffCommands {
     /// Fetch playoff bracket
-    Bracket,
+    Bracket {
+        /// The year (format: YYYY, e.g., 2024)
+        #[arg(value_name = "YEAR")]
+        year: String,
+    },
     /// Fetch playoff series schedule
-    SeriesSchedule,
+    SeriesSchedule {
+        /// The season (format: YYYYYYYY, e.g., 20232024)
+        #[arg(value_name = "SEASON")]
+        season: String,
+        /// The series letter (format: a, b, c, etc.)
+        #[arg(value_name = "LETTER")]
+        letter: String,
+    },
+    /// Fetch playoff series carousel
+    SeriesCarousel {
+        /// The year (format: YYYYYYYY, e.g., 20232024)
+        #[arg(value_name = "SEASON")]
+        season: String,
+    },
+    /// Fetch playoff series metadata
+    SeriesMetadata {
+        /// The year (format: YYYY, e.g., 2024)
+        #[arg(value_name = "YEAR")]
+        year: String,
+        /// The series letter (format: a, b, c, etc.)
+        #[arg(value_name = "LETTER")]
+        letter: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -500,13 +526,23 @@ fn main() {
             }
         },
         Commands::Playoff { subcommand } => match subcommand {
-            PlayoffCommands::Bracket => {
-                if let Err(e) = ingest::fetch_playoff_bracket() {
+            PlayoffCommands::Bracket { year } => {
+                if let Err(e) = ingest::fetch_playoff_bracket(&year) {
                     eprintln!("Error: {}", e);
                 }
             }
-            PlayoffCommands::SeriesSchedule => {
-                if let Err(e) = ingest::fetch_playoff_series_schedule() {
+            PlayoffCommands::SeriesSchedule { season, letter } => {
+                if let Err(e) = ingest::fetch_playoff_series_schedule(&season, &letter) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            PlayoffCommands::SeriesCarousel { season } => {
+                if let Err(e) = ingest::fetch_playoff_series_carousel(&season) {
+                    eprintln!("Error: {}", e);
+                }
+            }
+            PlayoffCommands::SeriesMetadata { year, letter } => {
+                if let Err(e) = ingest::fetch_playoff_series_metadata(&year, &letter) {
                     eprintln!("Error: {}", e);
                 }
             }

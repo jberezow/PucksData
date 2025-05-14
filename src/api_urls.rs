@@ -44,8 +44,10 @@ pub const GAME_CONTENT_API_URL: &str = "https://api-web.nhle.com/v1/gamecenter/{
 pub const GAME_GOAL_REPLAY_API_URL: &str = "https://api-web.nhle.com/v1/gamecenter/{game_id}/replay/{event_id}";
 
 // Playoff endpoints
-pub const PLAYOFF_BRACKET_API_URL: &str = "https://api-web.nhle.com/v1/playoff-bracket";
-pub const PLAYOFF_SERIES_SCHEDULE_API_URL: &str = "https://api-web.nhle.com/v1/playoff-series-schedule";
+pub const PLAYOFF_BRACKET_API_URL: &str = "https://api-web.nhle.com/v1/playoff-bracket/{year}";
+pub const PLAYOFF_SERIES_SCHEDULE_API_URL: &str = "https://api-web.nhle.com/v1/schedule/playoff-series/{season}/{letter}";
+pub const PLAYOFF_SERIES_CAROUSEL_API_URL: &str = "https://api-web.nhle.com/v1/playoff-series/carousel/{season}";
+pub const PLAYOFF_SERIES_METADATA_API_URL: &str = "https://api-web.nhle.com/v1/meta/playoff-series/{year}/{letter}";
 
 // Season endpoints
 pub const SEASON_ALL_SEASONS_API_URL: &str = "https://api-web.nhle.com/v1/season";
@@ -110,6 +112,8 @@ pub fn get_url_template(data_type: &str, endpoint: &str) -> Option<&'static str>
         // Playoffs
         ("playoffs", "bracket") => Some(PLAYOFF_BRACKET_API_URL),
         ("playoffs", "series_schedule") => Some(PLAYOFF_SERIES_SCHEDULE_API_URL),
+        ("playoffs", "series_carousel") => Some(PLAYOFF_SERIES_CAROUSEL_API_URL),
+        ("playoffs", "series_metadata") => Some(PLAYOFF_SERIES_METADATA_API_URL),
         
         // Seasons
         ("seasons", "all") => Some(SEASON_ALL_SEASONS_API_URL),

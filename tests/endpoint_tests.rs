@@ -10,6 +10,8 @@ const TEST_GAME_TYPE: &str = "2";        // Regular season
 const TEST_DATE: &str = "2024-02-15";    // A date in the 2023-2024 season
 const TEST_EVENT_ID: &str = "401";       // An event ID for a goal
 const TEST_DRAFT_YEAR: &str = "2023";    // 2023 draft
+const TEST_PLAYOFF_YEAR: &str = "2024";  // 2024 playoffs
+const TEST_SERIES_LETTER: &str = "a";    // Series letter for playoff series
 
 // Type alias for closure
 type TestFn = Box<dyn Fn() -> Result<(), Box<dyn std::error::Error>>>;
@@ -166,8 +168,10 @@ fn test_schedule_and_playoff_endpoints() {
         ("schedule_date", Box::new(|| ingest::fetch_schedule_date(TEST_DATE))),
         
         // Playoff endpoints
-        ("playoff_bracket", Box::new(|| ingest::fetch_playoff_bracket())),
-        ("playoff_series_schedule", Box::new(|| ingest::fetch_playoff_series_schedule())),
+        ("playoff_bracket", Box::new(|| ingest::fetch_playoff_bracket(TEST_PLAYOFF_YEAR))),
+        ("playoff_series_schedule", Box::new(|| ingest::fetch_playoff_series_schedule(TEST_SEASON, TEST_SERIES_LETTER))),
+        ("playoff_series_carousel", Box::new(|| ingest::fetch_playoff_series_carousel(TEST_PLAYOFF_SEASON))),
+        ("playoff_series_metadata", Box::new(|| ingest::fetch_playoff_series_metadata(TEST_PLAYOFF_YEAR, TEST_SERIES_LETTER))),
     ];
     
     for (name, test_fn) in &tests {
@@ -247,8 +251,10 @@ fn test_all_endpoints() {
         ("schedule_date", Box::new(|| ingest::fetch_schedule_date(TEST_DATE))),
         
         // Playoff endpoints
-        ("playoff_bracket", Box::new(|| ingest::fetch_playoff_bracket())),
-        ("playoff_series_schedule", Box::new(|| ingest::fetch_playoff_series_schedule())),
+        ("playoff_bracket", Box::new(|| ingest::fetch_playoff_bracket(TEST_PLAYOFF_YEAR))),
+        ("playoff_series_schedule", Box::new(|| ingest::fetch_playoff_series_schedule(TEST_SEASON, TEST_SERIES_LETTER))),
+        ("playoff_series_carousel", Box::new(|| ingest::fetch_playoff_series_carousel(TEST_PLAYOFF_SEASON))),
+        ("playoff_series_metadata", Box::new(|| ingest::fetch_playoff_series_metadata(TEST_PLAYOFF_YEAR, TEST_SERIES_LETTER))),
         
         // Season endpoints
         ("season_all", Box::new(|| ingest::fetch_season_all())),

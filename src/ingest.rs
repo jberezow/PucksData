@@ -176,6 +176,34 @@ fn fetch_and_cache(data_type: DataType, endpoint: &str, url_template: &str, para
             }
         },
 
+        // Playoff endpoints
+        (DataType::Playoffs, "bracket") => {
+            if let Some(year) = params.get_param("year") {
+                file_path.push(year);
+            }
+        },
+        (DataType::Playoffs, "series_schedule") => {
+            if let Some(season) = params.get_param("season") {
+                file_path.push(season);
+                if let Some(letter) = params.get_param("letter") {
+                    file_path.push(letter);
+                }
+            }
+        },
+        (DataType::Playoffs, "series_carousel") => {
+            if let Some(season) = params.get_param("season") {
+                file_path.push(season);
+            }
+        },
+        (DataType::Playoffs, "series_metadata") => {
+            if let Some(year) = params.get_param("year") {
+                file_path.push(year);
+                if let Some(letter) = params.get_param("letter") {
+                    file_path.push(letter);
+                }
+            }
+        },
+
         // For IDs (game_id, player_id), create a subdirectory
         _ => {
             if let Some(id) = params.get_param("game_id")
@@ -418,14 +446,30 @@ pub fn fetch_schedule_date(date: &str) -> Result<(), Box<dyn std::error::Error>>
 }
 
 // Playoff functions
-pub fn fetch_playoff_bracket() -> Result<(), Box<dyn std::error::Error>> {
-    let params = ApiParams::new();
+pub fn fetch_playoff_bracket(year: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ApiParams::new();
+    params.add_param("year", year);
     fetch_and_cache(DataType::Playoffs, "bracket", api_urls::PLAYOFF_BRACKET_API_URL, &params)
 }
 
-pub fn fetch_playoff_series_schedule() -> Result<(), Box<dyn std::error::Error>> {
-    let params = ApiParams::new();
+pub fn fetch_playoff_series_schedule(season: &str, letter: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ApiParams::new();
+    params.add_param("season", season);
+    params.add_param("letter", letter);
     fetch_and_cache(DataType::Playoffs, "series_schedule", api_urls::PLAYOFF_SERIES_SCHEDULE_API_URL, &params)
+}
+
+pub fn fetch_playoff_series_carousel(season: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ApiParams::new();
+    params.add_param("season", season);
+    fetch_and_cache(DataType::Playoffs, "series_carousel", api_urls::PLAYOFF_SERIES_CAROUSEL_API_URL, &params)
+}
+
+pub fn fetch_playoff_series_metadata(year: &str, letter: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut params = ApiParams::new();
+    params.add_param("year", year);
+    params.add_param("letter", letter);
+    fetch_and_cache(DataType::Playoffs, "series_metadata", api_urls::PLAYOFF_SERIES_METADATA_API_URL, &params)
 }
 
 // Draft functions
