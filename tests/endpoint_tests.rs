@@ -1,4 +1,5 @@
 use pucksdata::ingest;
+use pucksdata::endpoints::{get_endpoint, get_all_endpoints};
 use std::collections::HashMap;
 
 // Test constants
@@ -14,9 +15,6 @@ const TEST_PLAYOFF_YEAR: &str = "2024";  // 2024 playoffs
 const TEST_PLAYOFF_SEASON: &str = "20232024"; // 2023-2024 playoff season
 const TEST_SERIES_LETTER: &str = "a";    // Series letter for playoff series
 
-// Type alias for closure
-type TestFn = Box<dyn Fn() -> Result<(), Box<dyn std::error::Error>>>;
-
 /// Enum to track test results
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum EndpointTestResult {
@@ -26,24 +24,59 @@ enum EndpointTestResult {
     OtherError,
 }
 
-/// Tests a single endpoint and returns the result
-fn test_endpoint(name: &str, f: &TestFn) -> EndpointTestResult {
-    println!("Testing endpoint: {}", name);
-    match f() {
+/// Tests a single endpoint by name and returns the result
+fn test_endpoint_by_name(endpoint_name: &str) -> EndpointTestResult {
+    println!("Testing endpoint: {}", endpoint_name);
+    
+    // Get endpoint definition
+    let endpoint = match get_endpoint(endpoint_name) {
+        Some(e) => e,
+        None => {
+            println!("❓ {} - Endpoint not defined in registry", endpoint_name);
+            return EndpointTestResult::OtherError;
+        }
+    };
+    
+    // Map parameters based on endpoint
+    let mut params = Vec::new();
+    for param in &endpoint.parameters {
+        if param.required {
+            // Map common test parameters
+            let value = match param.name {
+                "game_id" => TEST_GAME_ID,
+                "player_id" => TEST_PLAYER_ID,
+                "team_code" => TEST_TEAM_CODE,
+                "season" => TEST_SEASON,
+                "game_type" => TEST_GAME_TYPE,
+                "date" => TEST_DATE,
+                "event_id" => TEST_EVENT_ID,
+                "year" => TEST_DRAFT_YEAR,
+                "letter" => TEST_SERIES_LETTER,
+                _ => {
+                    println!("⚠️ {} - Unknown parameter: {}", endpoint_name, param.name);
+                    param.example // Use example value as fallback
+                }
+            };
+            params.push((param.name, value));
+        }
+    }
+    
+    // Call the endpoint
+    match ingest::fetch_endpoint(endpoint_name, &params) {
         Ok(_) => {
-            println!("✅ {} - Success", name);
+            println!("✅ {} - Success", endpoint_name);
             EndpointTestResult::Success
         }
         Err(e) => {
             let error_str = e.to_string();
             if error_str.contains("404") || error_str.contains("Not Found") {
-                println!("🚫 {} - Not Found (404)", name);
+                println!("🚫 {} - Not Found (404)", endpoint_name);
                 EndpointTestResult::NotFound
             } else if error_str.contains("Network error") {
-                println!("🌐 {} - Network Error: {}", name, error_str);
+                println!("🌐 {} - Network Error: {}", endpoint_name, error_str);
                 EndpointTestResult::NetworkError
             } else {
-                println!("❌ {} - Other Error: {}", name, error_str);
+                println!("❌ {} - Other Error: {}", endpoint_name, error_str);
                 EndpointTestResult::OtherError
             }
         }
@@ -75,21 +108,19 @@ fn print_summary(results: &HashMap<EndpointTestResult, usize>, total_tests: usiz
 fn test_game_endpoints() {
     let mut results = HashMap::<EndpointTestResult, usize>::new();
     
-    let tests: Vec<(&str, TestFn)> = vec![
-        ("game_story", Box::new(|| ingest::fetch_game_story(TEST_GAME_ID))),
-        ("game_boxscore", Box::new(|| ingest::fetch_game_boxscore(TEST_GAME_ID))),
-        ("game_play_by_play", Box::new(|| ingest::fetch_game_play_by_play(TEST_GAME_ID))),
-        ("game_all_games", Box::new(|| ingest::fetch_game_all_games())),
-        ("game_metadata", Box::new(|| ingest::fetch_game_metadata())),
-        ("game_content", Box::new(|| ingest::fetch_game_content(TEST_GAME_ID))),
-        ("game_goal_replay", Box::new(|| ingest::fetch_game_goal_replay(TEST_GAME_ID, TEST_EVENT_ID))),
-        ("game_odds", Box::new(|| ingest::fetch_game_odds(TEST_GAME_ID))),
-        ("game_scores_now", Box::new(|| ingest::fetch_game_scores_now())),
-        ("game_scores_date", Box::new(|| ingest::fetch_game_scores_date(TEST_DATE))),
+    let tests = vec![
+        "game_story",
+        "game_boxscore",
+        "game_play_by_play",
+        "game_all_games",
+        "game_content",
+        "game_goal_replay",
+        "game_scores_now",
+        "game_scores_date",
     ];
     
-    for (name, test_fn) in &tests {
-        let result = test_endpoint(name, test_fn);
+    for endpoint_name in &tests {
+        let result = test_endpoint_by_name(endpoint_name);
         *results.entry(result).or_insert(0) += 1;
     }
     
@@ -100,16 +131,16 @@ fn test_game_endpoints() {
 fn test_player_endpoints() {
     let mut results = HashMap::<EndpointTestResult, usize>::new();
     
-    let tests: Vec<(&str, TestFn)> = vec![
-        ("player_summary", Box::new(|| ingest::fetch_player_summary(TEST_PLAYER_ID))),
-        ("player_all", Box::new(|| ingest::fetch_player_all())),
-        ("player_game_log", Box::new(|| ingest::fetch_player_game_log(TEST_PLAYER_ID, TEST_SEASON, TEST_GAME_TYPE))),
-        ("player_game_log_now", Box::new(|| ingest::fetch_player_game_log_now(TEST_PLAYER_ID))),
-        ("player_spotlight", Box::new(|| ingest::fetch_player_spotlight())),
+    let tests = vec![
+        "player_summary",
+        "player_all",
+        "player_game_log",
+        "player_game_log_now",
+        "player_spotlight",
     ];
     
-    for (name, test_fn) in &tests {
-        let result = test_endpoint(name, test_fn);
+    for endpoint_name in &tests {
+        let result = test_endpoint_by_name(endpoint_name);
         *results.entry(result).or_insert(0) += 1;
     }
     
@@ -120,18 +151,18 @@ fn test_player_endpoints() {
 fn test_skater_and_goalie_endpoints() {
     let mut results = HashMap::<EndpointTestResult, usize>::new();
     
-    let tests: Vec<(&str, TestFn)> = vec![
+    let tests = vec![
         // Skater endpoints
-        ("skater_leaders_now", Box::new(|| ingest::fetch_skater_leaders_now())),
-        ("skater_leaders", Box::new(|| ingest::fetch_skater_leaders(TEST_SEASON, TEST_GAME_TYPE))),
+        "skater_stats_leaders_now",
+        "skater_stats_leaders",
         
         // Goalie endpoints
-        ("goalie_leaders_now", Box::new(|| ingest::fetch_goalie_leaders_now())),
-        ("goalie_leaders", Box::new(|| ingest::fetch_goalie_leaders(TEST_SEASON, TEST_GAME_TYPE))),
+        "goalie_stats_leaders_now",
+        "goalie_stats_leaders",
     ];
     
-    for (name, test_fn) in &tests {
-        let result = test_endpoint(name, test_fn);
+    for endpoint_name in &tests {
+        let result = test_endpoint_by_name(endpoint_name);
         *results.entry(result).or_insert(0) += 1;
     }
     
@@ -142,22 +173,22 @@ fn test_skater_and_goalie_endpoints() {
 fn test_team_endpoints() {
     let mut results = HashMap::<EndpointTestResult, usize>::new();
     
-    let tests: Vec<(&str, TestFn)> = vec![
-        ("team_current_stats", Box::new(|| ingest::fetch_team_current_stats(TEST_TEAM_CODE))),
-        ("team_stats_by_season", Box::new(|| ingest::fetch_team_stats_by_season(TEST_TEAM_CODE, TEST_SEASON, TEST_GAME_TYPE))),
-        ("team_standings_now", Box::new(|| ingest::fetch_team_standings_now())),
-        ("team_standings_date", Box::new(|| ingest::fetch_team_standings_date(TEST_DATE))),
-        ("team_standings_season", Box::new(|| ingest::fetch_team_standings_season(TEST_SEASON))),
-        ("team_roster_now", Box::new(|| ingest::fetch_team_roster_now(TEST_TEAM_CODE))),
-        ("team_roster_season", Box::new(|| ingest::fetch_team_roster_season(TEST_TEAM_CODE, TEST_SEASON))),
-        ("team_prospects", Box::new(|| ingest::fetch_team_prospects(TEST_TEAM_CODE))),
-        ("team_schedule_now", Box::new(|| ingest::fetch_team_schedule_now(TEST_TEAM_CODE))),
-        ("team_schedule_season", Box::new(|| ingest::fetch_team_schedule_season(TEST_TEAM_CODE, TEST_SEASON))),
-        ("team_schedule_month", Box::new(|| ingest::fetch_team_schedule_month(TEST_TEAM_CODE, TEST_DATE))),
+    let tests = vec![
+        "team_current_stats",
+        "team_stats_by_season",
+        "team_standings_now",
+        "team_standings_by_date",
+        "team_standings_season",
+        "team_roster_now",
+        "team_roster_season",
+        "team_prospects",
+        "team_schedule_now",
+        "team_schedule_season",
+        "team_schedule_month",
     ];
     
-    for (name, test_fn) in &tests {
-        let result = test_endpoint(name, test_fn);
+    for endpoint_name in &tests {
+        let result = test_endpoint_by_name(endpoint_name);
         *results.entry(result).or_insert(0) += 1;
     }
     
@@ -168,20 +199,20 @@ fn test_team_endpoints() {
 fn test_schedule_and_playoff_endpoints() {
     let mut results = HashMap::<EndpointTestResult, usize>::new();
     
-    let tests: Vec<(&str, TestFn)> = vec![
+    let tests = vec![
         // Schedule endpoints
-        ("schedule_now", Box::new(|| ingest::fetch_schedule_now())),
-        ("schedule_date", Box::new(|| ingest::fetch_schedule_date(TEST_DATE))),
+        "schedule_now",
+        "schedule_date",
         
         // Playoff endpoints
-        ("playoff_bracket", Box::new(|| ingest::fetch_playoff_bracket(TEST_PLAYOFF_YEAR))),
-        ("playoff_series_schedule", Box::new(|| ingest::fetch_playoff_series_schedule(TEST_SEASON, TEST_SERIES_LETTER))),
-        ("playoff_series_carousel", Box::new(|| ingest::fetch_playoff_series_carousel(TEST_PLAYOFF_SEASON))),
-        ("playoff_series_metadata", Box::new(|| ingest::fetch_playoff_series_metadata(TEST_PLAYOFF_YEAR, TEST_SERIES_LETTER))),
+        "playoff_bracket",
+        "playoff_series_schedule",
+        "playoff_series_carousel", 
+        "playoff_series_metadata",
     ];
     
-    for (name, test_fn) in &tests {
-        let result = test_endpoint(name, test_fn);
+    for endpoint_name in &tests {
+        let result = test_endpoint_by_name(endpoint_name);
         *results.entry(result).or_insert(0) += 1;
     }
     
@@ -192,95 +223,40 @@ fn test_schedule_and_playoff_endpoints() {
 fn test_season_draft_endpoints() {
     let mut results = HashMap::<EndpointTestResult, usize>::new();
     
-    let tests: Vec<(&str, TestFn)> = vec![
+    let tests = vec![
         // Season endpoints
-        ("season_all", Box::new(|| ingest::fetch_season_all())),
+        "season_all_seasons",
         
         // Draft endpoints
-        ("draft_current_rankings", Box::new(|| ingest::fetch_draft_current_rankings())),
-        ("draft_tracker_now", Box::new(|| ingest::fetch_draft_tracker_now())),
-        ("draft_picks_now", Box::new(|| ingest::fetch_draft_picks_now())),
-        ("draft_picks", Box::new(|| ingest::fetch_draft_picks(TEST_DRAFT_YEAR))),
+        "draft_current_rankings",
+        "draft_tracker_now",
+        "draft_picks_now",
+        "draft_picks",
     ];
     
-    for (name, test_fn) in &tests {
-        let result = test_endpoint(name, test_fn);
+    for endpoint_name in &tests {
+        let result = test_endpoint_by_name(endpoint_name);
         *results.entry(result).or_insert(0) += 1;
     }
     
     print_summary(&results, tests.len());
 }
 
-/// Overall test that runs all endpoints - useful for a complete check
 #[test]
 fn test_all_endpoints() {
     let mut results = HashMap::<EndpointTestResult, usize>::new();
+    let all_endpoints = get_all_endpoints();
     
-    let tests: Vec<(&str, TestFn)> = vec![
-        // Game endpoints
-        ("game_story", Box::new(|| ingest::fetch_game_story(TEST_GAME_ID))),
-        ("game_boxscore", Box::new(|| ingest::fetch_game_boxscore(TEST_GAME_ID))),
-        ("game_play_by_play", Box::new(|| ingest::fetch_game_play_by_play(TEST_GAME_ID))),
-        ("game_all_games", Box::new(|| ingest::fetch_game_all_games())),
-        ("game_metadata", Box::new(|| ingest::fetch_game_metadata())),
-        ("game_content", Box::new(|| ingest::fetch_game_content(TEST_GAME_ID))),
-        ("game_goal_replay", Box::new(|| ingest::fetch_game_goal_replay(TEST_GAME_ID, TEST_EVENT_ID))),
-        ("game_odds", Box::new(|| ingest::fetch_game_odds(TEST_GAME_ID))),
-        ("game_scores_now", Box::new(|| ingest::fetch_game_scores_now())),
-        ("game_scores_date", Box::new(|| ingest::fetch_game_scores_date(TEST_DATE))),
-        
-        // Player endpoints
-        ("player_summary", Box::new(|| ingest::fetch_player_summary(TEST_PLAYER_ID))),
-        ("player_all", Box::new(|| ingest::fetch_player_all())),
-        ("player_game_log", Box::new(|| ingest::fetch_player_game_log(TEST_PLAYER_ID, TEST_SEASON, TEST_GAME_TYPE))),
-        ("player_game_log_now", Box::new(|| ingest::fetch_player_game_log_now(TEST_PLAYER_ID))),
-        ("player_spotlight", Box::new(|| ingest::fetch_player_spotlight())),
-        
-        // Skater endpoints
-        ("skater_leaders_now", Box::new(|| ingest::fetch_skater_leaders_now())),
-        ("skater_leaders", Box::new(|| ingest::fetch_skater_leaders(TEST_SEASON, TEST_GAME_TYPE))),
-        
-        // Goalie endpoints
-        ("goalie_leaders_now", Box::new(|| ingest::fetch_goalie_leaders_now())),
-        ("goalie_leaders", Box::new(|| ingest::fetch_goalie_leaders(TEST_SEASON, TEST_GAME_TYPE))),
-        
-        // Team endpoints
-        ("team_current_stats", Box::new(|| ingest::fetch_team_current_stats(TEST_TEAM_CODE))),
-        ("team_stats_by_season", Box::new(|| ingest::fetch_team_stats_by_season(TEST_TEAM_CODE, TEST_SEASON, TEST_GAME_TYPE))),
-        ("team_standings_now", Box::new(|| ingest::fetch_team_standings_now())),
-        ("team_standings_date", Box::new(|| ingest::fetch_team_standings_date(TEST_DATE))),
-        ("team_standings_season", Box::new(|| ingest::fetch_team_standings_season(TEST_SEASON))),
-        ("team_roster_now", Box::new(|| ingest::fetch_team_roster_now(TEST_TEAM_CODE))),
-        ("team_roster_season", Box::new(|| ingest::fetch_team_roster_season(TEST_TEAM_CODE, TEST_SEASON))),
-        ("team_prospects", Box::new(|| ingest::fetch_team_prospects(TEST_TEAM_CODE))),
-        ("team_schedule_now", Box::new(|| ingest::fetch_team_schedule_now(TEST_TEAM_CODE))),
-        ("team_schedule_season", Box::new(|| ingest::fetch_team_schedule_season(TEST_TEAM_CODE, TEST_SEASON))),
-        ("team_schedule_month", Box::new(|| ingest::fetch_team_schedule_month(TEST_TEAM_CODE, TEST_DATE))),
-        
-        // Schedule endpoints
-        ("schedule_now", Box::new(|| ingest::fetch_schedule_now())),
-        ("schedule_date", Box::new(|| ingest::fetch_schedule_date(TEST_DATE))),
-        
-        // Playoff endpoints
-        ("playoff_bracket", Box::new(|| ingest::fetch_playoff_bracket(TEST_PLAYOFF_YEAR))),
-        ("playoff_series_schedule", Box::new(|| ingest::fetch_playoff_series_schedule(TEST_SEASON, TEST_SERIES_LETTER))),
-        ("playoff_series_carousel", Box::new(|| ingest::fetch_playoff_series_carousel(TEST_PLAYOFF_SEASON))),
-        ("playoff_series_metadata", Box::new(|| ingest::fetch_playoff_series_metadata(TEST_PLAYOFF_YEAR, TEST_SERIES_LETTER))),
-        
-        // Season endpoints
-        ("season_all", Box::new(|| ingest::fetch_season_all())),
-        
-        // Draft endpoints
-        ("draft_current_rankings", Box::new(|| ingest::fetch_draft_current_rankings())),
-        ("draft_tracker_now", Box::new(|| ingest::fetch_draft_tracker_now())),
-        ("draft_picks_now", Box::new(|| ingest::fetch_draft_picks_now())),
-        ("draft_picks", Box::new(|| ingest::fetch_draft_picks(TEST_DRAFT_YEAR))),
-    ];
+    println!("Testing all {} registered endpoints", all_endpoints.len());
     
-    for (name, test_fn) in &tests {
-        let result = test_endpoint(name, test_fn);
-        *results.entry(result).or_insert(0) += 1;
+    for endpoint in all_endpoints {
+        if endpoint.implemented {
+            let result = test_endpoint_by_name(endpoint.name);
+            *results.entry(result).or_insert(0) += 1;
+        } else {
+            println!("⏩ {} - Skipping unimplemented endpoint", endpoint.name);
+        }
     }
     
-    print_summary(&results, tests.len());
+    print_summary(&results, all_endpoints.len());
 } 

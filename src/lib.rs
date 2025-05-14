@@ -4,6 +4,8 @@ pub mod cache;
 pub mod ingest;
 pub mod inspect;
 pub mod transform;
+pub mod endpoints;
+pub mod cli_builder;
 
 // Re-export commonly used items
 pub use api_urls::*; 
