@@ -11,6 +11,7 @@ const TEST_DATE: &str = "2024-02-15";    // A date in the 2023-2024 season
 const TEST_EVENT_ID: &str = "401";       // An event ID for a goal
 const TEST_DRAFT_YEAR: &str = "2023";    // 2023 draft
 const TEST_PLAYOFF_YEAR: &str = "2024";  // 2024 playoffs
+const TEST_PLAYOFF_SEASON: &str = "20232024"; // 2023-2024 playoff season
 const TEST_SERIES_LETTER: &str = "a";    // Series letter for playoff series
 
 // Type alias for closure
@@ -146,8 +147,13 @@ fn test_team_endpoints() {
         ("team_stats_by_season", Box::new(|| ingest::fetch_team_stats_by_season(TEST_TEAM_CODE, TEST_SEASON, TEST_GAME_TYPE))),
         ("team_standings_now", Box::new(|| ingest::fetch_team_standings_now())),
         ("team_standings_date", Box::new(|| ingest::fetch_team_standings_date(TEST_DATE))),
+        ("team_standings_season", Box::new(|| ingest::fetch_team_standings_season(TEST_SEASON))),
         ("team_roster_now", Box::new(|| ingest::fetch_team_roster_now(TEST_TEAM_CODE))),
         ("team_roster_season", Box::new(|| ingest::fetch_team_roster_season(TEST_TEAM_CODE, TEST_SEASON))),
+        ("team_prospects", Box::new(|| ingest::fetch_team_prospects(TEST_TEAM_CODE))),
+        ("team_schedule_now", Box::new(|| ingest::fetch_team_schedule_now(TEST_TEAM_CODE))),
+        ("team_schedule_season", Box::new(|| ingest::fetch_team_schedule_season(TEST_TEAM_CODE, TEST_SEASON))),
+        ("team_schedule_month", Box::new(|| ingest::fetch_team_schedule_month(TEST_TEAM_CODE, TEST_DATE))),
     ];
     
     for (name, test_fn) in &tests {
@@ -243,8 +249,13 @@ fn test_all_endpoints() {
         ("team_stats_by_season", Box::new(|| ingest::fetch_team_stats_by_season(TEST_TEAM_CODE, TEST_SEASON, TEST_GAME_TYPE))),
         ("team_standings_now", Box::new(|| ingest::fetch_team_standings_now())),
         ("team_standings_date", Box::new(|| ingest::fetch_team_standings_date(TEST_DATE))),
+        ("team_standings_season", Box::new(|| ingest::fetch_team_standings_season(TEST_SEASON))),
         ("team_roster_now", Box::new(|| ingest::fetch_team_roster_now(TEST_TEAM_CODE))),
         ("team_roster_season", Box::new(|| ingest::fetch_team_roster_season(TEST_TEAM_CODE, TEST_SEASON))),
+        ("team_prospects", Box::new(|| ingest::fetch_team_prospects(TEST_TEAM_CODE))),
+        ("team_schedule_now", Box::new(|| ingest::fetch_team_schedule_now(TEST_TEAM_CODE))),
+        ("team_schedule_season", Box::new(|| ingest::fetch_team_schedule_season(TEST_TEAM_CODE, TEST_SEASON))),
+        ("team_schedule_month", Box::new(|| ingest::fetch_team_schedule_month(TEST_TEAM_CODE, TEST_DATE))),
         
         // Schedule endpoints
         ("schedule_now", Box::new(|| ingest::fetch_schedule_now())),
