@@ -511,24 +511,13 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
         },
         Endpoint {
             name: "team_standings_season",
-            url: "https://api-web.nhle.com/v1/standings/{season}",
-            description: "Fetch standings for a specific season",
+            url: "https://api-web.nhle.com/v1/standings-season",
+            description: "Fetch standings for all seasons",
             data_type: DataType::Teams,
             implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "season",
-                    description: "The season (format: YYYYYYYY, e.g., 20232024)",
-                    required: true,
-                    example: "20232024",
-                },
-            ],
-            test_params: {
-                let mut map = HashMap::new();
-                map.insert("season", "20232024");
-                map
-            },
-            example: "pucksdata team standings-season 20232024",
+            parameters: vec![],
+            test_params: HashMap::new(),
+            example: "pucksdata team standings-season",
         },
         Endpoint {
             name: "team_roster_now",
@@ -581,7 +570,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
         },
         Endpoint {
             name: "team_prospects",
-            url: "https://api-web.nhle.com/v1/roster-prospects/{team_code}",
+            url: "https://api-web.nhle.com/v1/prospects/{team_code}",
             description: "Fetch team prospects",
             data_type: DataType::Teams,
             implemented: true,
@@ -623,7 +612,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
         },
         Endpoint {
             name: "team_schedule_season",
-            url: "https://api-web.nhle.com/v1/club-schedule/{team_code}/season/{season}",
+            url: "https://api-web.nhle.com/v1/club-schedule-season/{team_code}/{season}",
             description: "Fetch team schedule for a specific season",
             data_type: DataType::Teams,
             implemented: true,

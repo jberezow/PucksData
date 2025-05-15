@@ -14,13 +14,13 @@ pub const TEAM_CURRENT_STATS_API_URL: &str = "https://api-web.nhle.com/v1/club-s
 pub const TEAM_STATS_BY_SEASON_API_URL: &str = "https://api-web.nhle.com/v1/club-stats/{team_code}/{season}/{game_type}";
 pub const TEAM_STANDINGS_API_URL: &str = "https://api-web.nhle.com/v1/standings/now";
 pub const TEAM_STANDINGS_BY_DATE_API_URL: &str = "https://api-web.nhle.com/v1/standings/{date}";
-pub const TEAM_STANDINGS_SEASON_API_URL: &str = "https://api-web.nhle.com/v1/standings/{season}"; // Needs testing
+pub const TEAM_STANDINGS_SEASON_API_URL: &str = "https://api-web.nhle.com/v1/standings-season";
 pub const TEAM_ROSTER_NOW_API_URL: &str = "https://api-web.nhle.com/v1/roster/{team_code}/current";
 pub const TEAM_ROSTER_SEASON_API_URL: &str = "https://api-web.nhle.com/v1/roster/{team_code}/{season}";
-pub const TEAM_PROSPECTS_API_URL: &str = "https://api-web.nhle.com/v1/roster-prospects/{team_code}"; // Needs testing
-pub const TEAM_SCHEDULE_NOW_API_URL: &str = "https://api-web.nhle.com/v1/club-schedule/{team_code}/week/now"; // Needs testing
-pub const TEAM_SCHEDULE_SEASON_API_URL: &str = "https://api-web.nhle.com/v1/club-schedule/{team_code}/season/{season}"; // Needs testing
-pub const TEAM_SCHEDULE_MONTH_API_URL: &str = "https://api-web.nhle.com/v1/club-schedule/{team_code}/month/{date}"; // Needs testing
+pub const TEAM_PROSPECTS_API_URL: &str = "https://api-web.nhle.com/v1/prospects/{team_code}";
+pub const TEAM_SCHEDULE_NOW_API_URL: &str = "https://api-web.nhle.com/v1/club-schedule-season/{team_code}/week/now";
+pub const TEAM_SCHEDULE_SEASON_API_URL: &str = "https://api-web.nhle.com/v1/club-schedule-season/{team_code}/{season}";
+pub const TEAM_SCHEDULE_MONTH_API_URL: &str = "https://api-web.nhle.com/v1/club-schedule/{team_code}/month/{date}";
 
 // League schedule endpoints
 pub const SCHEDULE_NOW_API_URL: &str = "https://api-web.nhle.com/v1/schedule/now";
@@ -34,7 +34,7 @@ pub const GAME_ALL_GAMES_API_URL: &str = "https://api.nhle.com/stats/rest/en/gam
 pub const GAME_SCORES_NOW_API_URL: &str = "https://api-web.nhle.com/v1/score/now";
 pub const GAME_SCORES_DATE_API_URL: &str = "https://api-web.nhle.com/v1/score/{date}";
 pub const GAME_CONTENT_API_URL: &str = "https://api-web.nhle.com/v1/gamecenter/{game_id}/landing";
-pub const GAME_GOAL_REPLAY_API_URL: &str = "https://api-web.nhle.com/v1/ppt-replay/goal/{game_id}/{event_id}"; // Needs testing
+pub const GAME_GOAL_REPLAY_API_URL: &str = "https://api-web.nhle.com/v1/ppt-replay/goal/{game_id}/{event_id}";
 
 // Playoff endpoints
 pub const PLAYOFF_BRACKET_API_URL: &str = "https://api-web.nhle.com/v1/playoff-bracket/{year}";

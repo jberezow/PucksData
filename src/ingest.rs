@@ -216,24 +216,3 @@ fn cleanup_empty_directories(file_path: &PathBuf) {
         }
     }
 }
-
-// Helper functions to make API calls easier (examples)
-
-pub fn fetch_game_story(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    fetch_endpoint("game_story", &[("game_id", game_id)])
-}
-
-pub fn fetch_game_boxscore(game_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    fetch_endpoint("game_boxscore", &[("game_id", game_id)])
-}
-
-pub fn fetch_player_summary(player_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    fetch_endpoint("player_summary", &[("player_id", player_id)])
-}
-
-pub fn fetch_team_current_stats(team_code: &str) -> Result<(), Box<dyn std::error::Error>> {
-    fetch_endpoint("team_current_stats", &[("team_code", team_code)])
-}
-
-// These simplified wrapper functions can be added as needed for all endpoints
-// They make the API more convenient to use while keeping the implementation DRY 

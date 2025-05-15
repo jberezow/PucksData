@@ -134,7 +134,38 @@ fn build_players_commands() -> Command {
         Command::new("all")
             .about("Fetch all players data")
     );
+
+    cmd = cmd.subcommand(
+        Command::new("game-log")
+            .about("Fetch player game log for a specific season and game type")
+            .arg(Arg::new("player_id")
+                .help("The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)")
+                .required(true)
+                .value_name("PLAYER_ID"))
+            .arg(Arg::new("season")
+                .help("The season (format: YYYYYYYY, e.g., 20232024)")
+                .required(true)
+                .value_name("SEASON"))
+            .arg(Arg::new("game_type")
+                .help("The game type (e.g., 2 for regular season, 3 for playoffs)")
+                .required(true)
+                .value_name("GAME_TYPE"))
+    );
     
+    cmd = cmd.subcommand(
+        Command::new("game-log-now")
+            .about("Fetch player game log for the current season")
+            .arg(Arg::new("player_id")
+                .help("The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)")
+                .required(true)
+                .value_name("PLAYER_ID"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("spotlight")
+            .about("Fetch player spotlight data")
+    );
+
     cmd
 }
 
@@ -153,8 +184,105 @@ fn build_teams_commands() -> Command {
     );
     
     cmd = cmd.subcommand(
+        Command::new("stats-by-season")
+            .about("Fetch team statistics for a specific season and game type")
+            .arg(Arg::new("team_code")
+                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
+                .required(true)
+                .value_name("TEAM_CODE"))
+            .arg(Arg::new("season")
+                .help("The season (format: YYYYYYYY, e.g., 20232024)")
+                .required(true)
+                .value_name("SEASON"))
+            .arg(Arg::new("game_type")
+                .help("The game type (e.g., 2 for regular season, 3 for playoffs)")
+                .required(true)
+                .value_name("GAME_TYPE"))
+    );
+    
+    cmd = cmd.subcommand(
         Command::new("standings-now")
             .about("Fetch current standings")
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("standings-by-date")
+            .about("Fetch standings by date")
+            .arg(Arg::new("date")
+                .help("The date (format: YYYY-MM-DD, e.g., 2024-02-15)")
+                .required(true)
+                .value_name("DATE"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("standings-season")
+            .about("Fetch standings for a specific season")
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("roster-now")
+            .about("Fetch current team roster")
+            .arg(Arg::new("team_code")
+                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
+                .required(true)
+                .value_name("TEAM_CODE"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("roster-season")
+            .about("Fetch team roster for a specific season")
+            .arg(Arg::new("team_code")
+                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
+                .required(true)
+                .value_name("TEAM_CODE"))
+            .arg(Arg::new("season")
+                .help("The season (format: YYYYYYYY, e.g., 20232024)")
+                .required(true)
+                .value_name("SEASON"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("prospects")
+            .about("Fetch team prospects")
+            .arg(Arg::new("team_code")
+                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
+                .required(true)
+                .value_name("TEAM_CODE"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("schedule-now")
+            .about("Fetch current team schedule")
+            .arg(Arg::new("team_code")
+                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
+                .required(true)
+                .value_name("TEAM_CODE"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("schedule-season")
+            .about("Fetch team schedule for a specific season")
+            .arg(Arg::new("team_code")
+                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
+                .required(true)
+                .value_name("TEAM_CODE"))
+            .arg(Arg::new("season")
+                .help("The season (format: YYYYYYYY, e.g., 20232024)")
+                .required(true)
+                .value_name("SEASON"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("schedule-month")
+            .about("Fetch team schedule for a specific month")
+            .arg(Arg::new("team_code")
+                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
+                .required(true)
+                .value_name("TEAM_CODE"))
+            .arg(Arg::new("date")
+                .help("The date (format: YYYY-MM-DD, e.g., 2024-02-15)")
+                .required(true)
+                .value_name("DATE"))
     );
     
     cmd
@@ -196,6 +324,41 @@ fn build_playoff_commands() -> Command {
                 .value_name("YEAR"))
     );
     
+    cmd = cmd.subcommand(
+        Command::new("series-schedule")
+            .about("Fetch playoff series schedule")
+            .arg(Arg::new("season")
+                .help("The season (format: YYYYYYYY, e.g., 20232024)")
+                .required(true)
+                .value_name("SEASON"))
+            .arg(Arg::new("letter")
+                .help("The series letter (A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P)")
+                .required(true)
+                .value_name("LETTER"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("series-carousel")
+            .about("Fetch playoff series carousel")
+            .arg(Arg::new("season")
+                .help("The season (format: YYYYYYYY, e.g., 20232024)")
+                .required(true)
+                .value_name("SEASON"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("series-metadata")
+            .about("Fetch playoff series metadata")
+            .arg(Arg::new("year")
+                .help("The year (format: YYYY, e.g., 2023)")
+                .required(true)
+                .value_name("YEAR"))
+            .arg(Arg::new("letter")
+                .help("The series letter (A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P)")
+                .required(true)
+                .value_name("LETTER"))
+    );
+    
     cmd
 }
 
@@ -207,6 +370,25 @@ fn build_draft_commands() -> Command {
     cmd = cmd.subcommand(
         Command::new("current-rankings")
             .about("Fetch current draft rankings")
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("tracker-now")
+            .about("Fetch current draft tracker")
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("picks-now")
+            .about("Fetch current draft picks")
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("picks")
+            .about("Fetch draft picks for a specific year")
+            .arg(Arg::new("year")
+                .help("The year (format: YYYY, e.g., 2023)")
+                .required(true)
+                .value_name("YEAR"))
     );
     
     cmd
