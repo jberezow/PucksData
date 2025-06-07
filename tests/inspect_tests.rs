@@ -35,7 +35,6 @@ fn inspect_game_endpoints() {
         ("game_content", Box::new(|| inspect::inspect_keys("games", "content", TEST_GAME_ID))),
         ("game_goal_replay", Box::new(|| inspect::inspect_keys("games", "goal_replay", &format!("{}/{}", TEST_GAME_ID, TEST_EVENT_ID)))),
         ("game_odds", Box::new(|| inspect::inspect_keys("games", "odds", TEST_GAME_ID))),
-        ("game_scores_now", Box::new(|| inspect::inspect_keys("games", "scores_now", ""))),
         ("game_scores_date", Box::new(|| inspect::inspect_keys("games", "scores_date", TEST_DATE))),
     ];
     
@@ -49,7 +48,6 @@ fn inspect_player_endpoints() {
     let tests: Vec<(&str, InspectFn)> = vec![
         ("player_summary", Box::new(|| inspect::inspect_keys("players", "summary", TEST_PLAYER_ID))),
         ("player_game_log", Box::new(|| inspect::inspect_keys("players", "game_log", &format!("{}/{}", TEST_PLAYER_ID, TEST_SEASON)))),
-        ("player_game_log_now", Box::new(|| inspect::inspect_keys("players", "game_log_now", TEST_PLAYER_ID))),
         ("player_spotlight", Box::new(|| inspect::inspect_keys("players", "spotlight", ""))),
     ];
     
@@ -62,11 +60,9 @@ fn inspect_player_endpoints() {
 fn inspect_skater_and_goalie_endpoints() {
     let tests: Vec<(&str, InspectFn)> = vec![
         // Skater endpoints
-        ("skater_leaders_now", Box::new(|| inspect::inspect_keys("skaters", "leaders_now", ""))),
         ("skater_leaders", Box::new(|| inspect::inspect_keys("skaters", "leaders", &format!("{}/{}", TEST_SEASON, TEST_GAME_TYPE)))),
         
         // Goalie endpoints
-        ("goalie_leaders_now", Box::new(|| inspect::inspect_keys("goalies", "leaders_now", ""))),
         ("goalie_leaders", Box::new(|| inspect::inspect_keys("goalies", "leaders", &format!("{}/{}", TEST_SEASON, TEST_GAME_TYPE)))),
     ];
     
@@ -80,9 +76,7 @@ fn inspect_team_endpoints() {
     let tests: Vec<(&str, InspectFn)> = vec![
         ("team_current_stats", Box::new(|| inspect::inspect_keys("teams", "current_stats", TEST_TEAM_CODE))),
         ("team_stats_by_season", Box::new(|| inspect::inspect_keys("teams", "season_stats", &format!("{}/{}/{}", TEST_TEAM_CODE, TEST_SEASON, TEST_GAME_TYPE)))),
-        ("team_standings_now", Box::new(|| inspect::inspect_keys("teams", "standings_now", ""))),
         ("team_standings_date", Box::new(|| inspect::inspect_keys("teams", "standings_date", TEST_DATE))),
-        ("team_roster_now", Box::new(|| inspect::inspect_keys("teams", "roster_now", TEST_TEAM_CODE))),
         ("team_roster_season", Box::new(|| inspect::inspect_keys("teams", "roster_season", &format!("{}/{}", TEST_TEAM_CODE, TEST_SEASON)))),
     ];
     
@@ -131,29 +125,23 @@ fn inspect_all_endpoints() {
         ("game_content", Box::new(|| inspect::inspect_keys("games", "content", TEST_GAME_ID))),
         ("game_goal_replay", Box::new(|| inspect::inspect_keys("games", "goal_replay", &format!("{}/{}", TEST_GAME_ID, TEST_EVENT_ID)))),
         ("game_odds", Box::new(|| inspect::inspect_keys("games", "odds", TEST_GAME_ID))),
-        ("game_scores_now", Box::new(|| inspect::inspect_keys("games", "scores_now", ""))),
         ("game_scores_date", Box::new(|| inspect::inspect_keys("games", "scores_date", TEST_DATE))),
         
         // Player endpoints
         ("player_summary", Box::new(|| inspect::inspect_keys("players", "summary", TEST_PLAYER_ID))),
         ("player_game_log", Box::new(|| inspect::inspect_keys("players", "game_log", &format!("{}/{}", TEST_PLAYER_ID, TEST_SEASON)))),
-        ("player_game_log_now", Box::new(|| inspect::inspect_keys("players", "game_log_now", TEST_PLAYER_ID))),
         ("player_spotlight", Box::new(|| inspect::inspect_keys("players", "spotlight", ""))),
         
         // Skater endpoints
-        ("skater_leaders_now", Box::new(|| inspect::inspect_keys("skaters", "leaders_now", ""))),
         ("skater_leaders", Box::new(|| inspect::inspect_keys("skaters", "leaders", &format!("{}/{}", TEST_SEASON, TEST_GAME_TYPE)))),
         
         // Goalie endpoints
-        ("goalie_leaders_now", Box::new(|| inspect::inspect_keys("goalies", "leaders_now", ""))),
         ("goalie_leaders", Box::new(|| inspect::inspect_keys("goalies", "leaders", &format!("{}/{}", TEST_SEASON, TEST_GAME_TYPE)))),
         
         // Team endpoints
         ("team_current_stats", Box::new(|| inspect::inspect_keys("teams", "current_stats", TEST_TEAM_CODE))),
         ("team_stats_by_season", Box::new(|| inspect::inspect_keys("teams", "season_stats", &format!("{}/{}/{}", TEST_TEAM_CODE, TEST_SEASON, TEST_GAME_TYPE)))),
-        ("team_standings_now", Box::new(|| inspect::inspect_keys("teams", "standings_now", ""))),
         ("team_standings_date", Box::new(|| inspect::inspect_keys("teams", "standings_date", TEST_DATE))),
-        ("team_roster_now", Box::new(|| inspect::inspect_keys("teams", "roster_now", TEST_TEAM_CODE))),
         ("team_roster_season", Box::new(|| inspect::inspect_keys("teams", "roster_season", &format!("{}/{}", TEST_TEAM_CODE, TEST_SEASON)))),
         
         // Schedule endpoints

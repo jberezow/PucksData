@@ -3,16 +3,16 @@ use pucksdata::endpoints::{get_endpoint, get_all_endpoints};
 use std::collections::HashMap;
 
 // Test constants
-const TEST_GAME_ID: &str = "2023020001"; // A known game ID from the 2023-2024 season
-const TEST_PLAYER_ID: &str = "8478402";  // Connor McDavid
-const TEST_TEAM_CODE: &str = "EDM";      // Edmonton Oilers
-const TEST_SEASON: &str = "20232024";    // 2023-2024 season
-const TEST_GAME_TYPE: &str = "2";        // Regular season
-const TEST_DATE: &str = "2024-02-15";    // A date in the 2023-2024 season
-const TEST_EVENT_ID: &str = "401";       // An event ID for a goal
-const TEST_PLAYOFF_YEAR: &str = "2024";  // 2024 playoffs
+const TEST_GAME_ID: &str = "2023020001";      // A known game ID from the 2023-2024 season
+const TEST_PLAYER_ID: &str = "8478402";       // Connor McDavid
+const TEST_TEAM_CODE: &str = "EDM";           // Edmonton Oilers
+const TEST_SEASON: &str = "20232024";         // 2023-2024 season
+const TEST_GAME_TYPE: &str = "2";             // Regular season
+const TEST_DATE: &str = "2024-02-15";         // A date in the 2023-2024 season
+const TEST_EVENT_ID: &str = "401";            // An event ID for a goal
+const TEST_PLAYOFF_YEAR: &str = "2024";       // 2024 playoffs
 const TEST_PLAYOFF_SEASON: &str = "20232024"; // 2023-2024 playoff season
-const TEST_SERIES_LETTER: &str = "a";    // Series letter for playoff series
+const TEST_SERIES_LETTER: &str = "a";         // Series letter for playoff series
 
 /// Enum to track test results
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -113,7 +113,6 @@ fn test_game_endpoints() {
         "game_all_games",
         "game_content",
         "game_goal_replay",
-        "game_scores_now",
         "game_scores_date",
     ];
     
@@ -133,7 +132,6 @@ fn test_player_endpoints() {
         "player_summary",
         "player_all",
         "player_game_log",
-        "player_game_log_now",
         "player_spotlight",
     ];
     
@@ -151,11 +149,9 @@ fn test_skater_and_goalie_endpoints() {
     
     let tests = vec![
         // Skater endpoints
-        "skater_stats_leaders_now",
         "skater_stats_leaders",
         
         // Goalie endpoints
-        "goalie_stats_leaders_now",
         "goalie_stats_leaders",
     ];
     
@@ -174,13 +170,10 @@ fn test_team_endpoints() {
     let tests = vec![
         "team_current_stats",
         "team_stats_by_season",
-        "team_standings_now",
         "team_standings_by_date",
         "team_standings_season",
-        "team_roster_now",
         "team_roster_season",
         "team_prospects",
-        "team_schedule_now",
         "team_schedule_season",
         "team_schedule_month",
     ];

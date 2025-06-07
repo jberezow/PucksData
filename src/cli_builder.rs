@@ -97,12 +97,7 @@ fn build_games_commands() -> Command {
                 .required(true)
                 .value_name("EVENT_ID"))
     );
-    
-    cmd = cmd.subcommand(
-        Command::new("scores-now")
-            .about("Fetch current scores")
-    );
-    
+
     cmd = cmd.subcommand(
         Command::new("scores-date")
             .about("Fetch scores by date")
@@ -150,20 +145,6 @@ fn build_players_commands() -> Command {
                 .required(true)
                 .value_name("GAME_TYPE"))
     );
-    
-    cmd = cmd.subcommand(
-        Command::new("game-log-now")
-            .about("Fetch player game log for the current season")
-            .arg(Arg::new("player_id")
-                .help("The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)")
-                .required(true)
-                .value_name("PLAYER_ID"))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("spotlight")
-            .about("Fetch player spotlight data")
-    );
 
     cmd
 }
@@ -200,11 +181,6 @@ fn build_teams_commands() -> Command {
     );
     
     cmd = cmd.subcommand(
-        Command::new("standings-now")
-            .about("Fetch current standings")
-    );
-    
-    cmd = cmd.subcommand(
         Command::new("standings-by-date")
             .about("Fetch standings by date")
             .arg(Arg::new("date")
@@ -216,15 +192,6 @@ fn build_teams_commands() -> Command {
     cmd = cmd.subcommand(
         Command::new("standings-season")
             .about("Fetch standings for a specific season")
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("roster-now")
-            .about("Fetch current team roster")
-            .arg(Arg::new("team_code")
-                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
-                .required(true)
-                .value_name("TEAM_CODE"))
     );
     
     cmd = cmd.subcommand(
@@ -243,15 +210,6 @@ fn build_teams_commands() -> Command {
     cmd = cmd.subcommand(
         Command::new("prospects")
             .about("Fetch team prospects")
-            .arg(Arg::new("team_code")
-                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
-                .required(true)
-                .value_name("TEAM_CODE"))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("schedule-now")
-            .about("Fetch current team schedule")
             .arg(Arg::new("team_code")
                 .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
                 .required(true)
@@ -367,11 +325,6 @@ fn build_skaters_commands() -> Command {
         .about("Skater statistics-related data operations");
     
     cmd = cmd.subcommand(
-        Command::new("leaders-now")
-            .about("Fetch current skater stats leaders")
-    );
-    
-    cmd = cmd.subcommand(
         Command::new("leaders")
             .about("Fetch skater stats leaders for a specific season and game type")
             .arg(Arg::new("season")
@@ -391,12 +344,7 @@ fn build_skaters_commands() -> Command {
 fn build_goalies_commands() -> Command {
     let mut cmd = Command::new("goalies")
         .about("Goalie statistics-related data operations");
-    
-    cmd = cmd.subcommand(
-        Command::new("leaders-now")
-            .about("Fetch current goalie stats leaders")
-    );
-    
+
     cmd = cmd.subcommand(
         Command::new("leaders")
             .about("Fetch goalie stats leaders for a specific season and game type")
