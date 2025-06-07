@@ -10,7 +10,6 @@ const TEST_SEASON: &str = "20232024";    // 2023-2024 season
 const TEST_GAME_TYPE: &str = "2";        // Regular season
 const TEST_DATE: &str = "2024-02-15";    // A date in the 2023-2024 season
 const TEST_EVENT_ID: &str = "401";       // An event ID for a goal
-const TEST_DRAFT_YEAR: &str = "2023";    // 2023 draft
 const TEST_PLAYOFF_YEAR: &str = "2024";  // 2024 playoffs
 const TEST_PLAYOFF_SEASON: &str = "20232024"; // 2023-2024 playoff season
 const TEST_SERIES_LETTER: &str = "a";    // Series letter for playoff series
@@ -50,7 +49,6 @@ fn test_endpoint_by_name(endpoint_name: &str) -> EndpointTestResult {
                 "game_type" => TEST_GAME_TYPE,
                 "date" => TEST_DATE,
                 "event_id" => TEST_EVENT_ID,
-                "year" => TEST_DRAFT_YEAR,
                 "letter" => TEST_SERIES_LETTER,
                 _ => {
                     println!("⚠️ {} - Unknown parameter: {}", endpoint_name, param.name);
@@ -209,29 +207,6 @@ fn test_schedule_and_playoff_endpoints() {
         "playoff_series_schedule",
         "playoff_series_carousel", 
         "playoff_series_metadata",
-    ];
-    
-    for endpoint_name in &tests {
-        let result = test_endpoint_by_name(endpoint_name);
-        *results.entry(result).or_insert(0) += 1;
-    }
-    
-    print_summary(&results, tests.len());
-}
-
-#[test]
-fn test_season_draft_endpoints() {
-    let mut results = HashMap::<EndpointTestResult, usize>::new();
-    
-    let tests = vec![
-        // Season endpoints
-        "season_all_seasons",
-        
-        // Draft endpoints
-        "draft_current_rankings",
-        "draft_tracker_now",
-        "draft_picks_now",
-        "draft_picks",
     ];
     
     for endpoint_name in &tests {

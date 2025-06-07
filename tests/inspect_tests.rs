@@ -9,7 +9,6 @@ const TEST_SEASON: &str = "20232024";    // 2023-2024 season
 const TEST_GAME_TYPE: &str = "2";        // Regular season
 const TEST_DATE: &str = "2024-02-15";    // A date in the 2023-2024 season
 const TEST_EVENT_ID: &str = "401";       // An event ID for a goal
-const TEST_DRAFT_YEAR: &str = "2023";    // 2023 draft
 
 // Type alias for inspection test function
 type InspectFn = Box<dyn Fn() -> Result<(), Box<dyn std::error::Error>>>;
@@ -110,16 +109,10 @@ fn inspect_schedule_and_playoff_endpoints() {
 }
 
 #[test]
-fn inspect_season_draft_endpoints() {
+fn inspect_season_endpoints() {
     let tests: Vec<(&str, InspectFn)> = vec![
         // Season endpoints
         ("season_all", Box::new(|| inspect::inspect_keys("seasons", "all", ""))),
-        
-        // Draft endpoints
-        ("draft_current_rankings", Box::new(|| inspect::inspect_keys("draft", "current_rankings", ""))),
-        ("draft_tracker_now", Box::new(|| inspect::inspect_keys("draft", "tracker_now", ""))),
-        ("draft_picks_now", Box::new(|| inspect::inspect_keys("draft", "picks_now", ""))),
-        ("draft_picks", Box::new(|| inspect::inspect_keys("draft", "picks", TEST_DRAFT_YEAR))),
     ];
     
     for (name, inspect_fn) in &tests {
@@ -173,12 +166,6 @@ fn inspect_all_endpoints() {
         
         // Season endpoints
         ("season_all", Box::new(|| inspect::inspect_keys("seasons", "all", ""))),
-        
-        // Draft endpoints
-        ("draft_current_rankings", Box::new(|| inspect::inspect_keys("draft", "current_rankings", ""))),
-        ("draft_tracker_now", Box::new(|| inspect::inspect_keys("draft", "tracker_now", ""))),
-        ("draft_picks_now", Box::new(|| inspect::inspect_keys("draft", "picks_now", ""))),
-        ("draft_picks", Box::new(|| inspect::inspect_keys("draft", "picks", TEST_DRAFT_YEAR))),
     ];
     
     println!("\n--- RUNNING ALL ENDPOINT INSPECTIONS ---");

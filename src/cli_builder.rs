@@ -15,7 +15,6 @@ pub fn build_cli() -> Command {
     app = app.subcommand(build_teams_commands());
     app = app.subcommand(build_schedule_commands());
     app = app.subcommand(build_playoff_commands());
-    app = app.subcommand(build_draft_commands());
     app = app.subcommand(build_skaters_commands());
     app = app.subcommand(build_goalies_commands());
     app = app.subcommand(build_seasons_commands());
@@ -362,38 +361,6 @@ fn build_playoff_commands() -> Command {
     cmd
 }
 
-/// Build commands for draft data
-fn build_draft_commands() -> Command {
-    let mut cmd = Command::new("draft")
-        .about("Draft-related data operations");
-    
-    cmd = cmd.subcommand(
-        Command::new("current-rankings")
-            .about("Fetch current draft rankings")
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("tracker-now")
-            .about("Fetch current draft tracker")
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("picks-now")
-            .about("Fetch current draft picks")
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("picks")
-            .about("Fetch draft picks for a specific year")
-            .arg(Arg::new("year")
-                .help("The year (format: YYYY, e.g., 2023)")
-                .required(true)
-                .value_name("YEAR"))
-    );
-    
-    cmd
-}
-
 /// Build commands for skaters data
 fn build_skaters_commands() -> Command {
     let mut cmd = Command::new("skaters")
@@ -475,7 +442,6 @@ pub fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Er
                 "teams" => DataType::Teams,
                 "schedule" => DataType::Schedule,
                 "playoffs" => DataType::Playoffs,
-                "draft" => DataType::Draft,
                 "skaters" => DataType::Skaters,
                 "goalies" => DataType::Goalies,
                 "seasons" => DataType::Seasons,
@@ -511,7 +477,6 @@ fn handle_data_type_command(data_type: DataType, matches: &ArgMatches) -> Result
                 "goalies" => "goalie",
                 "playoffs" => "playoff",
                 "seasons" => "season",
-                "draft" => "draft",
                 "schedule" => "schedule",
                 _ => data_type.as_str(),
             };
@@ -555,7 +520,6 @@ fn handle_inspect_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error
         "teams" => DataType::Teams,
         "schedule" => DataType::Schedule,
         "playoffs" => DataType::Playoffs,
-        "draft" => DataType::Draft,
         "skaters" => DataType::Skaters,
         "goalies" => DataType::Goalies,
         "seasons" => DataType::Seasons,
