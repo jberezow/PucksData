@@ -209,16 +209,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             example: "pucksdata game goal-replay 2023020001 401",
         },
         Endpoint {
-            name: "game_scores_now",
-            url: "https://api-web.nhle.com/v1/score/now",
-            description: "Fetch current scores",
-            data_type: DataType::Games,
-            implemented: true,
-            parameters: vec![],
-            test_params: HashMap::new(),
-            example: "pucksdata game scores-now",
-        },
-        Endpoint {
             name: "game_scores_date",
             url: "https://api-web.nhle.com/v1/score/{date}",
             description: "Fetch scores by date",
@@ -307,49 +297,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             },
             example: "pucksdata player game-log 8478402 20232024 2",
         },
-        Endpoint {
-            name: "player_game_log_now",
-            url: "https://api-web.nhle.com/v1/player/{player_id}/game-log/now",
-            description: "Fetch player game log for the current season",
-            data_type: DataType::Players,
-            implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "player_id",
-                    description: "The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)",
-                    required: true,
-                    example: "8478402",
-                },
-            ],
-            test_params: {
-                let mut map = HashMap::new();
-                map.insert("player_id", "8478402");
-                map
-            },
-            example: "pucksdata player game-log-now 8478402",
-        },
-        Endpoint {
-            name: "player_spotlight",
-            url: "https://api-web.nhle.com/v1/player-spotlight",
-            description: "Fetch player spotlight data",
-            data_type: DataType::Players,
-            implemented: true,
-            parameters: vec![],
-            test_params: HashMap::new(),
-            example: "pucksdata player spotlight",
-        },
-        
         // Skater statistics endpoints
-        Endpoint {
-            name: "skater_stats_leaders_now",
-            url: "https://api-web.nhle.com/v1/skater-stats-leaders/current",
-            description: "Fetch current skater stats leaders",
-            data_type: DataType::Skaters,
-            implemented: true,
-            parameters: vec![],
-            test_params: HashMap::new(),
-            example: "pucksdata skaters leaders-now",
-        },
         Endpoint {
             name: "skater_stats_leaders",
             url: "https://api-web.nhle.com/v1/skater-stats-leaders/{season}/{game_type}",
@@ -381,16 +329,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
         
         // Goalie statistics endpoints
         Endpoint {
-            name: "goalie_stats_leaders_now",
-            url: "https://api-web.nhle.com/v1/goalie-stats-leaders/current",
-            description: "Fetch current goalie stats leaders",
-            data_type: DataType::Goalies,
-            implemented: true,
-            parameters: vec![],
-            test_params: HashMap::new(),
-            example: "pucksdata goalies leaders-now",
-        },
-        Endpoint {
             name: "goalie_stats_leaders",
             url: "https://api-web.nhle.com/v1/goalie-stats-leaders/{season}/{game_type}",
             description: "Fetch goalie stats leaders for a specific season and game type",
@@ -420,27 +358,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
         },
         
         // Team endpoints
-        Endpoint {
-            name: "team_current_stats",
-            url: "https://api-web.nhle.com/v1/club-stats/{team_code}/now",
-            description: "Fetch current team statistics",
-            data_type: DataType::Teams,
-            implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "team_code",
-                    description: "The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)",
-                    required: true,
-                    example: "EDM",
-                },
-            ],
-            test_params: {
-                let mut map = HashMap::new();
-                map.insert("team_code", "EDM");
-                map
-            },
-            example: "pucksdata team current-stats EDM",
-        },
         Endpoint {
             name: "team_stats_by_season",
             url: "https://api-web.nhle.com/v1/club-stats/{team_code}/{season}/{game_type}",
@@ -477,16 +394,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             example: "pucksdata team stats-by-season EDM 20232024 2",
         },
         Endpoint {
-            name: "team_standings_now",
-            url: "https://api-web.nhle.com/v1/standings/now",
-            description: "Fetch current standings",
-            data_type: DataType::Teams,
-            implemented: true,
-            parameters: vec![],
-            test_params: HashMap::new(),
-            example: "pucksdata team standings-now",
-        },
-        Endpoint {
             name: "team_standings_by_date",
             url: "https://api-web.nhle.com/v1/standings/{date}",
             description: "Fetch standings by date",
@@ -516,27 +423,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             parameters: vec![],
             test_params: HashMap::new(),
             example: "pucksdata team standings-season",
-        },
-        Endpoint {
-            name: "team_roster_now",
-            url: "https://api-web.nhle.com/v1/roster/{team_code}/current",
-            description: "Fetch current team roster",
-            data_type: DataType::Teams,
-            implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "team_code",
-                    description: "The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)",
-                    required: true,
-                    example: "EDM",
-                },
-            ],
-            test_params: {
-                let mut map = HashMap::new();
-                map.insert("team_code", "EDM");
-                map
-            },
-            example: "pucksdata team roster-now EDM",
         },
         Endpoint {
             name: "team_roster_season",
@@ -586,27 +472,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map
             },
             example: "pucksdata team prospects EDM",
-        },
-        Endpoint {
-            name: "team_schedule_now",
-            url: "https://api-web.nhle.com/v1/club-schedule/{team_code}/week/now",
-            description: "Fetch current team schedule",
-            data_type: DataType::Teams,
-            implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "team_code",
-                    description: "The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)",
-                    required: true,
-                    example: "EDM",
-                },
-            ],
-            test_params: {
-                let mut map = HashMap::new();
-                map.insert("team_code", "EDM");
-                map
-            },
-            example: "pucksdata team schedule-now EDM",
         },
         Endpoint {
             name: "team_schedule_season",
