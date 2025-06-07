@@ -192,11 +192,6 @@ fn build_path_structure(endpoint: &Endpoint, params: &ApiParams, file_path: &mut
                 }
             }
         },
-        DataType::Draft => {
-            if let Some(year) = params.get_param("year") {
-                file_path.push(year);
-            }
-        },
         // Other data types don't need special handling
         _ => {}
     }

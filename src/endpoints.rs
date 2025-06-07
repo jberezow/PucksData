@@ -12,7 +12,6 @@ pub enum DataType {
     Schedule,
     Playoffs,
     Seasons,
-    Draft,
 }
 
 impl DataType {
@@ -26,7 +25,6 @@ impl DataType {
             DataType::Schedule => "schedule",
             DataType::Playoffs => "playoffs",
             DataType::Seasons => "seasons",
-            DataType::Draft => "draft",
         }
     }
 }
@@ -810,59 +808,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             parameters: vec![],
             test_params: HashMap::new(),
             example: "pucksdata seasons all",
-        },
-
-        // Draft endpoints
-        Endpoint {
-            name: "draft_current_rankings",
-            url: "https://api-web.nhle.com/v1/draft/rankings/now",
-            description: "Fetch current draft rankings",
-            data_type: DataType::Draft,
-            implemented: true,
-            parameters: vec![],
-            test_params: HashMap::new(),
-            example: "pucksdata draft current-rankings",
-        },
-        Endpoint {
-            name: "draft_tracker_now",
-            url: "https://api-web.nhle.com/v1/draft-tracker/picks/now",
-            description: "Fetch current draft tracker",
-            data_type: DataType::Draft,
-            implemented: true,
-            parameters: vec![],
-            test_params: HashMap::new(),
-            example: "pucksdata draft tracker-now",
-        },
-        Endpoint {
-            name: "draft_picks_now",
-            url: "https://api-web.nhle.com/v1/draft/picks/now",
-            description: "Fetch current draft picks",
-            data_type: DataType::Draft,
-            implemented: true,
-            parameters: vec![],
-            test_params: HashMap::new(),
-            example: "pucksdata draft picks-now",
-        },
-        Endpoint {
-            name: "draft_picks",
-            url: "https://api-web.nhle.com/v1/draft/picks/{year}/all",
-            description: "Fetch draft picks for a specific year",
-            data_type: DataType::Draft,
-            implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "year",
-                    description: "The year (format: YYYY, e.g., 2023)",
-                    required: true,
-                    example: "2023",
-                },
-            ],
-            test_params: {
-                let mut map = HashMap::new();
-                map.insert("year", "2023");
-                map
-            },
-            example: "pucksdata draft picks 2023",
         },
     ]
 }); 

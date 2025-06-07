@@ -3,10 +3,10 @@ pub const PLAYER_SUMMARY_API_URL: &str = "https://api-web.nhle.com/v1/player/{pl
 pub const PLAYER_ALL_PLAYERS_API_URL: &str = "https://api.nhle.com/stats/rest/en/players";
 pub const PLAYER_GAME_LOG_API_URL: &str = "https://api-web.nhle.com/v1/player/{player_id}/game-log/{season}/{game_type}";
 pub const PLAYER_GAME_LOG_NOW_API_URL: &str = "https://api-web.nhle.com/v1/player/{player_id}/game-log/now";
-pub const PLAYER_SPOTLIGHT_API_URL: &str = "https://api-web.nhle.com/v1/player-spotlight";
-pub const SKATER_STATS_LEADERS_NOW_API_URL: &str = "https://api-web.nhle.com/v1/skater-stats-leaders/current";
+pub const PLAYER_SPOTLIGHT_API_URL: &str = "https://api-web.nhle.com/v1/player-spotlight"; // Delete
+pub const SKATER_STATS_LEADERS_NOW_API_URL: &str = "https://api-web.nhle.com/v1/skater-stats-leaders/current"; // Delete
 pub const SKATER_STATS_LEADERS_API_URL: &str = "https://api-web.nhle.com/v1/skater-stats-leaders/{season}/{game_type}";
-pub const GOALIE_STATS_LEADERS_NOW_API_URL: &str = "https://api-web.nhle.com/v1/goalie-stats-leaders/current";
+pub const GOALIE_STATS_LEADERS_NOW_API_URL: &str = "https://api-web.nhle.com/v1/goalie-stats-leaders/current"; // Delete
 pub const GOALIE_STATS_LEADERS_API_URL: &str = "https://api-web.nhle.com/v1/goalie-stats-leaders/{season}/{game_type}";
 
 // Team endpoints
@@ -44,12 +44,6 @@ pub const PLAYOFF_SERIES_METADATA_API_URL: &str = "https://api-web.nhle.com/v1/m
 
 // Season endpoints
 pub const SEASON_ALL_SEASONS_API_URL: &str = "https://api-web.nhle.com/v1/season";
-
-// Draft endpoints
-pub const DRAFT_CURRENT_RANKINGS_API_URL: &str = "https://api-web.nhle.com/v1/draft/rankings/now";
-pub const DRAFT_TRACKER_NOW_API_URL: &str = "https://api-web.nhle.com/v1/draft-tracker/picks/now";
-pub const DRAFT_PICKS_NOW_API_URL: &str = "https://api-web.nhle.com/v1/draft/picks/now";
-pub const DRAFT_PICKS_API_URL: &str = "https://api-web.nhle.com/v1/draft/picks/{year}/all";
 
 pub fn get_url_template(data_type: &str, endpoint: &str) -> Option<&'static str> {
     match (data_type, endpoint) {
@@ -103,12 +97,6 @@ pub fn get_url_template(data_type: &str, endpoint: &str) -> Option<&'static str>
         
         // Seasons
         ("seasons", "all") => Some(SEASON_ALL_SEASONS_API_URL),
-        
-        // Draft
-        ("draft", "current_rankings") => Some(DRAFT_CURRENT_RANKINGS_API_URL),
-        ("draft", "tracker_now") => Some(DRAFT_TRACKER_NOW_API_URL),
-        ("draft", "picks_now") => Some(DRAFT_PICKS_NOW_API_URL),
-        ("draft", "picks") => Some(DRAFT_PICKS_API_URL),
         
         _ => None,
     }
