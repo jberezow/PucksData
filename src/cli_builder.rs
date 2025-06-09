@@ -2,6 +2,7 @@ use clap::{Command, Arg, ArgMatches};
 use crate::endpoints::{DataType, Endpoint, get_endpoint, get_all_endpoints};
 use crate::ingest;
 use crate::inspect;
+use crate::db::DbPool;
 
 /// Build the top-level CLI application
 pub fn build_cli() -> Command {
@@ -45,27 +46,23 @@ fn build_games_commands() -> Command {
         Command::new("story")
             .about("Fetch a game story by game ID")
             .arg(Arg::new("game_id")
-                .help("The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)")
-                .required(true)
-                .value_name("GAME_ID"))
+                .help("The NHL game ID")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
         Command::new("boxscore")
             .about("Fetch a game boxscore by game ID")
             .arg(Arg::new("game_id")
-                .help("The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)")
-                .required(true)
-                .value_name("GAME_ID"))
+                .required(true))
     );
     
     cmd = cmd.subcommand(
         Command::new("play-by-play")
             .about("Fetch play-by-play data by game ID")
             .arg(Arg::new("game_id")
-                .help("The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)")
-                .required(true)
-                .value_name("GAME_ID"))
+                .help("The NHL game ID")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
@@ -77,31 +74,27 @@ fn build_games_commands() -> Command {
         Command::new("content")
             .about("Fetch game content")
             .arg(Arg::new("game_id")
-                .help("The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)")
-                .required(true)
-                .value_name("GAME_ID"))
+                .help("The NHL game ID")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
         Command::new("goal-replay")
             .about("Fetch goal replay")
             .arg(Arg::new("game_id")
-                .help("The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)")
-                .required(true)
-                .value_name("GAME_ID"))
+                .help("The NHL game ID")
+                .required(true))
             .arg(Arg::new("event_id")
-                .help("The event ID for the goal (format: numeric, e.g., 401)")
-                .required(true)
-                .value_name("EVENT_ID"))
+                .help("The event ID for the goal")
+                .required(true))
     );
 
     cmd = cmd.subcommand(
         Command::new("scores-date")
             .about("Fetch scores by date")
             .arg(Arg::new("date")
-                .help("The date (format: YYYY-MM-DD, e.g., 2024-02-15)")
-                .required(true)
-                .value_name("DATE"))
+                .help("The date (YYYY-MM-DD)")
+                .required(true))
     );
     
     cmd
@@ -116,9 +109,8 @@ fn build_players_commands() -> Command {
         Command::new("summary")
             .about("Fetch a player summary by player ID")
             .arg(Arg::new("player_id")
-                .help("The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)")
-                .required(true)
-                .value_name("PLAYER_ID"))
+                .help("The NHL player ID")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
@@ -130,17 +122,14 @@ fn build_players_commands() -> Command {
         Command::new("game-log")
             .about("Fetch player game log for a specific season and game type")
             .arg(Arg::new("player_id")
-                .help("The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)")
-                .required(true)
-                .value_name("PLAYER_ID"))
+                .help("The NHL player ID")
+                .required(true))
             .arg(Arg::new("season")
-                .help("The season (format: YYYYYYYY, e.g., 20232024)")
-                .required(true)
-                .value_name("SEASON"))
+                .help("The season (YYYYYYYY)")
+                .required(true))
             .arg(Arg::new("game_type")
-                .help("The game type (e.g., 2 for regular season, 3 for playoffs)")
-                .required(true)
-                .value_name("GAME_TYPE"))
+                .help("The game type (2=Reg, 3=Post)")
+                .required(true))
     );
 
     cmd
@@ -155,35 +144,30 @@ fn build_teams_commands() -> Command {
         Command::new("current-stats")
             .about("Fetch current team statistics")
             .arg(Arg::new("team_code")
-                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
-                .required(true)
-                .value_name("TEAM_CODE"))
+                .help("The NHL team code (e.g. TOR)")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
         Command::new("stats-by-season")
             .about("Fetch team statistics for a specific season and game type")
             .arg(Arg::new("team_code")
-                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
-                .required(true)
-                .value_name("TEAM_CODE"))
+                .help("The NHL team code")
+                .required(true))
             .arg(Arg::new("season")
-                .help("The season (format: YYYYYYYY, e.g., 20232024)")
-                .required(true)
-                .value_name("SEASON"))
+                .help("The season (YYYYYYYY)")
+                .required(true))
             .arg(Arg::new("game_type")
-                .help("The game type (e.g., 2 for regular season, 3 for playoffs)")
-                .required(true)
-                .value_name("GAME_TYPE"))
+                .help("The game type (2=Reg, 3=Post)")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
         Command::new("standings-by-date")
             .about("Fetch standings by date")
             .arg(Arg::new("date")
-                .help("The date (format: YYYY-MM-DD, e.g., 2024-02-15)")
-                .required(true)
-                .value_name("DATE"))
+                .help("The date (YYYY-MM-DD)")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
@@ -195,48 +179,41 @@ fn build_teams_commands() -> Command {
         Command::new("roster-season")
             .about("Fetch team roster for a specific season")
             .arg(Arg::new("team_code")
-                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
-                .required(true)
-                .value_name("TEAM_CODE"))
+                .help("The NHL team code")
+                .required(true))
             .arg(Arg::new("season")
-                .help("The season (format: YYYYYYYY, e.g., 20232024)")
-                .required(true)
-                .value_name("SEASON"))
+                .help("The season (YYYYYYYY)")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
         Command::new("prospects")
             .about("Fetch team prospects")
             .arg(Arg::new("team_code")
-                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
-                .required(true)
-                .value_name("TEAM_CODE"))
+                .help("The NHL team code")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
         Command::new("schedule-season")
             .about("Fetch team schedule for a specific season")
             .arg(Arg::new("team_code")
-                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
-                .required(true)
-                .value_name("TEAM_CODE"))
+                .help("The NHL team code")
+                .required(true))
             .arg(Arg::new("season")
-                .help("The season (format: YYYYYYYY, e.g., 20232024)")
-                .required(true)
-                .value_name("SEASON"))
+                .help("The season (YYYYYYYY)")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
         Command::new("schedule-month")
             .about("Fetch team schedule for a specific month")
             .arg(Arg::new("team_code")
-                .help("The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)")
-                .required(true)
-                .value_name("TEAM_CODE"))
+                .help("The NHL team code")
+                .required(true))
             .arg(Arg::new("date")
-                .help("The date (format: YYYY-MM-DD, e.g., 2024-02-15)")
-                .required(true)
-                .value_name("DATE"))
+                .help("The date (YYYY-MM-DD)")
+                .required(true))
     );
     
     cmd
@@ -248,17 +225,11 @@ fn build_schedule_commands() -> Command {
         .about("Schedule-related data operations");
     
     cmd = cmd.subcommand(
-        Command::new("now")
-            .about("Fetch current schedule")
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("date")
+        Command::new("by-date")
             .about("Fetch schedule by date")
             .arg(Arg::new("date")
-                .help("The date (format: YYYY-MM-DD, e.g., 2024-02-15)")
-                .required(true)
-                .value_name("DATE"))
+                .help("The date (YYYY-MM-DD)")
+                .required(true))
     );
     
     cmd
@@ -273,196 +244,129 @@ fn build_playoff_commands() -> Command {
         Command::new("bracket")
             .about("Fetch playoff bracket")
             .arg(Arg::new("year")
-                .help("The year (format: YYYY, e.g., 2024)")
-                .required(true)
-                .value_name("YEAR"))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("series-schedule")
-            .about("Fetch playoff series schedule")
-            .arg(Arg::new("season")
-                .help("The season (format: YYYYYYYY, e.g., 20232024)")
-                .required(true)
-                .value_name("SEASON"))
-            .arg(Arg::new("letter")
-                .help("The series letter (A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P)")
-                .required(true)
-                .value_name("LETTER"))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("series-carousel")
-            .about("Fetch playoff series carousel")
-            .arg(Arg::new("season")
-                .help("The season (format: YYYYYYYY, e.g., 20232024)")
-                .required(true)
-                .value_name("SEASON"))
+                .help("The year (YYYY)")
+                .required(true))
     );
     
     cmd = cmd.subcommand(
         Command::new("series-metadata")
             .about("Fetch playoff series metadata")
-            .arg(Arg::new("year")
-                .help("The year (format: YYYY, e.g., 2023)")
-                .required(true)
-                .value_name("YEAR"))
+            .arg(Arg::new("season")
+                .help("The season (YYYYYYYY)")
+                .required(true))
             .arg(Arg::new("letter")
-                .help("The series letter (A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P)")
-                .required(true)
-                .value_name("LETTER"))
+                .help("The series letter")
+                .required(true))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("standings-season")
+            .about("Fetch playoff standings for a specific season")
+            .arg(Arg::new("season")
+                .help("The season (YYYYYYYY)")
+                .required(true))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("series-schedule")
+            .about("Fetch playoff series schedule")
+            .arg(Arg::new("year")
+                .help("The year (YYYY)")
+                .required(true))
+            .arg(Arg::new("letter")
+                .help("The series letter")
+                .required(true))
     );
     
     cmd
 }
 
-/// Handle CLI commands by executing appropriate functions
-pub fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
+/// Main command handler
+pub async fn handle_command(matches: &ArgMatches, pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
     match matches.subcommand() {
-        Some((data_type_str, data_type_matches)) => {
-            // Handle list-endpoints command
-            if data_type_str == "list-endpoints" {
-                return handle_list_endpoints_command(data_type_matches);
-            }
-            
-            // Convert string to DataType enum
-            let data_type = match data_type_str {
-                "games" => DataType::Games,
-                "players" => DataType::Players,
-                "teams" => DataType::Teams,
-                "schedule" => DataType::Schedule,
-                "playoffs" => DataType::Playoffs,
-                "inspect" => {
-                    // Special case for inspect command
-                    return handle_inspect_command(data_type_matches);
-                }
-                _ => return Err(format!("Unknown data type: {}", data_type_str).into()),
-            };
-            
-            handle_data_type_command(data_type, data_type_matches)
-        }
-        None => {
-            Err("No command specified. Use --help for usage information.".into())
+        Some(("games", sub_matches)) => handle_data_type_command(DataType::Games, sub_matches, pool).await,
+        Some(("players", sub_matches)) => handle_data_type_command(DataType::Players, sub_matches, pool).await,
+        Some(("teams", sub_matches)) => handle_data_type_command(DataType::Teams, sub_matches, pool).await,
+        Some(("schedule", sub_matches)) => handle_data_type_command(DataType::Schedule, sub_matches, pool).await,
+        Some(("playoffs", sub_matches)) => handle_data_type_command(DataType::Playoffs, sub_matches, pool).await,
+        Some(("inspect", sub_matches)) => handle_inspect_command(sub_matches).await,
+        Some(("list-endpoints", sub_matches)) => handle_list_endpoints_command(sub_matches),
+        _ => {
+            // No subcommand provided, so we'll print help
+            // You might need to adjust this part depending on clap's version and your preference
+            build_cli().print_help()?;
+            Ok(())
         }
     }
 }
 
-/// Handle commands for a specific data type
-fn handle_data_type_command(data_type: DataType, matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    // Get the subcommand
-    match matches.subcommand() {
-        Some((subcmd_name, subcmd_matches)) => {
-            // Convert kebab-case back to snake_case
-            let snake_name = subcmd_name.replace('-', "_");
-            
-            // Convert data_type to singular form for endpoint lookup
-            let singular_type = match data_type.as_str() {
-                "games" => "game",
-                "players" => "player",
-                "teams" => "team",
-                "playoffs" => "playoff",
-                "schedule" => "schedule",
-                _ => data_type.as_str(),
-            };
-            
-            // Build endpoint name correctly (with singular type)
-            let endpoint_name = format!("{}_{}", singular_type, snake_name);
-            
-            // Get the endpoint definition
-            let endpoint = get_endpoint(&endpoint_name)
-                .ok_or_else(|| format!("Endpoint not found: {}", endpoint_name))?;
-            
-            // Build parameters from matches
-            let mut params = Vec::new();
-            for param in &endpoint.parameters {
-                if let Some(value) = subcmd_matches.get_one::<String>(param.name) {
-                    params.push((param.name, value.as_str()));
-                }
-            }
-            
-            // Call the endpoint
-            ingest::fetch_endpoint(&endpoint_name, &params)
-        }
-        None => {
-            Err(format!("No {} subcommand specified. Use --help for usage information.", 
-                       data_type.as_str()).into())
-        }
-    }
-}
+/// Generic handler for data type commands (games, players, etc.)
+async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
+    let subcommand_name = matches.subcommand_name().unwrap_or("default");
+    let endpoint_name = match (data_type, subcommand_name) {
+        (DataType::Games, "story") => "game_story",
+        (DataType::Games, "boxscore") => "game_boxscore",
+        (DataType::Games, "play-by-play") => "game_play_by_play",
+        (DataType::Games, "all") => "games_all", // A placeholder
+        (DataType::Games, "content") => "game_content",
+        (DataType::Games, "goal-replay") => "game_goal_replay",
+        (DataType::Games, "scores-date") => "scores_by_date",
+        (DataType::Players, "summary") => "player_summary",
+        (DataType::Players, "all") => "players_all", // Placeholder
+        (DataType::Players, "game-log") => "player_game_log",
+        (DataType::Teams, "current-stats") => "team_current_stats",
+        (DataType::Teams, "stats-by-season") => "team_stats_by_season",
+        (DataType::Teams, "standings-by-date") => "team_standings_date",
+        (DataType::Teams, "standings-season") => "team_standings_season",
+        (DataType::Teams, "roster-season") => "team_roster_season",
+        (DataType::Teams, "prospects") => "team_prospects",
+        (DataType::Teams, "schedule-season") => "team_schedule_season",
+        (DataType::Teams, "schedule-month") => "team_schedule_month",
+        (DataType::Schedule, "by-date") => "schedule_by_date",
+        (DataType::Playoffs, "bracket") => "playoff_bracket",
+        (DataType::Playoffs, "series-metadata") => "playoff_series_metadata",
+        (DataType::Playoffs, "series-schedule") => "playoff_series_schedule",
+        _ => return Err(format!("Unknown command for {:?}", data_type).into())
+    };
 
-/// Handle the special inspect command
-fn handle_inspect_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let data_type_str = matches.get_one::<String>("data_type")
-        .ok_or("data_type is required")?;
-    let endpoint_str = matches.get_one::<String>("endpoint")
-        .ok_or("endpoint is required")?;
-    
-    // Convert data_type string to enum
-    let data_type = match data_type_str.as_str() {
-        "games" => DataType::Games,
-        "players" => DataType::Players,
-        "teams" => DataType::Teams,
-        "schedule" => DataType::Schedule,
-        "playoffs" => DataType::Playoffs,
-        _ => return Err(format!("Unknown data type: {}", data_type_str).into()),
-    };
-    
-    // First try with pluralized form
-    let endpoint_name = format!("{}_{}", data_type.as_str(), endpoint_str.replace('-', "_"));
-    
-    // Get endpoint from registry
-    let endpoint = match get_endpoint(&endpoint_name) {
-        Some(ep) => ep,
-        None => {
-            // Try with singularized form if not found
-            let singular_type = data_type.as_str().strip_suffix('s').unwrap_or(data_type.as_str());
-            let alt_endpoint_name = format!("{}_{}", singular_type, endpoint_str.replace('-', "_"));
-            get_endpoint(&alt_endpoint_name)
-                .ok_or_else(|| format!("Endpoint not found: {} or {}", endpoint_name, alt_endpoint_name))?
-        }
-    };
-    
-    // Extract parameters from arguments
+    let endpoint = get_endpoint(endpoint_name)
+        .ok_or_else(|| format!("Endpoint '{}' not found", endpoint_name))?;
+
+    let sub_matches = matches.subcommand().unwrap().1;
     let mut params = Vec::new();
-    if let Some(param_values) = matches.get_many::<String>("params") {
-        for param_value in param_values {
-            if let Some((key, value)) = param_value.split_once('=') {
-                params.push((key, value));
+    for param_def in &endpoint.parameters {
+        if let Some(value) = sub_matches.get_one::<String>(param_def.name) {
+            params.push((param_def.name, value.as_str()));
+        }
+    }
+    
+    ingest::fetch_endpoint(endpoint_name, &params, pool).await
+}
+
+/// Handler for the 'inspect' command
+async fn handle_inspect_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
+    let data_type_str = matches.get_one::<String>("data_type")
+        .ok_or("data_type is required for inspect")?;
+    let endpoint_str = matches.get_one::<String>("endpoint")
+        .ok_or("endpoint is required for inspect")?;
+
+    let endpoint_name = format!("{}_{}", data_type_str.trim(), endpoint_str.replace('-', "_"));
+    let endpoint = get_endpoint(&endpoint_name)
+        .ok_or_else(|| format!("Endpoint '{}' not found", endpoint_name))?;
+
+    let mut params = Vec::new();
+    if let Some(values) = matches.get_many::<String>("params") {
+        for val in values {
+            let parts: Vec<&str> = val.split('=').collect();
+            if parts.len() == 2 {
+                params.push((parts[0], parts[1]));
             } else {
-                // If not in key=value format, assume it's a value for the first required parameter
-                if let Some(first_param) = endpoint.parameters.first() {
-                    if first_param.required {
-                        params.push((first_param.name, param_value.as_str()));
-                        continue;
-                    }
-                }
-                return Err(format!("Invalid parameter format: {}. Use key=value format", param_value).into());
+                return Err(format!("Invalid parameter format: {}", val).into());
             }
         }
     }
-    
-    // Check that all required parameters are provided
-    for param_def in &endpoint.parameters {
-        if param_def.required && !params.iter().any(|(k, _)| k == &param_def.name) {
-            let param_examples = endpoint.parameters.iter()
-                .filter(|p| p.required)
-                .map(|p| format!("{}={}", p.name, p.example))
-                .collect::<Vec<_>>()
-                .join(" ");
-            
-            return Err(format!("Missing required parameter: {}\nUsage: inspect {} {} {}", 
-                              param_def.name, data_type_str, endpoint_str, param_examples).into());
-        }
-    }
-    
-    println!("Inspecting {} endpoint", endpoint.name);
-    
-    // Call the inspect module
-    if let Err(e) = inspect::inspect_endpoint(endpoint, &params) {
-        eprintln!("Error: {}", e);
-    }
-    
-    Ok(())
+
+    inspect::inspect_endpoint(endpoint, &params).await
 }
 
 /// Handle the list-endpoints command
@@ -520,12 +424,11 @@ fn handle_list_endpoints_command(matches: &ArgMatches) -> Result<(), Box<dyn std
     Ok(())
 }
 
-/// Example of how to use the CLI builder in main.rs
-pub fn example_main() {
-    let app = build_cli();
-    let matches = app.get_matches();
-    
-    if let Err(e) = handle_command(&matches) {
+/// An example main function to demonstrate CLI usage
+pub async fn example_main(pool: DbPool) {
+    let matches = build_cli().get_matches();
+    if let Err(e) = handle_command(&matches, pool).await {
         eprintln!("Error: {}", e);
+        std::process::exit(1);
     }
 } 

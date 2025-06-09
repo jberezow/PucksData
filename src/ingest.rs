@@ -1,8 +1,8 @@
 use crate::api;
-use crate::cache;
-use crate::endpoints::{DataType, Endpoint, get_endpoint};
+use crate::endpoints::{Endpoint, get_endpoint};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use crate::db::{DbPool, insert_raw_data, raw_data_exists};
+use serde_json::{json, Value};
 
 #[derive(Default)]
 pub struct ApiParams {
@@ -24,10 +24,14 @@ impl ApiParams {
     pub fn get_param(&self, key: &str) -> Option<&str> {
         self.params.get(key).map(|s| s.as_str())
     }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        json!(self.params)
+    }
 }
 
 /// Generic function to fetch an endpoint by name with provided parameters
-pub fn fetch_endpoint(endpoint_name: &str, params: &[(&str, &str)]) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn fetch_endpoint(endpoint_name: &str, params: &[(&str, &str)], pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
     let endpoint = get_endpoint(endpoint_name)
         .ok_or_else(|| format!("Endpoint '{}' not found", endpoint_name))?;
     
@@ -50,27 +54,17 @@ pub fn fetch_endpoint(endpoint_name: &str, params: &[(&str, &str)]) -> Result<()
         }
     }
     
-    fetch_and_cache(endpoint, &api_params)
+    fetch_and_store(endpoint, &api_params, pool).await
 }
 
 /// Internal function to fetch and cache data for an endpoint
-fn fetch_and_cache(endpoint: &Endpoint, params: &ApiParams) -> Result<(), Box<dyn std::error::Error>> {
-    let mut file_path = PathBuf::from("data/raw");
-    file_path.push(endpoint.data_type.as_str());
-    
-    // Create parameter-specific subdirectories based on data type and endpoint
-    build_path_structure(endpoint, params, &mut file_path)?;
-    
-    // Create the directory structure
-    std::fs::create_dir_all(&file_path)?;
-    file_path.push(format!("{}.json", endpoint.name));
-    
-    // Check cache first
-    if let Some(_) = cache::read_from_cache(&file_path) {
-        println!("✅ Found cached {} data at {:?}", endpoint.name, file_path);
+async fn fetch_and_store(endpoint: &Endpoint, params: &ApiParams, pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
+    let params_json = params.to_json();
+    if raw_data_exists(&pool, endpoint.name, &params_json).await? {
+        println!("✅ Found {} data in database", endpoint.name);
         return Ok(());
     }
-    
+
     println!("🌐 Fetching {} data from NHL API...", endpoint.name);
     
     // Replace URL parameters with actual values
@@ -79,125 +73,24 @@ fn fetch_and_cache(endpoint: &Endpoint, params: &ApiParams) -> Result<(), Box<dy
         url = url.replace(&format!("{{{}}}", key), value);
     }
     
-    match api::fetch_api_json(&url) {
-        Ok(json) => {
-            cache::write_to_cache(&file_path, &json)?;
-            println!("💾 Saved {} data to {:?}", endpoint.name, file_path);
+    match api::fetch_api_json(&url).await {
+        Ok(json_str) => {
+            let data_json: Value = serde_json::from_str(&json_str)?;
+            insert_raw_data(&pool, endpoint.name, &params_json, &data_json).await?;
+            println!("💾 Saved {} data to database", endpoint.name);
             Ok(())
         }
         Err(api::ApiError::NotFound) => {
-            // Clean up empty directories
-            cleanup_empty_directories(&file_path);
             println!("❌ Resource not found at {}", url);
             Err("Resource not found (404)".into())
         }
         Err(api::ApiError::NetworkError(e)) => {
-            cleanup_empty_directories(&file_path);
             println!("❌ Network error while fetching {}: {}", url, e);
             Err(Box::new(e))
         }
         Err(api::ApiError::Other(code)) => {
-            cleanup_empty_directories(&file_path);
             println!("❌ HTTP error {} while fetching {}", code, url);
             Err(format!("HTTP error: {}", code).into())
-        }
-    }
-}
-
-/// Helper function to build the path structure based on endpoint type and params
-fn build_path_structure(endpoint: &Endpoint, params: &ApiParams, file_path: &mut PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    match endpoint.data_type {
-        DataType::Games => {
-            // For game endpoints with IDs
-            if let Some(id) = params.get_param("game_id") {
-                file_path.push(id);
-            } else if let Some(date) = params.get_param("date") {
-                file_path.push(date);
-            }
-        },
-        DataType::Players => {
-            if let Some(id) = params.get_param("player_id") {
-                file_path.push(id);
-                
-                // For game logs, add season and game type
-                if endpoint.name == "player_game_log" {
-                    if let Some(season) = params.get_param("season") {
-                        file_path.push(season);
-                        if let Some(game_type) = params.get_param("game_type") {
-                            file_path.push(game_type);
-                        }
-                    }
-                }
-            }
-        },
-        DataType::Teams => {
-            // For team endpoints, always process team_code first
-            if let Some(team_code) = params.get_param("team_code") {
-                file_path.push(team_code);
-                
-                // Then add season or date as a subdirectory if available
-                if endpoint.name == "team_roster_season" || endpoint.name == "team_schedule_season" {
-                    if let Some(season) = params.get_param("season") {
-                        file_path.push(season);
-                    }
-                } else if endpoint.name == "team_schedule_month" {
-                    if let Some(date) = params.get_param("date") {
-                        file_path.push(date);
-                    }
-                } else if endpoint.name == "team_stats_by_season" {
-                    if let Some(season) = params.get_param("season") {
-                        file_path.push(season);
-                        if let Some(game_type) = params.get_param("game_type") {
-                            file_path.push(game_type);
-                        }
-                    }
-                }
-            } else if endpoint.name == "team_standings_date" {
-                if let Some(date) = params.get_param("date") {
-                    file_path.push(date);
-                }
-            } else if endpoint.name == "team_standings_season" {
-                if let Some(season) = params.get_param("season") {
-                    file_path.push(season);
-                }
-            }
-        },
-        DataType::Schedule => {
-            if let Some(date) = params.get_param("date") {
-                file_path.push(date);
-            }
-        },
-        DataType::Playoffs => {
-            if let Some(year) = params.get_param("year") {
-                file_path.push(year);
-                if endpoint.name == "playoff_series_metadata" {
-                    if let Some(letter) = params.get_param("letter") {
-                        file_path.push(letter);
-                    }
-                }
-            } else if let Some(season) = params.get_param("season") {
-                file_path.push(season);
-                if endpoint.name == "playoff_series_schedule" {
-                    if let Some(letter) = params.get_param("letter") {
-                        file_path.push(letter);
-                    }
-                }
-            }
-        }
-    }
-    
-    Ok(())
-}
-
-/// Helper to clean up empty directories after failed API calls
-fn cleanup_empty_directories(file_path: &PathBuf) {
-    if let Some(parent) = file_path.parent() {
-        if parent.exists() {
-            if let Ok(entries) = std::fs::read_dir(parent) {
-                if entries.count() == 0 {
-                    let _ = std::fs::remove_dir(parent);
-                }
-            }
         }
     }
 }

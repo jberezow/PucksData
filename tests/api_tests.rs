@@ -1,55 +1,49 @@
-use pucksdata::api;
+use pucksdata::api::{self, ApiError};
 
-// Test constants
-const VALID_URL: &str = "https://api-web.nhle.com/v1/standings/now";
-const INVALID_URL: &str = "https://api-web.nhle.com/v1/nonexistent-endpoint";
-
-/// Tests whether the fetch_api_json function correctly handles a valid URL
-#[test]
-fn test_fetch_valid_endpoint() {
-    match api::fetch_api_json(VALID_URL) {
+#[tokio::test]
+async fn test_fetch_valid_url() {
+    const VALID_URL: &str = "https://api-web.nhle.com/v1/gamecenter/2023020001/boxscore";
+    match api::fetch_api_json(VALID_URL).await {
         Ok(_) => {
-            println!("✅ Successfully fetched data from {}", VALID_URL);
+            // Success, do nothing
         }
-        Err(api::ApiError::NotFound) => {
-            panic!("❌ Expected valid endpoint, but got 404 Not Found for {}", VALID_URL);
+        Err(ApiError::NotFound) => {
+            panic!("Should not return NotFound for a valid URL");
         }
         Err(e) => {
-            panic!("❌ Expected success, but got error: {:?} for {}", e, VALID_URL);
+            panic!("An unexpected error occurred: {}", e);
         }
     }
 }
 
-/// Tests whether the fetch_api_json function correctly handles a 404 response
-#[test]
-fn test_fetch_invalid_endpoint() {
-    match api::fetch_api_json(INVALID_URL) {
+#[tokio::test]
+async fn test_fetch_invalid_url() {
+    const INVALID_URL: &str = "https://api-web.nhle.com/v1/invalid/endpoint";
+    match api::fetch_api_json(INVALID_URL).await {
         Ok(_) => {
-            panic!("❌ Expected 404 Not Found, but request succeeded for {}", INVALID_URL);
+            panic!("Should have returned an error for an invalid URL");
         }
-        Err(api::ApiError::NotFound) => {
-            println!("✅ Correctly identified 404 for {}", INVALID_URL);
+        Err(ApiError::NotFound) => {
+            // This is the expected outcome
         }
         Err(e) => {
-            panic!("❌ Expected 404 Not Found, but got different error: {:?} for {}", e, INVALID_URL);
+            panic!("An unexpected error occurred: {}", e);
         }
     }
 }
 
-/// Tests whether network errors are correctly handled
-#[test]
-fn test_network_error_handling() {
-    // Malformed URL to trigger network error
-    let malformed_url = "https://nonexistent-domain-12345.example";
-    match api::fetch_api_json(malformed_url) {
+#[tokio::test]
+async fn test_fetch_malformed_url() {
+    let malformed_url = "this-is-not-a-valid-url";
+    match api::fetch_api_json(malformed_url).await {
         Ok(_) => {
-            panic!("❌ Expected network error, but request succeeded for {}", malformed_url);
+            panic!("Should have returned an error for a malformed URL");
         }
-        Err(api::ApiError::NetworkError(_)) => {
-            println!("✅ Correctly identified network error for {}", malformed_url);
+        Err(ApiError::NetworkError(_)) => {
+            // This is the expected outcome
         }
         Err(e) => {
-            panic!("❌ Expected NetworkError, but got different error: {:?} for {}", e, malformed_url);
+            panic!("An unexpected error occurred: {}", e);
         }
     }
-} 
+}
