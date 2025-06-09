@@ -162,14 +162,6 @@ fn build_path_structure(endpoint: &Endpoint, params: &ApiParams, file_path: &mut
                 }
             }
         },
-        DataType::Skaters | DataType::Goalies => {
-            if let Some(season) = params.get_param("season") {
-                file_path.push(season);
-                if let Some(game_type) = params.get_param("game_type") {
-                    file_path.push(game_type);
-                }
-            }
-        },
         DataType::Schedule => {
             if let Some(date) = params.get_param("date") {
                 file_path.push(date);
@@ -191,9 +183,7 @@ fn build_path_structure(endpoint: &Endpoint, params: &ApiParams, file_path: &mut
                     }
                 }
             }
-        },
-        // Other data types don't need special handling
-        _ => {}
+        }
     }
     
     Ok(())

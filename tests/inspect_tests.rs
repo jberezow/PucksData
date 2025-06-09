@@ -57,21 +57,6 @@ fn inspect_player_endpoints() {
 }
 
 #[test]
-fn inspect_skater_and_goalie_endpoints() {
-    let tests: Vec<(&str, InspectFn)> = vec![
-        // Skater endpoints
-        ("skater_leaders", Box::new(|| inspect::inspect_keys("skaters", "leaders", &format!("{}/{}", TEST_SEASON, TEST_GAME_TYPE)))),
-        
-        // Goalie endpoints
-        ("goalie_leaders", Box::new(|| inspect::inspect_keys("goalies", "leaders", &format!("{}/{}", TEST_SEASON, TEST_GAME_TYPE)))),
-    ];
-    
-    for (name, inspect_fn) in &tests {
-        run_inspect(name, inspect_fn);
-    }
-}
-
-#[test]
 fn inspect_team_endpoints() {
     let tests: Vec<(&str, InspectFn)> = vec![
         ("team_current_stats", Box::new(|| inspect::inspect_keys("teams", "current_stats", TEST_TEAM_CODE))),
@@ -102,18 +87,6 @@ fn inspect_schedule_and_playoff_endpoints() {
     }
 }
 
-#[test]
-fn inspect_season_endpoints() {
-    let tests: Vec<(&str, InspectFn)> = vec![
-        // Season endpoints
-        ("season_all", Box::new(|| inspect::inspect_keys("seasons", "all", ""))),
-    ];
-    
-    for (name, inspect_fn) in &tests {
-        run_inspect(name, inspect_fn);
-    }
-}
-
 /// Test that inspects all endpoints in one go
 #[test]
 fn inspect_all_endpoints() {
@@ -132,12 +105,6 @@ fn inspect_all_endpoints() {
         ("player_game_log", Box::new(|| inspect::inspect_keys("players", "game_log", &format!("{}/{}", TEST_PLAYER_ID, TEST_SEASON)))),
         ("player_spotlight", Box::new(|| inspect::inspect_keys("players", "spotlight", ""))),
         
-        // Skater endpoints
-        ("skater_leaders", Box::new(|| inspect::inspect_keys("skaters", "leaders", &format!("{}/{}", TEST_SEASON, TEST_GAME_TYPE)))),
-        
-        // Goalie endpoints
-        ("goalie_leaders", Box::new(|| inspect::inspect_keys("goalies", "leaders", &format!("{}/{}", TEST_SEASON, TEST_GAME_TYPE)))),
-        
         // Team endpoints
         ("team_current_stats", Box::new(|| inspect::inspect_keys("teams", "current_stats", TEST_TEAM_CODE))),
         ("team_stats_by_season", Box::new(|| inspect::inspect_keys("teams", "season_stats", &format!("{}/{}/{}", TEST_TEAM_CODE, TEST_SEASON, TEST_GAME_TYPE)))),
@@ -151,9 +118,6 @@ fn inspect_all_endpoints() {
         // Playoff endpoints
         ("playoff_bracket", Box::new(|| inspect::inspect_keys("playoffs", "bracket", ""))),
         ("playoff_series_schedule", Box::new(|| inspect::inspect_keys("playoffs", "series_schedule", ""))),
-        
-        // Season endpoints
-        ("season_all", Box::new(|| inspect::inspect_keys("seasons", "all", ""))),
     ];
     
     println!("\n--- RUNNING ALL ENDPOINT INSPECTIONS ---");

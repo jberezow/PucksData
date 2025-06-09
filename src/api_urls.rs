@@ -4,15 +4,8 @@
 // Player summary has season totals and lots of helpful bio stuff
 pub const PLAYER_SUMMARY_API_URL: &str = "https://api-web.nhle.com/v1/player/{player_id}/landing";
 
-// All Player IDs in theory, but returns nothing
-pub const PLAYER_ALL_PLAYERS_API_URL: &str = "https://api.nhle.com/stats/rest/en/players";
-
 // Player game log gets all game IDs for a player for a season and type (2 for reg, 3 for playoffs) - very handy
 pub const PLAYER_GAME_LOG_API_URL: &str = "https://api-web.nhle.com/v1/player/{player_id}/game-log/{season}/{game_type}";
-
-
-pub const SKATER_STATS_LEADERS_API_URL: &str = "https://api-web.nhle.com/v1/skater-stats-leaders/{season}/{game_type}";
-pub const GOALIE_STATS_LEADERS_API_URL: &str = "https://api-web.nhle.com/v1/goalie-stats-leaders/{season}/{game_type}";
 
 // Team endpoints
 pub const TEAM_STATS_BY_SEASON_API_URL: &str = "https://api-web.nhle.com/v1/club-stats/{team_code}/{season}/{game_type}";
@@ -42,9 +35,6 @@ pub const PLAYOFF_SERIES_SCHEDULE_API_URL: &str = "https://api-web.nhle.com/v1/s
 pub const PLAYOFF_SERIES_CAROUSEL_API_URL: &str = "https://api-web.nhle.com/v1/playoff-series/carousel/{season}";
 pub const PLAYOFF_SERIES_METADATA_API_URL: &str = "https://api-web.nhle.com/v1/meta/playoff-series/{year}/{letter}";
 
-// Season endpoints
-pub const SEASON_ALL_SEASONS_API_URL: &str = "https://api-web.nhle.com/v1/season";
-
 pub fn get_url_template(data_type: &str, endpoint: &str) -> Option<&'static str> {
     match (data_type, endpoint) {
         // Games
@@ -58,14 +48,7 @@ pub fn get_url_template(data_type: &str, endpoint: &str) -> Option<&'static str>
         
         // Players
         ("players", "summary") => Some(PLAYER_SUMMARY_API_URL),
-        ("players", "all") => Some(PLAYER_ALL_PLAYERS_API_URL),
         ("players", "game_log") => Some(PLAYER_GAME_LOG_API_URL),
-        
-        // Skaters
-        ("skaters", "leaders") => Some(SKATER_STATS_LEADERS_API_URL),
-        
-        // Goalies
-        ("goalies", "leaders") => Some(GOALIE_STATS_LEADERS_API_URL),
         
         // Teams
         ("teams", "season_stats") => Some(TEAM_STATS_BY_SEASON_API_URL),
@@ -85,9 +68,6 @@ pub fn get_url_template(data_type: &str, endpoint: &str) -> Option<&'static str>
         ("playoffs", "series_schedule") => Some(PLAYOFF_SERIES_SCHEDULE_API_URL),
         ("playoffs", "series_carousel") => Some(PLAYOFF_SERIES_CAROUSEL_API_URL),
         ("playoffs", "series_metadata") => Some(PLAYOFF_SERIES_METADATA_API_URL),
-        
-        // Seasons
-        ("seasons", "all") => Some(SEASON_ALL_SEASONS_API_URL),
         
         _ => None,
     }
