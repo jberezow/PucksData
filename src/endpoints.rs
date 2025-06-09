@@ -6,12 +6,9 @@ use once_cell::sync::Lazy;
 pub enum DataType {
     Games,
     Players,
-    Skaters,
-    Goalies,
     Teams,
     Schedule,
     Playoffs,
-    Seasons,
 }
 
 impl DataType {
@@ -19,12 +16,9 @@ impl DataType {
         match self {
             DataType::Games => "games",
             DataType::Players => "players",
-            DataType::Skaters => "skaters",
-            DataType::Goalies => "goalies",
             DataType::Teams => "teams",
             DataType::Schedule => "schedule",
             DataType::Playoffs => "playoffs",
-            DataType::Seasons => "seasons",
         }
     }
 }
@@ -296,65 +290,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map
             },
             example: "pucksdata player game-log 8478402 20232024 2",
-        },
-        // Skater statistics endpoints
-        Endpoint {
-            name: "skater_stats_leaders",
-            url: "https://api-web.nhle.com/v1/skater-stats-leaders/{season}/{game_type}",
-            description: "Fetch skater stats leaders for a specific season and game type",
-            data_type: DataType::Skaters,
-            implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "season",
-                    description: "The season (format: YYYYYYYY, e.g., 20232024)",
-                    required: true,
-                    example: "20232024",
-                },
-                Parameter {
-                    name: "game_type",
-                    description: "The game type (e.g., 2 for regular season, 3 for playoffs)",
-                    required: true,
-                    example: "2",
-                },
-            ],
-            test_params: {
-                let mut map = HashMap::new();
-                map.insert("season", "20232024");
-                map.insert("game_type", "2");
-                map
-            },
-            example: "pucksdata skaters leaders 20232024 2",
-        },
-        
-        // Goalie statistics endpoints
-        Endpoint {
-            name: "goalie_stats_leaders",
-            url: "https://api-web.nhle.com/v1/goalie-stats-leaders/{season}/{game_type}",
-            description: "Fetch goalie stats leaders for a specific season and game type",
-            data_type: DataType::Goalies,
-            implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "season",
-                    description: "The season (format: YYYYYYYY, e.g., 20232024)",
-                    required: true,
-                    example: "20232024",
-                },
-                Parameter {
-                    name: "game_type",
-                    description: "The game type (e.g., 2 for regular season, 3 for playoffs)",
-                    required: true,
-                    example: "2",
-                },
-            ],
-            test_params: {
-                let mut map = HashMap::new();
-                map.insert("season", "20232024");
-                map.insert("game_type", "2");
-                map
-            },
-            example: "pucksdata goalies leaders 20232024 2",
         },
         
         // Team endpoints
@@ -649,7 +584,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 },
                 Parameter {
                     name: "letter",
-                    description: "The series letter (A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P)",
+                    description: "The series letter (A, B, C, D, E, F, G, H, I, J, K, L, M, N, O)",
                     required: true,
                     example: "A",
                 },
@@ -661,18 +596,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map
             },
             example: "pucksdata playoffs series-metadata 2023 A",
-        },
-
-        // Season endpoints
-        Endpoint {
-            name: "season_all_seasons",
-            url: "https://api-web.nhle.com/v1/season",
-            description: "Fetch all seasons data",
-            data_type: DataType::Seasons,
-            implemented: true,
-            parameters: vec![],
-            test_params: HashMap::new(),
-            example: "pucksdata seasons all",
         },
     ]
 }); 

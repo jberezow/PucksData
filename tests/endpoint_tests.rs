@@ -144,26 +144,6 @@ fn test_player_endpoints() {
 }
 
 #[test]
-fn test_skater_and_goalie_endpoints() {
-    let mut results = HashMap::<EndpointTestResult, usize>::new();
-    
-    let tests = vec![
-        // Skater endpoints
-        "skater_stats_leaders",
-        
-        // Goalie endpoints
-        "goalie_stats_leaders",
-    ];
-    
-    for endpoint_name in &tests {
-        let result = test_endpoint_by_name(endpoint_name);
-        *results.entry(result).or_insert(0) += 1;
-    }
-    
-    print_summary(&results, tests.len());
-}
-
-#[test]
 fn test_team_endpoints() {
     let mut results = HashMap::<EndpointTestResult, usize>::new();
     

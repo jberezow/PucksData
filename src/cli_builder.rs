@@ -15,9 +15,6 @@ pub fn build_cli() -> Command {
     app = app.subcommand(build_teams_commands());
     app = app.subcommand(build_schedule_commands());
     app = app.subcommand(build_playoff_commands());
-    app = app.subcommand(build_skaters_commands());
-    app = app.subcommand(build_goalies_commands());
-    app = app.subcommand(build_seasons_commands());
     
     // Add special inspect command
     app = app.subcommand(
@@ -319,61 +316,6 @@ fn build_playoff_commands() -> Command {
     cmd
 }
 
-/// Build commands for skaters data
-fn build_skaters_commands() -> Command {
-    let mut cmd = Command::new("skaters")
-        .about("Skater statistics-related data operations");
-    
-    cmd = cmd.subcommand(
-        Command::new("leaders")
-            .about("Fetch skater stats leaders for a specific season and game type")
-            .arg(Arg::new("season")
-                .help("The season (format: YYYYYYYY, e.g., 20232024)")
-                .required(true)
-                .value_name("SEASON"))
-            .arg(Arg::new("game_type")
-                .help("The game type (e.g., 2 for regular season, 3 for playoffs)")
-                .required(true)
-                .value_name("GAME_TYPE"))
-    );
-    
-    cmd
-}
-
-/// Build commands for goalies data
-fn build_goalies_commands() -> Command {
-    let mut cmd = Command::new("goalies")
-        .about("Goalie statistics-related data operations");
-
-    cmd = cmd.subcommand(
-        Command::new("leaders")
-            .about("Fetch goalie stats leaders for a specific season and game type")
-            .arg(Arg::new("season")
-                .help("The season (format: YYYYYYYY, e.g., 20232024)")
-                .required(true)
-                .value_name("SEASON"))
-            .arg(Arg::new("game_type")
-                .help("The game type (e.g., 2 for regular season, 3 for playoffs)")
-                .required(true)
-                .value_name("GAME_TYPE"))
-    );
-    
-    cmd
-}
-
-/// Build commands for seasons data
-fn build_seasons_commands() -> Command {
-    let mut cmd = Command::new("seasons")
-        .about("Season-related data operations");
-    
-    cmd = cmd.subcommand(
-        Command::new("all")
-            .about("Fetch all seasons data")
-    );
-    
-    cmd
-}
-
 /// Handle CLI commands by executing appropriate functions
 pub fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     match matches.subcommand() {
@@ -390,9 +332,6 @@ pub fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Er
                 "teams" => DataType::Teams,
                 "schedule" => DataType::Schedule,
                 "playoffs" => DataType::Playoffs,
-                "skaters" => DataType::Skaters,
-                "goalies" => DataType::Goalies,
-                "seasons" => DataType::Seasons,
                 "inspect" => {
                     // Special case for inspect command
                     return handle_inspect_command(data_type_matches);
@@ -421,10 +360,7 @@ fn handle_data_type_command(data_type: DataType, matches: &ArgMatches) -> Result
                 "games" => "game",
                 "players" => "player",
                 "teams" => "team",
-                "skaters" => "skater",
-                "goalies" => "goalie",
                 "playoffs" => "playoff",
-                "seasons" => "season",
                 "schedule" => "schedule",
                 _ => data_type.as_str(),
             };
@@ -468,9 +404,6 @@ fn handle_inspect_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error
         "teams" => DataType::Teams,
         "schedule" => DataType::Schedule,
         "playoffs" => DataType::Playoffs,
-        "skaters" => DataType::Skaters,
-        "goalies" => DataType::Goalies,
-        "seasons" => DataType::Seasons,
         _ => return Err(format!("Unknown data type: {}", data_type_str).into()),
     };
     
