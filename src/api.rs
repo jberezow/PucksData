@@ -26,11 +26,11 @@ impl From<reqwest::Error> for ApiError {
     }
 }
 
-pub fn fetch_api_json(url: &str) -> Result<String, ApiError> {
-    let response = reqwest::blocking::get(url)?;
+pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
+    let response = reqwest::get(url).await?;
     
     match response.status() {
-        reqwest::StatusCode::OK => Ok(response.text()?),
+        reqwest::StatusCode::OK => Ok(response.text().await?),
         reqwest::StatusCode::NOT_FOUND => Err(ApiError::NotFound),
         status => Err(ApiError::Other(status.as_u16())),
     }

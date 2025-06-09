@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 /// Inspect an endpoint using the endpoint registry
-pub fn inspect_endpoint(endpoint: &Endpoint, params: &[(&str, &str)]) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn inspect_endpoint(endpoint: &Endpoint, params: &[(&str, &str)]) -> Result<(), Box<dyn std::error::Error>> {
     // Fill in the URL template with the provided parameters
     let mut url = endpoint.url.to_string();
     
@@ -23,7 +23,7 @@ pub fn inspect_endpoint(endpoint: &Endpoint, params: &[(&str, &str)]) -> Result<
     }
     
     println!("Fetching data from: {}", url);
-    let json_str = api::fetch_api_json(&url)?;
+    let json_str = api::fetch_api_json(&url).await?;
     let json_val: Value = serde_json::from_str(&json_str)?;
 
     let key_tree = build_key_tree(&json_val);
@@ -45,7 +45,7 @@ pub fn inspect_endpoint(endpoint: &Endpoint, params: &[(&str, &str)]) -> Result<
 }
 
 /// Legacy method for backward compatibility
-pub fn inspect_keys(data_type: &str, endpoint: &str, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn inspect_keys(data_type: &str, endpoint: &str, id: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Try to find the endpoint in the registry
     let endpoint_name = format!("{}_{}", data_type, endpoint.replace('-', "_"));
     if let Some(endpoint_def) = crate::endpoints::get_endpoint(&endpoint_name) {
@@ -54,21 +54,21 @@ pub fn inspect_keys(data_type: &str, endpoint: &str, id: &str) -> Result<(), Box
         if let Some(first_param) = endpoint_def.parameters.first() {
             params.push((first_param.name, id));
         }
-        inspect_endpoint(endpoint_def, &params)
+        inspect_endpoint(endpoint_def, &params).await
     } else {
         // Fall back to the old method using api_urls
-        legacy_inspect_keys(data_type, endpoint, id)
+        legacy_inspect_keys(data_type, endpoint, id).await
     }
 }
 
 /// The original inspect_keys implementation using api_urls
-fn legacy_inspect_keys(data_type: &str, endpoint: &str, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn legacy_inspect_keys(data_type: &str, endpoint: &str, id: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Get URL template from centralized location
     let url_template = crate::api_urls::get_url_template(data_type, endpoint)
         .ok_or_else(|| "Unsupported combination of data_type and endpoint")?;
 
     let url = url_template.replace("{id}", id);
-    let json_str = api::fetch_api_json(&url)?;
+    let json_str = api::fetch_api_json(&url).await?;
     let json_val: Value = serde_json::from_str(&json_str)?;
 
     let key_tree = build_key_tree(&json_val);
