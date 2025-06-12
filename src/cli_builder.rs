@@ -2,7 +2,8 @@ use clap::{Command, Arg, ArgMatches};
 use crate::endpoints::{DataType, Endpoint, get_endpoint, get_all_endpoints};
 use crate::ingest;
 use crate::inspect;
-use crate::db::DbPool;
+use crate::storage::DbPool;
+use crate::workflows::bulk_import_all_games;
 
 /// Build the top-level CLI application
 pub fn build_cli() -> Command {
@@ -407,7 +408,7 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         }
         println!("\n🚀 Starting bulk import...");
         
-        return crate::ingest::bulk_import_all_games(
+                        return bulk_import_all_games(
             games_file,
             pool,
             &endpoints,
