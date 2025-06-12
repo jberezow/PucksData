@@ -509,4 +509,39 @@ pub async fn get_team_by_id(team_id: i32, pool: &DbPool) -> Result<Option<(Strin
     .await?;
     
     Ok(row.map(|r| (r.abbrev, r.common_name)))
+}
+
+/// Debug function to show what's in the raw_data table
+pub async fn inspect_raw_data_table(pool: &DbPool) -> Result<(), sqlx::Error> {
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM raw_data")
+        .fetch_one(pool)
+        .await?;
+    
+    println!("🔍 Total rows in raw_data table: {}", count.0);
+    
+    // Show breakdown by endpoint
+    let endpoint_counts: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT endpoint, COUNT(*) as count FROM raw_data GROUP BY endpoint ORDER BY count DESC"
+    )
+    .fetch_all(pool)
+    .await?;
+    
+    println!("📊 Breakdown by endpoint:");
+    for (endpoint, count) in endpoint_counts {
+        println!("   {} : {} rows", endpoint, count);
+    }
+    
+    // Show some recent entries
+    let recent_entries: Vec<(String, serde_json::Value, OffsetDateTime)> = sqlx::query_as(
+        "SELECT endpoint, parameters, created_at FROM raw_data ORDER BY created_at DESC LIMIT 10"
+    )
+    .fetch_all(pool)
+    .await?;
+    
+    println!("🕐 Recent entries:");
+    for (endpoint, params, created_at) in recent_entries {
+        println!("   {} - {} - {}", created_at, endpoint, params);
+    }
+    
+    Ok(())
 } 

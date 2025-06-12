@@ -33,6 +33,12 @@ pub fn build_cli() -> Command {
             .arg(Arg::new("data_type").help("Filter by data type (games, players, etc.)").required(false))
     );
     
+    // Add database inspection command
+    app = app.subcommand(
+        Command::new("inspect-db")
+            .about("Inspect what's in the raw_data database table")
+    );
+    
     app
 }
 
@@ -103,6 +109,39 @@ fn build_games_commands() -> Command {
             .arg(Arg::new("game_id")
                 .help("The NHL game ID")
                 .required(true))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("bulk-import")
+            .about("Bulk import NHL games (be careful!)")
+            .arg(Arg::new("games_file")
+                .help("Path to the games JSON file")
+                .long("games-file")
+                .default_value("data/raw/games/game_all_games.json"))
+            .arg(Arg::new("endpoints")
+                .help("Endpoints to fetch (comma-separated)")
+                .long("endpoints")
+                .default_value("game_boxscore,game_play_by_play,game_story"))
+            .arg(Arg::new("batch_size")
+                .help("Number of games to process in each batch")
+                .long("batch-size")
+                .default_value("50"))
+            .arg(Arg::new("max_retries")
+                .help("Maximum retry attempts per request")
+                .long("max-retries")
+                .default_value("3"))
+            .arg(Arg::new("start_year")
+                .help("Only process games from this year forward (e.g., 2020)")
+                .long("start-year")
+                .short('y'))
+            .arg(Arg::new("structured_only")
+                .help("Only update structured tables (games, teams, players) from existing raw data")
+                .long("structured-only")
+                .action(clap::ArgAction::SetTrue))
+            .arg(Arg::new("dry_run")
+                .help("Show what would be done without actually doing it")
+                .long("dry-run")
+                .action(clap::ArgAction::SetTrue))
     );
     
     cmd
@@ -299,6 +338,12 @@ pub async fn handle_command(matches: &ArgMatches, pool: DbPool) -> Result<(), Bo
         Some(("playoffs", sub_matches)) => handle_data_type_command(DataType::Playoffs, sub_matches, pool).await,
         Some(("inspect", sub_matches)) => handle_inspect_command(sub_matches).await,
         Some(("list-endpoints", sub_matches)) => handle_list_endpoints_command(sub_matches),
+        Some(("inspect-db", _)) => {
+            if let Err(e) = crate::db::inspect_raw_data_table(&pool).await {
+                eprintln!("Error inspecting database: {}", e);
+            }
+            Ok(())
+        },
         _ => {
             // No subcommand provided, so we'll print help
             // You might need to adjust this part depending on clap's version and your preference
@@ -311,6 +356,67 @@ pub async fn handle_command(matches: &ArgMatches, pool: DbPool) -> Result<(), Bo
 /// Generic handler for data type commands (games, players, etc.)
 async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
     let subcommand_name = matches.subcommand_name().unwrap_or("default");
+    
+    // Special handling for bulk import
+    if data_type == DataType::Games && subcommand_name == "bulk-import" {
+        let sub_matches = matches.subcommand().unwrap().1;
+        
+        let games_file = sub_matches.get_one::<String>("games_file").unwrap();
+        let endpoints_str = sub_matches.get_one::<String>("endpoints").unwrap();
+        let batch_size: usize = sub_matches.get_one::<String>("batch_size").unwrap()
+            .parse().map_err(|_| "Invalid batch size")?;
+        let max_retries: u32 = sub_matches.get_one::<String>("max_retries").unwrap()
+            .parse().map_err(|_| "Invalid max retries")?;
+        let start_year: Option<i32> = sub_matches.get_one::<String>("start_year")
+            .map(|s| s.parse().map_err(|_| "Invalid start year"))
+            .transpose()?;
+        let structured_only = sub_matches.get_flag("structured_only");
+        let dry_run = sub_matches.get_flag("dry_run");
+        
+        let endpoints: Vec<&str> = endpoints_str.split(',').map(|s| s.trim()).collect();
+        
+        if dry_run {
+            println!("🔍 DRY RUN - This is what would be done:");
+            println!("   📄 Games file: {}", games_file);
+            println!("   🎯 Endpoints: {:?}", endpoints);
+            println!("   📦 Batch size: {}", batch_size);
+            println!("   🔄 Max retries: {}", max_retries);
+            if let Some(year) = start_year {
+                println!("   📅 Start year: {} (games from {} onwards)", year, year);
+            } else {
+                println!("   📅 All years (72,000+ games from 1917 onwards)");
+            }
+            println!("   🏗️  Structured tables: {}", if structured_only { "ONLY structured" } else { "Raw + structured" });
+            println!("   ⏱️  Estimated time: ~{} hours at safe rates", 
+                    if start_year.is_some() { "2-4" } else { "6-10" });
+            println!("\nUse without --dry-run to actually run the import.");
+            return Ok(());
+        }
+        
+        println!("⚠️  WARNING: This will attempt to download data for ALL NHL games!");
+        println!("📊 This includes 72,000+ games from 1917 to present");
+        println!("⏱️  This may take 6-10 hours to complete");
+        println!("🌐 Rate limiting is enabled to be respectful to NHL servers");
+        println!();
+        println!("Press Ctrl+C within 10 seconds to cancel...");
+        
+        for i in (1..=10).rev() {
+            print!("\rStarting in {} seconds...", i);
+            std::io::Write::flush(&mut std::io::stdout()).unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+        println!("\n🚀 Starting bulk import...");
+        
+        return crate::ingest::bulk_import_all_games(
+            games_file,
+            pool,
+            &endpoints,
+            max_retries,
+            batch_size,
+            start_year,
+            structured_only,
+        ).await;
+    }
     
     // Special handling for complete game data
     if data_type == DataType::Games && subcommand_name == "complete" {
