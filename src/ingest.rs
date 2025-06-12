@@ -1,7 +1,7 @@
 use crate::api;
 use crate::endpoints::{Endpoint, get_endpoint};
 use std::collections::HashMap;
-use crate::db::{DbPool, insert_raw_data, raw_data_exists};
+use crate::db::{DbPool, insert_raw_data, raw_data_exists, PlayerBio};
 use serde_json::{json, Value};
 
 #[derive(Default)]
@@ -78,6 +78,18 @@ async fn fetch_and_store(endpoint: &Endpoint, params: &ApiParams, pool: DbPool) 
             let data_json: Value = serde_json::from_str(&json_str)?;
             insert_raw_data(&pool, endpoint.name, &params_json, &data_json).await?;
             println!("💾 Saved {} data to database", endpoint.name);
+            // If this is a player_summary, upsert the player bio
+            if endpoint.name == "player_summary" {
+                if let Ok(player_bio) = serde_json::from_value::<PlayerBio>(data_json.clone()) {
+                    if let Err(e) = player_bio.upsert_to_db(&pool).await {
+                        eprintln!("⚠️ Failed to upsert player bio: {}", e);
+                    } else {
+                        println!("📝 Upserted player bio for player_id {}", player_bio.playerId);
+                    }
+                } else {
+                    eprintln!("⚠️ Could not parse player bio from player_summary JSON");
+                }
+            }
             Ok(())
         }
         Err(api::ApiError::NotFound) => {

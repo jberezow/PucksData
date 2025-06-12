@@ -97,6 +97,14 @@ fn build_games_commands() -> Command {
                 .required(true))
     );
     
+    cmd = cmd.subcommand(
+        Command::new("complete")
+            .about("Fetch complete game data from multiple endpoints")
+            .arg(Arg::new("game_id")
+                .help("The NHL game ID")
+                .required(true))
+    );
+    
     cmd
 }
 
@@ -303,6 +311,19 @@ pub async fn handle_command(matches: &ArgMatches, pool: DbPool) -> Result<(), Bo
 /// Generic handler for data type commands (games, players, etc.)
 async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
     let subcommand_name = matches.subcommand_name().unwrap_or("default");
+    
+    // Special handling for complete game data
+    if data_type == DataType::Games && subcommand_name == "complete" {
+        let sub_matches = matches.subcommand().unwrap().1;
+        if let Some(game_id_str) = sub_matches.get_one::<String>("game_id") {
+            let game_id: i64 = game_id_str.parse()
+                .map_err(|_| "Invalid game ID format")?;
+            return crate::db::fetch_complete_game_data(game_id, pool).await;
+        } else {
+            return Err("game_id is required for complete command".into());
+        }
+    }
+    
     let endpoint_name = match (data_type, subcommand_name) {
         (DataType::Games, "story") => "game_story",
         (DataType::Games, "boxscore") => "game_boxscore",
@@ -311,6 +332,7 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         (DataType::Games, "content") => "game_content",
         (DataType::Games, "goal-replay") => "game_goal_replay",
         (DataType::Games, "scores-date") => "scores_by_date",
+        (DataType::Games, "complete") => return Err("Complete command should be handled above".into()),
         (DataType::Players, "summary") => "player_summary",
         (DataType::Players, "all") => "players_all", // Placeholder
         (DataType::Players, "game-log") => "player_game_log",
