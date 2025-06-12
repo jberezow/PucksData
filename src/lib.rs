@@ -1,12 +1,15 @@
 pub mod api;
-pub mod api_urls;
-pub mod cache;
-pub mod cli_builder;
-pub mod db;
-pub mod endpoints;
+pub mod models;
+pub mod storage;
+pub mod processing;
+pub mod workflows;
 pub mod ingest;
 pub mod inspect;
+pub mod endpoints;
+pub mod api_urls;
+pub mod cli_builder;
+pub mod cache;
 pub mod transform;
 
-// Re-export commonly used items
-pub use api_urls::*; 
+// Legacy db module - we'll keep this for backward compatibility but migrate over time
+pub mod db; 

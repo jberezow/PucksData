@@ -1,36 +1,19 @@
-use crate::api;
-use crate::endpoints::{Endpoint, get_endpoint};
-use std::collections::HashMap;
-use crate::db::{DbPool, insert_raw_data, raw_data_exists, PlayerBio, Game, get_raw_data};
-use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
+use serde_json::Value;
 use indicatif::{ProgressBar, ProgressStyle};
 
-pub struct ApiParams {
-    params: HashMap<String, String>,
+use crate::storage::{DbPool, raw_data_exists};
+use crate::processing::process_structured_data_for_game;
+use crate::ingest::{ApiParams, fetch_and_store_with_retry};
+use crate::endpoints::get_endpoint;
+
+#[derive(Debug)]
+enum ProcessResult {
+    Success,
+    Skipped,
 }
 
-impl ApiParams {
-    pub fn new() -> Self {
-        Self { params: HashMap::new() }
-    }
-
-    pub fn add_param(&mut self, key: &str, value: &str) -> &mut Self {
-        self.params.insert(key.to_string(), value.to_string());
-        self
-    }
-
-    pub fn get_param(&self, key: &str) -> Option<&str> {
-        self.params.get(key).map(|s| s.as_str())
-    }
-
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!(self.params)
-    }
-}
-
-/// Bulk import all games with rate limiting and error recovery
 pub async fn bulk_import_all_games(
     games_file_path: &str, 
     pool: DbPool,
@@ -178,12 +161,6 @@ pub async fn bulk_import_all_games(
     Ok(())
 }
 
-#[derive(Debug)]
-enum ProcessResult {
-    Success,
-    Skipped,
-}
-
 async fn process_game_endpoint(
     game_id: i64,
     endpoint_name: &str,
@@ -229,170 +206,4 @@ async fn process_game_endpoint(
     }
     
     unreachable!()
-}
-
-// Re-export the fetch_and_store_with_retry function for use by workflows
-pub async fn fetch_and_store_with_retry(
-    endpoint: &Endpoint, 
-    params: &ApiParams, 
-    pool: &DbPool
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Replace URL parameters with actual values
-    let mut url = endpoint.url.to_string();
-    for (key, value) in &params.params {
-        url = url.replace(&format!("{{{}}}", key), value);
-    }
-    
-            match api::fetch_api_json(&url).await {
-        Ok(json_str) => {
-            let data_json: Value = serde_json::from_str(&json_str)?;
-            let params_json = params.to_json();
-            insert_raw_data(pool, endpoint.name, &params_json, &data_json).await?;
-            
-            // Extract game_id for better logging
-            let game_id = params.get_param("game_id").unwrap_or("unknown");
-            println!("💾 Saved {} data for game {} to database", endpoint.name, game_id);
-            
-            // Handle special cases like player bio upserts
-            if endpoint.name == "player_summary" {
-                if let Ok(player_bio) = serde_json::from_value::<PlayerBio>(data_json.clone()) {
-                    if let Err(e) = player_bio.upsert_to_db(pool).await {
-                        eprintln!("⚠️ Failed to upsert player bio: {}", e);
-                    }
-                }
-            }
-            Ok(())
-        }
-        Err(api::ApiError::NotFound) => {
-            // 404s are expected for some games/endpoints
-            Err("Resource not found (404)".into())
-        }
-        Err(api::ApiError::NetworkError(e)) => {
-            Err(Box::new(e))
-        }
-        Err(api::ApiError::Other(429)) => {
-            // Rate limited - this should trigger a retry
-            Err("Rate limited".into())
-        }
-        Err(api::ApiError::Other(code)) => {
-            Err(format!("HTTP error: {}", code).into())
-        }
-    }
-}
-
-/// Process structured data for a game (teams, game info, players)
-async fn process_structured_data_for_game(game_id: i64, pool: &DbPool) -> Result<bool, Box<dyn std::error::Error>> {
-    let params = json!({"game_id": game_id.to_string()});
-    
-    // Try to get boxscore data (most comprehensive for basic game info)
-    if let Ok(boxscore_data) = get_raw_data(pool, "game_boxscore", &params).await {
-        if let Ok(game) = serde_json::from_value::<Game>(boxscore_data) {
-            // Upsert teams first
-            game.home_team.upsert_to_db(pool).await?;
-            game.away_team.upsert_to_db(pool).await?;
-            
-            // Then upsert the game
-            game.upsert_to_db(pool).await?;
-            
-            return Ok(true);
-        }
-    }
-    
-    // If boxscore didn't work, try other endpoints
-    for endpoint in &["game_story", "game_play_by_play"] {
-        if let Ok(data) = get_raw_data(pool, endpoint, &params).await {
-            if let Ok(game) = serde_json::from_value::<Game>(data) {
-                game.home_team.upsert_to_db(pool).await?;
-                game.away_team.upsert_to_db(pool).await?;
-                game.upsert_to_db(pool).await?;
-                return Ok(true);
-            }
-        }
-    }
-    
-    // Try to extract players from player_summary if we have it
-    if let Ok(player_data) = get_raw_data(pool, "player_summary", &params).await {
-        if let Ok(player_bio) = serde_json::from_value::<PlayerBio>(player_data) {
-            player_bio.upsert_to_db(pool).await?;
-        }
-    }
-    
-    Ok(false) // No game data found to process
-}
-
-/// Generic function to fetch an endpoint by name with provided parameters
-pub async fn fetch_endpoint(endpoint_name: &str, params: &[(&str, &str)], pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
-    let endpoint = get_endpoint(endpoint_name)
-        .ok_or_else(|| format!("Endpoint '{}' not found", endpoint_name))?;
-    
-    if !endpoint.implemented {
-        return Err(format!("Endpoint '{}' is not implemented", endpoint_name).into());
-    }
-    
-    let mut api_params = ApiParams::new();
-    
-    // Add all parameters
-    for (key, value) in params {
-        api_params.add_param(key, value);
-    }
-    
-    // Validate required parameters
-    for param in &endpoint.parameters {
-        if param.required && api_params.get_param(param.name).is_none() {
-            return Err(format!("Required parameter '{}' missing for endpoint '{}'", 
-                              param.name, endpoint_name).into());
-        }
-    }
-    
-    fetch_and_store(endpoint, &api_params, pool).await
-}
-
-/// Internal function to fetch and cache data for an endpoint
-async fn fetch_and_store(endpoint: &Endpoint, params: &ApiParams, pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
-    let params_json = params.to_json();
-    if raw_data_exists(&pool, endpoint.name, &params_json).await? {
-        println!("✅ Found {} data in database", endpoint.name);
-        return Ok(());
-    }
-
-    println!("🌐 Fetching {} data from NHL API...", endpoint.name);
-    
-    // Replace URL parameters with actual values
-    let mut url = endpoint.url.to_string();
-    for (key, value) in &params.params {
-        url = url.replace(&format!("{{{}}}", key), value);
-    }
-    
-    match api::fetch_api_json(&url).await {
-        Ok(json_str) => {
-            let data_json: Value = serde_json::from_str(&json_str)?;
-            insert_raw_data(&pool, endpoint.name, &params_json, &data_json).await?;
-            println!("💾 Saved {} data to database", endpoint.name);
-            // If this is a player_summary, upsert the player bio
-            if endpoint.name == "player_summary" {
-                if let Ok(player_bio) = serde_json::from_value::<PlayerBio>(data_json.clone()) {
-                    if let Err(e) = player_bio.upsert_to_db(&pool).await {
-                        eprintln!("⚠️ Failed to upsert player bio: {}", e);
-                    } else {
-                        println!("📝 Upserted player bio for player_id {}", player_bio.playerId);
-                    }
-                } else {
-                    eprintln!("⚠️ Could not parse player bio from player_summary JSON");
-                }
-            }
-            Ok(())
-        }
-        Err(api::ApiError::NotFound) => {
-            println!("❌ Resource not found at {}", url);
-            Err("Resource not found (404)".into())
-        }
-        Err(api::ApiError::NetworkError(e)) => {
-            println!("❌ Network error while fetching {}: {}", url, e);
-            Err(Box::new(e))
-        }
-        Err(api::ApiError::Other(code)) => {
-            println!("❌ HTTP error {} while fetching {}", code, url);
-            Err(format!("HTTP error: {}", code).into())
-        }
-    }
-}
+} 
