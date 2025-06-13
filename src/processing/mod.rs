@@ -1,6 +1,7 @@
 pub mod game_processor;
-pub mod validators;
 pub mod game_sync;
+pub mod validators;
+pub mod goal_processor;
 
 // Re-export for convenience
 pub use game_processor::*;
