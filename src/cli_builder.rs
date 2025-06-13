@@ -113,6 +113,19 @@ fn build_games_commands() -> Command {
     );
     
     cmd = cmd.subcommand(
+        Command::new("sync-games")
+            .about("Sync games from raw_data to structured tables")
+            .arg(Arg::new("batch_size")
+                .help("Number of games to process in each batch")
+                .long("batch-size")
+                .default_value("50"))
+            .arg(Arg::new("dry_run")
+                .help("Show what would be done without actually doing it")
+                .long("dry-run")
+                .action(clap::ArgAction::SetTrue))
+    );
+    
+    cmd = cmd.subcommand(
         Command::new("bulk-import")
             .about("Bulk import NHL games (be careful!)")
             .arg(Arg::new("games_file")
@@ -429,6 +442,17 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         } else {
             return Err("game_id is required for complete command".into());
         }
+    }
+    
+    // Special handling for sync-games
+    if data_type == DataType::Games && subcommand_name == "sync-games" {
+        let sub_matches = matches.subcommand().unwrap().1;
+        let batch_size: usize = sub_matches.get_one::<String>("batch_size").unwrap()
+            .parse().map_err(|_| "Invalid batch size")?;
+        let dry_run = sub_matches.get_flag("dry_run");
+        
+        return crate::processing::process_missing_games(&pool, batch_size, dry_run).await
+            .map(|_| ());
     }
     
     let endpoint_name = match (data_type, subcommand_name) {
