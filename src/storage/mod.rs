@@ -1,8 +1,8 @@
-pub mod connection;
-pub mod raw;
-pub mod queries;
+mod connection;
+mod raw;
+mod queries;
 
-// Re-export for convenience
-pub use connection::*;
-pub use raw::*;
+// Export commonly needed items
+pub use connection::{create_pool, DbPool};
+pub use raw::{get_raw_data, raw_data_exists, insert_raw_data, inspect_raw_data_table};
 pub use queries::*;

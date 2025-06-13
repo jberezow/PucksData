@@ -11,11 +11,14 @@
 pub use crate::storage::*;
 pub use crate::models::*;
 
+// Legacy function re-exports for specific functions that were in db module
+pub use crate::storage::inspect_raw_data_table;
+
 /// Fetch complete game data from multiple API endpoints and store in database
 /// 
 /// DEPRECATED: This function mixes concerns and should be refactored
 /// Use crate::processing::process_structured_data_for_game instead
-pub async fn fetch_complete_game_data(game_id: i64, pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn fetch_complete_game_data(game_id: i64, pool: &crate::storage::DbPool) -> Result<(), Box<dyn std::error::Error>> {
     println!("🎮 Fetching complete game data for game {}", game_id);
     
     // Fetch from multiple endpoints to get comprehensive data
@@ -35,7 +38,7 @@ pub async fn fetch_complete_game_data(game_id: i64, pool: DbPool) -> Result<(), 
             Ok(_) => {
                 // Try to parse the stored data as Game struct
                 if game_data.is_none() {
-                    if let Ok(stored_data) = get_raw_data(&pool, endpoint_name, &serde_json::json!({"game_id": game_id.to_string()})).await {
+                    if let Ok(stored_data) = crate::storage::get_raw_data(pool, endpoint_name, &serde_json::json!({"game_id": game_id.to_string()})).await {
                         if let Ok(parsed_game) = serde_json::from_value::<Game>(stored_data) {
                             game_data = Some(parsed_game);
                         }
@@ -52,13 +55,13 @@ pub async fn fetch_complete_game_data(game_id: i64, pool: DbPool) -> Result<(), 
     // If we successfully parsed game data, store teams and game in structured tables
     if let Some(game) = game_data {
         // Upsert teams first
-        game.home_team.upsert_to_db(&pool).await
+        game.home_team.upsert_to_db(pool).await
             .map_err(|e| format!("Failed to upsert home team: {}", e))?;
-        game.away_team.upsert_to_db(&pool).await
+        game.away_team.upsert_to_db(pool).await
             .map_err(|e| format!("Failed to upsert away team: {}", e))?;
         
         // Then upsert the game
-        game.upsert_to_db(&pool).await
+        game.upsert_to_db(pool).await
             .map_err(|e| format!("Failed to upsert game: {}", e))?;
         
         println!("✅ Successfully stored complete game data for game {}", game_id);

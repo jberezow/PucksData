@@ -158,6 +158,19 @@ fn build_games_commands() -> Command {
                 .action(clap::ArgAction::SetTrue))
     );
     
+    cmd = cmd.subcommand(
+        Command::new("sync-goals")
+            .about("Sync goals from raw_data to goals table")
+            .arg(Arg::new("batch_size")
+                .help("Number of games to process in each batch")
+                .long("batch-size")
+                .default_value("50"))
+            .arg(Arg::new("dry_run")
+                .help("Show what would be done without actually doing it")
+                .long("dry-run")
+                .action(clap::ArgAction::SetTrue))
+    );
+    
     cmd
 }
 
@@ -438,7 +451,7 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         if let Some(game_id_str) = sub_matches.get_one::<String>("game_id") {
             let game_id: i64 = game_id_str.parse()
                 .map_err(|_| "Invalid game ID format")?;
-            return crate::db::fetch_complete_game_data(game_id, pool).await;
+            return crate::db::fetch_complete_game_data(game_id, &pool).await;
         } else {
             return Err("game_id is required for complete command".into());
         }
@@ -452,6 +465,17 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         let dry_run = sub_matches.get_flag("dry_run");
         
         return crate::processing::process_missing_games(&pool, batch_size, dry_run).await
+            .map(|_| ());
+    }
+    
+    // Special handling for sync-goals
+    if data_type == DataType::Games && subcommand_name == "sync-goals" {
+        let sub_matches = matches.subcommand().unwrap().1;
+        let batch_size: usize = sub_matches.get_one::<String>("batch_size").unwrap()
+            .parse().map_err(|_| "Invalid batch size")?;
+        let dry_run = sub_matches.get_flag("dry_run");
+        
+        return crate::processing::goal_processor::process_missing_goals(&pool, batch_size, dry_run).await
             .map(|_| ());
     }
     
