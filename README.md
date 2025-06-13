@@ -60,3 +60,12 @@ cargo test --test endpoint_tests
 ## License
 
 MIT
+
+### Hasura Setup
+
+Hasura migrations and metadata are stored in the `/hasura` directory using CLI config v3. Use `.env` to configure the endpoint and secret.
+
+Helpful commands:
+- `npm run hasura:console` – open local Hasura console
+- `npm run hasura:pull` – pull updated schema + metadata from server
+- `npm run hasura:apply` – apply schema + metadata to any environment
