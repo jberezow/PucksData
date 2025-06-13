@@ -231,7 +231,7 @@ async fn process_game_endpoint(
     unreachable!()
 }
 
-// Re-export the fetch_and_store_with_retry function for use by workflows
+/// Fetch and store data from an API endpoint with retry logic
 pub async fn fetch_and_store_with_retry(
     endpoint: &Endpoint, 
     params: &ApiParams, 
@@ -243,7 +243,7 @@ pub async fn fetch_and_store_with_retry(
         url = url.replace(&format!("{{{}}}", key), value);
     }
     
-            match api::fetch_api_json(&url).await {
+    match api::fetch_api_json(&url).await {
         Ok(json_str) => {
             let data_json: Value = serde_json::from_str(&json_str)?;
             let params_json = params.to_json();
@@ -264,14 +264,12 @@ pub async fn fetch_and_store_with_retry(
             Ok(())
         }
         Err(api::ApiError::NotFound) => {
-            // 404s are expected for some games/endpoints
             Err("Resource not found (404)".into())
         }
         Err(api::ApiError::NetworkError(e)) => {
             Err(Box::new(e))
         }
         Err(api::ApiError::Other(429)) => {
-            // Rate limited - this should trigger a retry
             Err("Rate limited".into())
         }
         Err(api::ApiError::Other(code)) => {
@@ -368,6 +366,7 @@ async fn fetch_and_store(endpoint: &Endpoint, params: &ApiParams, pool: DbPool) 
             let data_json: Value = serde_json::from_str(&json_str)?;
             insert_raw_data(&pool, endpoint.name, &params_json, &data_json).await?;
             println!("💾 Saved {} data to database", endpoint.name);
+            
             // If this is a player_summary, upsert the player bio
             if endpoint.name == "player_summary" {
                 if let Ok(player_bio) = serde_json::from_value::<PlayerBio>(data_json.clone()) {
