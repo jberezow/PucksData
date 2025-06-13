@@ -1,0 +1,3 @@
+table:
+  name: raw_data
+  schema: public

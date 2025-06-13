@@ -5,3 +5,12 @@
 .env
 .env.*
 !.env.example
+
+# Node modules (if using Node.js tooling)
+node_modules/
+
+# Hasura CLI artifacts (only if not using them)
+hasura/metadata/databases/*/introspection/
+
+# Backup folders (created during upgrades)
+hasura/migrations_backup/
