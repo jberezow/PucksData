@@ -171,6 +171,73 @@ fn build_games_commands() -> Command {
                 .action(clap::ArgAction::SetTrue))
     );
     
+    cmd = cmd.subcommand(
+        Command::new("analyze-reviews")
+            .about("Analyze play-by-play data for goal reviews and call backs")
+            .arg(Arg::new("game_id")
+                .help("Specific game ID to analyze (optional)")
+                .long("game-id"))
+            .arg(Arg::new("limit")
+                .help("Number of recent games to analyze if no game_id specified")
+                .long("limit")
+                .default_value("5"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("search-events")
+            .about("Search for games containing specific event types")
+            .arg(Arg::new("terms")
+                .help("Search terms (e.g., 'review', 'challenge', 'video')")
+                .long("terms")
+                .default_value("review,challenge,video,call"))
+            .arg(Arg::new("limit")
+                .help("Maximum number of games to find")
+                .long("limit")
+                .default_value("20"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("list-event-types")
+            .about("List all event types found across games")
+            .arg(Arg::new("limit")
+                .help("Number of games to analyze")
+                .long("limit")
+                .default_value("100"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("examine-goal-details")
+            .about("Examine goal events in detail for review/challenge information")
+            .arg(Arg::new("game_id")
+                .help("Game ID to examine")
+                .long("game-id")
+                .required(true))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("search-challenges")
+            .about("Search for coach challenge events across games")
+            .arg(Arg::new("limit")
+                .help("Number of games to search")
+                .long("limit")
+                .default_value("50"))
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("find-discrepancies")
+            .about("Find games where goal counts don't match (possible called back goals)")
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("add-validity-tracking")
+            .about("Add goal validity tracking columns to the goals table")
+    );
+    
+    cmd = cmd.subcommand(
+        Command::new("fix-shootout-goals")
+            .about("Mark existing shootout goals as invalid")
+    );
+    
     cmd
 }
 
@@ -477,6 +544,100 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         
         return crate::processing::goal_processor::process_missing_goals(&pool, batch_size, dry_run).await
             .map(|_| ());
+    }
+    
+    // Special handling for analyze-reviews
+    if data_type == DataType::Games && subcommand_name == "analyze-reviews" {
+        let sub_matches = matches.subcommand().unwrap().1;
+        
+        if let Some(game_id_str) = sub_matches.get_one::<String>("game_id") {
+            // Analyze specific game
+            let game_id: i64 = game_id_str.parse()
+                .map_err(|_| "Invalid game ID format")?;
+            return crate::processing::goal_processor::analyze_goal_reviews(&pool, game_id).await;
+        } else {
+            // Analyze recent games
+            let limit: usize = sub_matches.get_one::<String>("limit").unwrap()
+                .parse().map_err(|_| "Invalid limit")?;
+            
+            let games = crate::processing::goal_processor::find_games_with_reviews(&pool, limit).await?;
+            println!("🔍 Analyzing {} recent games for goal reviews...\n", games.len());
+            
+            for game_id in games {
+                match crate::processing::goal_processor::analyze_goal_reviews(&pool, game_id).await {
+                    Ok(_) => {},
+                    Err(e) => eprintln!("❌ Error analyzing game {}: {}", game_id, e),
+                }
+                println!(); // Add space between games
+            }
+            
+            return Ok(());
+        }
+    }
+    
+    // Special handling for search-events
+    if data_type == DataType::Games && subcommand_name == "search-events" {
+        let sub_matches = matches.subcommand().unwrap().1;
+        let terms_str = sub_matches.get_one::<String>("terms").unwrap();
+        let terms: Vec<&str> = terms_str.split(',').collect();
+        let limit: usize = sub_matches.get_one::<String>("limit").unwrap()
+            .parse().map_err(|_| "Invalid limit")?;
+        
+        let games = crate::processing::goal_processor::search_games_with_event_types(&pool, &terms, limit).await?;
+        println!("🔍 Found {} games containing terms: {:?}\n", games.len(), terms);
+        
+        for game_id in games {
+            match crate::processing::goal_processor::analyze_goal_reviews(&pool, game_id).await {
+                Ok(_) => {},
+                Err(e) => eprintln!("❌ Error analyzing game {}: {}", game_id, e),
+            }
+            println!(); // Add space between games
+        }
+        
+        return Ok(());
+    }
+    
+    // Special handling for list-event-types
+    if data_type == DataType::Games && subcommand_name == "list-event-types" {
+        let sub_matches = matches.subcommand().unwrap().1;
+        let limit: usize = sub_matches.get_one::<String>("limit").unwrap()
+            .parse().map_err(|_| "Invalid limit")?;
+        
+        return crate::processing::goal_processor::get_all_event_types(&pool, limit).await;
+    }
+    
+    // Special handling for examine-goal-details
+    if data_type == DataType::Games && subcommand_name == "examine-goal-details" {
+        let sub_matches = matches.subcommand().unwrap().1;
+        let game_id_str = sub_matches.get_one::<String>("game_id").unwrap();
+        let game_id: i64 = game_id_str.parse()
+            .map_err(|_| "Invalid game ID format")?;
+        
+        return crate::processing::goal_processor::examine_goal_details(&pool, game_id).await;
+    }
+    
+    // Special handling for search-challenges
+    if data_type == DataType::Games && subcommand_name == "search-challenges" {
+        let sub_matches = matches.subcommand().unwrap().1;
+        let limit: usize = sub_matches.get_one::<String>("limit").unwrap()
+            .parse().map_err(|_| "Invalid limit")?;
+        
+        return crate::processing::goal_processor::search_for_coach_challenges(&pool, limit).await;
+    }
+    
+    // Special handling for find-discrepancies
+    if data_type == DataType::Games && subcommand_name == "find-discrepancies" {
+        return crate::processing::goal_processor::find_goal_discrepancies(&pool).await;
+    }
+    
+    // Special handling for add-validity-tracking
+    if data_type == DataType::Games && subcommand_name == "add-validity-tracking" {
+        return crate::processing::goal_processor::add_goal_validity_tracking(&pool).await;
+    }
+    
+    // Special handling for fix-shootout-goals
+    if data_type == DataType::Games && subcommand_name == "fix-shootout-goals" {
+        return crate::processing::goal_processor::fix_shootout_goals(&pool).await;
     }
     
     let endpoint_name = match (data_type, subcommand_name) {
