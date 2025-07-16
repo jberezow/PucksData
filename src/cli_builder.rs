@@ -2,7 +2,6 @@ use clap::{Command, Arg, ArgMatches};
 use crate::endpoints::{DataType, Endpoint, get_endpoint, get_all_endpoints};
 use crate::ingest;
 use crate::inspect;
-use crate::storage::DbPool;
 use crate::workflows::bulk_import_all_games;
 
 /// Build the top-level CLI application
@@ -32,12 +31,6 @@ pub fn build_cli() -> Command {
         Command::new("list-endpoints")
             .about("List available API endpoints")
             .arg(Arg::new("data_type").help("Filter by data type (games, players, etc.)").required(false))
-    );
-    
-    // Add database inspection command
-    app = app.subcommand(
-        Command::new("inspect-db")
-            .about("Inspect what's in the raw_data database table")
     );
     
     app
@@ -105,27 +98,6 @@ fn build_games_commands() -> Command {
     );
     
     cmd = cmd.subcommand(
-        Command::new("complete")
-            .about("Fetch complete game data from multiple endpoints")
-            .arg(Arg::new("game_id")
-                .help("The NHL game ID")
-                .required(true))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("sync-games")
-            .about("Sync games from raw_data to structured tables")
-            .arg(Arg::new("batch_size")
-                .help("Number of games to process in each batch")
-                .long("batch-size")
-                .default_value("50"))
-            .arg(Arg::new("dry_run")
-                .help("Show what would be done without actually doing it")
-                .long("dry-run")
-                .action(clap::ArgAction::SetTrue))
-    );
-    
-    cmd = cmd.subcommand(
         Command::new("bulk-import")
             .about("Bulk import NHL games (be careful!)")
             .arg(Arg::new("games_file")
@@ -148,94 +120,10 @@ fn build_games_commands() -> Command {
                 .help("Only process games from this year forward (e.g., 2020)")
                 .long("start-year")
                 .short('y'))
-            .arg(Arg::new("structured_only")
-                .help("Only update structured tables (games, teams, players) from existing raw data")
-                .long("structured-only")
-                .action(clap::ArgAction::SetTrue))
             .arg(Arg::new("dry_run")
                 .help("Show what would be done without actually doing it")
                 .long("dry-run")
                 .action(clap::ArgAction::SetTrue))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("sync-goals")
-            .about("Sync goals from raw_data to goals table")
-            .arg(Arg::new("batch_size")
-                .help("Number of games to process in each batch")
-                .long("batch-size")
-                .default_value("50"))
-            .arg(Arg::new("dry_run")
-                .help("Show what would be done without actually doing it")
-                .long("dry-run")
-                .action(clap::ArgAction::SetTrue))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("analyze-reviews")
-            .about("Analyze play-by-play data for goal reviews and call backs")
-            .arg(Arg::new("game_id")
-                .help("Specific game ID to analyze (optional)")
-                .long("game-id"))
-            .arg(Arg::new("limit")
-                .help("Number of recent games to analyze if no game_id specified")
-                .long("limit")
-                .default_value("5"))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("search-events")
-            .about("Search for games containing specific event types")
-            .arg(Arg::new("terms")
-                .help("Search terms (e.g., 'review', 'challenge', 'video')")
-                .long("terms")
-                .default_value("review,challenge,video,call"))
-            .arg(Arg::new("limit")
-                .help("Maximum number of games to find")
-                .long("limit")
-                .default_value("20"))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("list-event-types")
-            .about("List all event types found across games")
-            .arg(Arg::new("limit")
-                .help("Number of games to analyze")
-                .long("limit")
-                .default_value("100"))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("examine-goal-details")
-            .about("Examine goal events in detail for review/challenge information")
-            .arg(Arg::new("game_id")
-                .help("Game ID to examine")
-                .long("game-id")
-                .required(true))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("search-challenges")
-            .about("Search for coach challenge events across games")
-            .arg(Arg::new("limit")
-                .help("Number of games to search")
-                .long("limit")
-                .default_value("50"))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("find-discrepancies")
-            .about("Find games where goal counts don't match (possible called back goals)")
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("add-validity-tracking")
-            .about("Add goal validity tracking columns to the goals table")
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("fix-shootout-goals")
-            .about("Mark existing shootout goals as invalid")
     );
     
     cmd
@@ -423,24 +311,17 @@ fn build_playoff_commands() -> Command {
 }
 
 /// Main command handler
-pub async fn handle_command(matches: &ArgMatches, pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     match matches.subcommand() {
-        Some(("games", sub_matches)) => handle_data_type_command(DataType::Games, sub_matches, pool).await,
-        Some(("players", sub_matches)) => handle_data_type_command(DataType::Players, sub_matches, pool).await,
-        Some(("teams", sub_matches)) => handle_data_type_command(DataType::Teams, sub_matches, pool).await,
-        Some(("schedule", sub_matches)) => handle_data_type_command(DataType::Schedule, sub_matches, pool).await,
-        Some(("playoffs", sub_matches)) => handle_data_type_command(DataType::Playoffs, sub_matches, pool).await,
+        Some(("games", sub_matches)) => handle_data_type_command(DataType::Games, sub_matches).await,
+        Some(("players", sub_matches)) => handle_data_type_command(DataType::Players, sub_matches).await,
+        Some(("teams", sub_matches)) => handle_data_type_command(DataType::Teams, sub_matches).await,
+        Some(("schedule", sub_matches)) => handle_data_type_command(DataType::Schedule, sub_matches).await,
+        Some(("playoffs", sub_matches)) => handle_data_type_command(DataType::Playoffs, sub_matches).await,
         Some(("inspect", sub_matches)) => handle_inspect_command(sub_matches).await,
         Some(("list-endpoints", sub_matches)) => handle_list_endpoints_command(sub_matches),
-        Some(("inspect-db", _)) => {
-            if let Err(e) = crate::db::inspect_raw_data_table(&pool).await {
-                eprintln!("Error inspecting database: {}", e);
-            }
-            Ok(())
-        },
         _ => {
             // No subcommand provided, so we'll print help
-            // You might need to adjust this part depending on clap's version and your preference
             build_cli().print_help()?;
             Ok(())
         }
@@ -448,7 +329,7 @@ pub async fn handle_command(matches: &ArgMatches, pool: DbPool) -> Result<(), Bo
 }
 
 /// Generic handler for data type commands (games, players, etc.)
-async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, pool: DbPool) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let subcommand_name = matches.subcommand_name().unwrap_or("default");
     
     // Special handling for bulk import
@@ -464,7 +345,6 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         let start_year: Option<i32> = sub_matches.get_one::<String>("start_year")
             .map(|s| s.parse().map_err(|_| "Invalid start year"))
             .transpose()?;
-        let structured_only = sub_matches.get_flag("structured_only");
         let dry_run = sub_matches.get_flag("dry_run");
         
         let endpoints: Vec<&str> = endpoints_str.split(',').map(|s| s.trim()).collect();
@@ -480,7 +360,6 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
             } else {
                 println!("   📅 All years (72,000+ games from 1917 onwards)");
             }
-            println!("   🏗️  Structured tables: {}", if structured_only { "ONLY structured" } else { "Raw + structured" });
             println!("   ⏱️  Estimated time: ~{} hours at safe rates", 
                     if start_year.is_some() { "2-4" } else { "6-10" });
             println!("\nUse without --dry-run to actually run the import.");
@@ -501,143 +380,13 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         }
         println!("\n🚀 Starting bulk import...");
         
-                        return bulk_import_all_games(
+        return bulk_import_all_games(
             games_file,
-            pool,
             &endpoints,
             max_retries,
             batch_size,
             start_year,
-            structured_only,
         ).await;
-    }
-    
-    // Special handling for complete game data
-    if data_type == DataType::Games && subcommand_name == "complete" {
-        let sub_matches = matches.subcommand().unwrap().1;
-        if let Some(game_id_str) = sub_matches.get_one::<String>("game_id") {
-            let game_id: i64 = game_id_str.parse()
-                .map_err(|_| "Invalid game ID format")?;
-            return crate::db::fetch_complete_game_data(game_id, &pool).await;
-        } else {
-            return Err("game_id is required for complete command".into());
-        }
-    }
-    
-    // Special handling for sync-games
-    if data_type == DataType::Games && subcommand_name == "sync-games" {
-        let sub_matches = matches.subcommand().unwrap().1;
-        let batch_size: usize = sub_matches.get_one::<String>("batch_size").unwrap()
-            .parse().map_err(|_| "Invalid batch size")?;
-        let dry_run = sub_matches.get_flag("dry_run");
-        
-        return crate::processing::process_missing_games(&pool, batch_size, dry_run).await
-            .map(|_| ());
-    }
-    
-    // Special handling for sync-goals
-    if data_type == DataType::Games && subcommand_name == "sync-goals" {
-        let sub_matches = matches.subcommand().unwrap().1;
-        let batch_size: usize = sub_matches.get_one::<String>("batch_size").unwrap()
-            .parse().map_err(|_| "Invalid batch size")?;
-        let dry_run = sub_matches.get_flag("dry_run");
-        
-        return crate::processing::goal_processor::process_missing_goals(&pool, batch_size, dry_run).await
-            .map(|_| ());
-    }
-    
-    // Special handling for analyze-reviews
-    if data_type == DataType::Games && subcommand_name == "analyze-reviews" {
-        let sub_matches = matches.subcommand().unwrap().1;
-        
-        if let Some(game_id_str) = sub_matches.get_one::<String>("game_id") {
-            // Analyze specific game
-            let game_id: i64 = game_id_str.parse()
-                .map_err(|_| "Invalid game ID format")?;
-            return crate::processing::goal_processor::analyze_goal_reviews(&pool, game_id).await;
-        } else {
-            // Analyze recent games
-            let limit: usize = sub_matches.get_one::<String>("limit").unwrap()
-                .parse().map_err(|_| "Invalid limit")?;
-            
-            let games = crate::processing::goal_processor::find_games_with_reviews(&pool, limit).await?;
-            println!("🔍 Analyzing {} recent games for goal reviews...\n", games.len());
-            
-            for game_id in games {
-                match crate::processing::goal_processor::analyze_goal_reviews(&pool, game_id).await {
-                    Ok(_) => {},
-                    Err(e) => eprintln!("❌ Error analyzing game {}: {}", game_id, e),
-                }
-                println!(); // Add space between games
-            }
-            
-            return Ok(());
-        }
-    }
-    
-    // Special handling for search-events
-    if data_type == DataType::Games && subcommand_name == "search-events" {
-        let sub_matches = matches.subcommand().unwrap().1;
-        let terms_str = sub_matches.get_one::<String>("terms").unwrap();
-        let terms: Vec<&str> = terms_str.split(',').collect();
-        let limit: usize = sub_matches.get_one::<String>("limit").unwrap()
-            .parse().map_err(|_| "Invalid limit")?;
-        
-        let games = crate::processing::goal_processor::search_games_with_event_types(&pool, &terms, limit).await?;
-        println!("🔍 Found {} games containing terms: {:?}\n", games.len(), terms);
-        
-        for game_id in games {
-            match crate::processing::goal_processor::analyze_goal_reviews(&pool, game_id).await {
-                Ok(_) => {},
-                Err(e) => eprintln!("❌ Error analyzing game {}: {}", game_id, e),
-            }
-            println!(); // Add space between games
-        }
-        
-        return Ok(());
-    }
-    
-    // Special handling for list-event-types
-    if data_type == DataType::Games && subcommand_name == "list-event-types" {
-        let sub_matches = matches.subcommand().unwrap().1;
-        let limit: usize = sub_matches.get_one::<String>("limit").unwrap()
-            .parse().map_err(|_| "Invalid limit")?;
-        
-        return crate::processing::goal_processor::get_all_event_types(&pool, limit).await;
-    }
-    
-    // Special handling for examine-goal-details
-    if data_type == DataType::Games && subcommand_name == "examine-goal-details" {
-        let sub_matches = matches.subcommand().unwrap().1;
-        let game_id_str = sub_matches.get_one::<String>("game_id").unwrap();
-        let game_id: i64 = game_id_str.parse()
-            .map_err(|_| "Invalid game ID format")?;
-        
-        return crate::processing::goal_processor::examine_goal_details(&pool, game_id).await;
-    }
-    
-    // Special handling for search-challenges
-    if data_type == DataType::Games && subcommand_name == "search-challenges" {
-        let sub_matches = matches.subcommand().unwrap().1;
-        let limit: usize = sub_matches.get_one::<String>("limit").unwrap()
-            .parse().map_err(|_| "Invalid limit")?;
-        
-        return crate::processing::goal_processor::search_for_coach_challenges(&pool, limit).await;
-    }
-    
-    // Special handling for find-discrepancies
-    if data_type == DataType::Games && subcommand_name == "find-discrepancies" {
-        return crate::processing::goal_processor::find_goal_discrepancies(&pool).await;
-    }
-    
-    // Special handling for add-validity-tracking
-    if data_type == DataType::Games && subcommand_name == "add-validity-tracking" {
-        return crate::processing::goal_processor::add_goal_validity_tracking(&pool).await;
-    }
-    
-    // Special handling for fix-shootout-goals
-    if data_type == DataType::Games && subcommand_name == "fix-shootout-goals" {
-        return crate::processing::goal_processor::fix_shootout_goals(&pool).await;
     }
     
     let endpoint_name = match (data_type, subcommand_name) {
@@ -648,7 +397,6 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         (DataType::Games, "content") => "game_content",
         (DataType::Games, "goal-replay") => "game_goal_replay",
         (DataType::Games, "scores-date") => "scores_by_date",
-        (DataType::Games, "complete") => return Err("Complete command should be handled above".into()),
         (DataType::Players, "summary") => "player_summary",
         (DataType::Players, "all") => "players_all", // Placeholder
         (DataType::Players, "game-log") => "player_game_log",
@@ -678,7 +426,7 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches, poo
         }
     }
     
-    ingest::fetch_endpoint(endpoint_name, &params, pool).await
+    ingest::fetch_endpoint(endpoint_name, &params).await
 }
 
 /// Handler for the 'inspect' command
@@ -762,11 +510,13 @@ fn handle_list_endpoints_command(matches: &ArgMatches) -> Result<(), Box<dyn std
     Ok(())
 }
 
-/// An example main function to demonstrate CLI usage
-pub async fn example_main(pool: DbPool) {
-    let matches = build_cli().get_matches();
-    if let Err(e) = handle_command(&matches, pool).await {
+/// Main entry point for CLI
+pub async fn example_main() {
+    let app = build_cli();
+    let matches = app.get_matches();
+    
+    if let Err(e) = handle_command(&matches).await {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
-} 
+}
