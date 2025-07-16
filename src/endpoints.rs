@@ -99,7 +99,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("game_id", "2023020001");
                 map
             },
-            example: "pucksdata game story 2023020001",
+            example: "pucksdata games story 2023020001",
         },
         Endpoint {
             name: "game_boxscore",
@@ -120,7 +120,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("game_id", "2023020001");
                 map
             },
-            example: "pucksdata game boxscore 2023020001",
+            example: "pucksdata games boxscore 2023020001",
         },
         Endpoint {
             name: "game_play_by_play",
@@ -141,17 +141,17 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("game_id", "2023020001");
                 map
             },
-            example: "pucksdata game play-by-play 2023020001",
+            example: "pucksdata games play-by-play 2023020001",
         },
         Endpoint {
-            name: "game_all_games",
+            name: "games_all",
             url: "https://api.nhle.com/stats/rest/en/game",
             description: "Fetch all games data",
             data_type: DataType::Games,
             implemented: true,
             parameters: vec![],
             test_params: HashMap::new(),
-            example: "pucksdata game all",
+            example: "pucksdata games all",
         },
         Endpoint {
             name: "game_content",
@@ -172,7 +172,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("game_id", "2023020001");
                 map
             },
-            example: "pucksdata game content 2023020001",
+            example: "pucksdata games content 2023020001",
         },
         Endpoint {
             name: "game_goal_replay",
@@ -200,10 +200,10 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("event_id", "401");
                 map
             },
-            example: "pucksdata game goal-replay 2023020001 401",
+            example: "pucksdata games goal-replay 2023020001 401",
         },
         Endpoint {
-            name: "game_scores_date",
+            name: "scores_by_date",
             url: "https://api-web.nhle.com/v1/score/{date}",
             description: "Fetch scores by date",
             data_type: DataType::Games,
@@ -221,7 +221,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("date", "2024-02-15");
                 map
             },
-            example: "pucksdata game scores-date 2024-02-15",
+            example: "pucksdata games scores-date 2024-02-15",
         },
 
         // Player endpoints
@@ -244,17 +244,17 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("player_id", "8478402");
                 map
             },
-            example: "pucksdata player summary 8478402",
+            example: "pucksdata players summary 8478402",
         },
         Endpoint {
-            name: "player_all",
+            name: "players_all",
             url: "https://api.nhle.com/stats/rest/en/players",
             description: "Fetch all players data",
             data_type: DataType::Players,
             implemented: true,
             parameters: vec![],
             test_params: HashMap::new(),
-            example: "pucksdata player all",
+            example: "pucksdata players all",
         },
         Endpoint {
             name: "player_game_log",
@@ -289,10 +289,31 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("game_type", "2");
                 map
             },
-            example: "pucksdata player game-log 8478402 20232024 2",
+            example: "pucksdata players game-log 8478402 20232024 2",
         },
         
         // Team endpoints
+        Endpoint {
+            name: "team_current_stats",
+            url: "https://api-web.nhle.com/v1/club-stats/{team_code}/now",
+            description: "Fetch current team statistics",
+            data_type: DataType::Teams,
+            implemented: true,
+            parameters: vec![
+                Parameter {
+                    name: "team_code",
+                    description: "The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)",
+                    required: true,
+                    example: "EDM",
+                },
+            ],
+            test_params: {
+                let mut map = HashMap::new();
+                map.insert("team_code", "EDM");
+                map
+            },
+            example: "pucksdata teams current-stats EDM",
+        },
         Endpoint {
             name: "team_stats_by_season",
             url: "https://api-web.nhle.com/v1/club-stats/{team_code}/{season}/{game_type}",
@@ -326,10 +347,10 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("game_type", "2");
                 map
             },
-            example: "pucksdata team stats-by-season EDM 20232024 2",
+            example: "pucksdata teams stats-by-season EDM 20232024 2",
         },
         Endpoint {
-            name: "team_standings_by_date",
+            name: "team_standings_date",
             url: "https://api-web.nhle.com/v1/standings/{date}",
             description: "Fetch standings by date",
             data_type: DataType::Teams,
@@ -347,7 +368,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("date", "2024-02-15");
                 map
             },
-            example: "pucksdata team standings-by-date 2024-02-15",
+            example: "pucksdata teams standings-by-date 2024-02-15",
         },
         Endpoint {
             name: "team_standings_season",
@@ -357,7 +378,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             implemented: true,
             parameters: vec![],
             test_params: HashMap::new(),
-            example: "pucksdata team standings-season",
+            example: "pucksdata teams standings-season",
         },
         Endpoint {
             name: "team_roster_season",
@@ -385,7 +406,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("season", "20232024");
                 map
             },
-            example: "pucksdata team roster-season EDM 20232024",
+            example: "pucksdata teams roster-season EDM 20232024",
         },
         Endpoint {
             name: "team_prospects",
@@ -406,7 +427,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("team_code", "EDM");
                 map
             },
-            example: "pucksdata team prospects EDM",
+            example: "pucksdata teams prospects EDM",
         },
         Endpoint {
             name: "team_schedule_season",
@@ -434,7 +455,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("season", "20232024");
                 map
             },
-            example: "pucksdata team schedule-season EDM 20232024",
+            example: "pucksdata teams schedule-season EDM 20232024",
         },
         Endpoint {
             name: "team_schedule_month",
@@ -462,7 +483,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("date", "2024-02-15");
                 map
             },
-            example: "pucksdata team schedule-month EDM 2024-02-15",
+            example: "pucksdata teams schedule-month EDM 2024-02-15",
         },
         
         // League schedule endpoints
@@ -477,7 +498,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             example: "pucksdata schedule now",
         },
         Endpoint {
-            name: "schedule_date",
+            name: "schedule_by_date",
             url: "https://api-web.nhle.com/v1/schedule/{date}",
             description: "Fetch schedule by date",
             data_type: DataType::Schedule,
@@ -495,7 +516,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
                 map.insert("date", "2024-02-15");
                 map
             },
-            example: "pucksdata schedule date 2024-02-15",
+            example: "pucksdata schedule by-date 2024-02-15",
         },
 
         // Playoff endpoints

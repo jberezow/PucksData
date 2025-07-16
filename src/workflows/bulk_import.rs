@@ -3,10 +3,9 @@ use tokio::time::sleep;
 use serde_json::Value;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::storage::{DbPool, raw_data_exists};
-use crate::processing::process_structured_data_for_game;
 use crate::ingest::{ApiParams, fetch_and_store_with_retry};
 use crate::endpoints::get_endpoint;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 enum ProcessResult {
@@ -14,14 +13,34 @@ enum ProcessResult {
     Skipped,
 }
 
+/// Generate cache file path for an endpoint and parameters
+fn get_cache_path(endpoint_name: &str, game_id: i64) -> PathBuf {
+    let mut path = PathBuf::from("data/raw");
+    
+    // Create directory structure based on endpoint type
+    let parts: Vec<&str> = endpoint_name.split('_').collect();
+    if parts.len() > 1 {
+        path.push(parts[0]); // e.g., "games", "players", "teams"
+    }
+    
+    // Create filename based on endpoint and game_id
+    let filename = format!("{}_{}.json", endpoint_name, game_id);
+    path.push(filename);
+    path
+}
+
+/// Check if cached data exists for a game endpoint
+fn cache_exists_for_game(endpoint_name: &str, game_id: i64) -> bool {
+    let cache_path = get_cache_path(endpoint_name, game_id);
+    cache_path.exists()
+}
+
 pub async fn bulk_import_all_games(
     games_file_path: &str, 
-    pool: DbPool,
     endpoints: &[&str], // Which endpoints to fetch for each game
     max_retries: u32,
     batch_size: usize,
     start_year: Option<i32>,
-    structured_only: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting bulk import of NHL games...");
     
@@ -50,17 +69,12 @@ pub async fn bulk_import_all_games(
     };
     
     println!("📊 Found {} total games, {} after filtering", all_games.len(), filtered_games.len());
-    if structured_only {
-        println!("🏗️  Mode: STRUCTURED ONLY (parsing existing raw data)");
-    } else {
-        println!("🎯 Endpoints to fetch: {:?}", endpoints);
-    }
+    println!("🎯 Endpoints to fetch: {:?}", endpoints);
     println!("📦 Batch size: {}", batch_size);
     
     let mut success_count = 0;
     let mut error_count = 0;
     let mut skip_count = 0;
-    let mut structured_count = 0;
     let start_time = Instant::now();
     
     // Create overall progress bar
@@ -86,36 +100,15 @@ pub async fn bulk_import_all_games(
             let game_id = game["id"].as_i64()
                 .ok_or("Game missing ID field")?;
             
-            if structured_only {
-                // Only process structured data from existing raw data
-                match process_structured_data_for_game(game_id, &pool).await {
-                    Ok(true) => structured_count += 1,
-                    Ok(false) => skip_count += 1,
+            // Fetch raw data for each endpoint
+            for endpoint_name in endpoints {
+                match process_game_endpoint(game_id, endpoint_name, max_retries).await {
+                    Ok(ProcessResult::Success) => success_count += 1,
+                    Ok(ProcessResult::Skipped) => skip_count += 1,
                     Err(e) => {
                         error_count += 1;
-                        eprintln!("❌ Failed to process structured data for game {}: {}", game_id, e);
-                    }
-                }
-            } else {
-                // Fetch raw data and process structured data
-                for endpoint_name in endpoints {
-                    match process_game_endpoint(game_id, endpoint_name, &pool, max_retries).await {
-                        Ok(ProcessResult::Success) => success_count += 1,
-                        Ok(ProcessResult::Skipped) => skip_count += 1,
-                        Err(e) => {
-                            error_count += 1;
-                            eprintln!("❌ Failed to process game {} with endpoint {}: {}", 
-                                    game_id, endpoint_name, e);
-                        }
-                    }
-                }
-                
-                // Also process structured data
-                match process_structured_data_for_game(game_id, &pool).await {
-                    Ok(true) => structured_count += 1,
-                    Ok(false) => {}, // Don't count as skip if we just fetched raw data
-                    Err(e) => {
-                        eprintln!("⚠️ Failed to process structured data for game {}: {}", game_id, e);
+                        eprintln!("❌ Failed to process game {} with endpoint {}: {}", 
+                                game_id, endpoint_name, e);
                     }
                 }
             }
@@ -124,18 +117,14 @@ pub async fn bulk_import_all_games(
             overall_pb.inc(1);
             
             // Small delay between games to be respectful
-            if !structured_only {
-                sleep(Duration::from_millis(50)).await;
-            }
+            sleep(Duration::from_millis(50)).await;
         }
         
         batch_pb.finish_and_clear();
         
-        // Longer pause between batches (only if fetching data)
-        if !structured_only {
-            println!("⏸️  Batch complete, pausing 2 seconds...");
-            sleep(Duration::from_secs(2)).await;
-        }
+        // Longer pause between batches
+        println!("⏸️  Batch complete, pausing 2 seconds...");
+        sleep(Duration::from_secs(2)).await;
     }
     
     overall_pb.finish_and_clear();
@@ -143,20 +132,13 @@ pub async fn bulk_import_all_games(
     let total_time = start_time.elapsed();
     println!("\n🎉 Bulk import completed!");
     println!("📈 Final stats:");
-    if structured_only {
-        println!("   🏗️  Structured data processed: {}", structured_count);
-    } else {
-        println!("   ✅ Raw data operations: {}", success_count);
-        println!("   🏗️  Structured data processed: {}", structured_count);
-    }
+    println!("   ✅ Raw data operations: {}", success_count);
     println!("   ⏭️  Skipped: {}", skip_count);
     println!("   ❌ Errors: {}", error_count);
     println!("   ⏱️  Total time: {:.2} minutes", total_time.as_secs_f64() / 60.0);
     println!("   📊 Games processed: {}", total_games);
-    if !structured_only {
-        println!("   📊 Average rate: {:.1} requests/sec", 
-                (success_count + skip_count + error_count) as f64 / total_time.as_secs_f64());
-    }
+    println!("   📊 Average rate: {:.1} requests/sec", 
+            (success_count + skip_count + error_count) as f64 / total_time.as_secs_f64());
     
     Ok(())
 }
@@ -164,7 +146,6 @@ pub async fn bulk_import_all_games(
 async fn process_game_endpoint(
     game_id: i64,
     endpoint_name: &str,
-    pool: &DbPool,
     max_retries: u32,
 ) -> Result<ProcessResult, Box<dyn std::error::Error>> {
     let endpoint = get_endpoint(endpoint_name)
@@ -177,20 +158,18 @@ async fn process_game_endpoint(
     let mut api_params = ApiParams::new();
     api_params.add_param("game_id", &game_id.to_string());
     
-    let params_json = api_params.to_json();
-    
-    // Check if we already have this data
-    if raw_data_exists(pool, endpoint.name, &params_json).await? {
-        // Occasionally log skips to show we're checking the database
+    // Check if we already have this data cached
+    if cache_exists_for_game(endpoint.name, game_id) {
+        // Occasionally log skips to show we're checking the cache
         if game_id % 1000 == 0 {
-            println!("⏭️  Skipping game {} ({}) - already in database", game_id, endpoint_name);
+            println!("⏭️  Skipping game {} ({}) - already in cache", game_id, endpoint_name);
         }
         return Ok(ProcessResult::Skipped);
     }
     
     // Try to fetch with retries
     for attempt in 1..=max_retries {
-        match fetch_and_store_with_retry(endpoint, &api_params, pool).await {
+        match fetch_and_store_with_retry(endpoint, &api_params).await {
             Ok(()) => return Ok(ProcessResult::Success),
             Err(e) if attempt == max_retries => {
                 return Err(format!("Failed after {} attempts: {}", max_retries, e).into());
@@ -206,4 +185,4 @@ async fn process_game_endpoint(
     }
     
     unreachable!()
-} 
+}
