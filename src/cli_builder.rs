@@ -103,7 +103,7 @@ fn build_games_commands() -> Command {
             .arg(Arg::new("games_file")
                 .help("Path to the games JSON file")
                 .long("games-file")
-                .default_value("data/raw/games/game_all_games.json"))
+                .default_value("data/raw/games/games_all.json"))
             .arg(Arg::new("endpoints")
                 .help("Endpoints to fetch (comma-separated)")
                 .long("endpoints")
@@ -395,23 +395,17 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches) -> 
         (DataType::Games, "play-by-play") => "game_play_by_play",
         (DataType::Games, "all") => "games_all", // A placeholder
         (DataType::Games, "content") => "game_content",
-        (DataType::Games, "goal-replay") => "game_goal_replay",
         (DataType::Games, "scores-date") => "scores_by_date",
         (DataType::Players, "summary") => "player_summary",
-        (DataType::Players, "all") => "players_all", // Placeholder
         (DataType::Players, "game-log") => "player_game_log",
         (DataType::Teams, "current-stats") => "team_current_stats",
         (DataType::Teams, "stats-by-season") => "team_stats_by_season",
         (DataType::Teams, "standings-by-date") => "team_standings_date",
         (DataType::Teams, "standings-season") => "team_standings_season",
         (DataType::Teams, "roster-season") => "team_roster_season",
-        (DataType::Teams, "prospects") => "team_prospects",
         (DataType::Teams, "schedule-season") => "team_schedule_season",
         (DataType::Teams, "schedule-month") => "team_schedule_month",
         (DataType::Schedule, "by-date") => "schedule_by_date",
-        (DataType::Playoffs, "bracket") => "playoff_bracket",
-        (DataType::Playoffs, "series-metadata") => "playoff_series_metadata",
-        (DataType::Playoffs, "series-schedule") => "playoff_series_schedule",
         _ => return Err(format!("Unknown command for {:?}", data_type).into())
     };
 
