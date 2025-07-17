@@ -7,8 +7,6 @@ pub enum DataType {
     Games,
     Players,
     Teams,
-    Schedule,
-    Playoffs,
 }
 
 impl DataType {
@@ -17,8 +15,6 @@ impl DataType {
             DataType::Games => "games",
             DataType::Players => "players",
             DataType::Teams => "teams",
-            DataType::Schedule => "schedule",
-            DataType::Playoffs => "playoffs",
         }
     }
 }

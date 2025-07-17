@@ -14,8 +14,6 @@ pub fn build_cli() -> Command {
     app = app.subcommand(build_games_commands());
     app = app.subcommand(build_players_commands());
     app = app.subcommand(build_teams_commands());
-    app = app.subcommand(build_schedule_commands());
-    app = app.subcommand(build_playoff_commands());
     
     // Add special inspect command
     app = app.subcommand(
@@ -216,14 +214,6 @@ fn build_teams_commands() -> Command {
     );
     
     cmd = cmd.subcommand(
-        Command::new("prospects")
-            .about("Fetch team prospects")
-            .arg(Arg::new("team_code")
-                .help("The NHL team code")
-                .required(true))
-    );
-    
-    cmd = cmd.subcommand(
         Command::new("schedule-season")
             .about("Fetch team schedule for a specific season")
             .arg(Arg::new("team_code")
@@ -248,76 +238,12 @@ fn build_teams_commands() -> Command {
     cmd
 }
 
-/// Build commands for schedule data
-fn build_schedule_commands() -> Command {
-    let mut cmd = Command::new("schedule")
-        .about("Schedule-related data operations");
-    
-    cmd = cmd.subcommand(
-        Command::new("by-date")
-            .about("Fetch schedule by date")
-            .arg(Arg::new("date")
-                .help("The date (YYYY-MM-DD)")
-                .required(true))
-    );
-    
-    cmd
-}
-
-/// Build commands for playoff data
-fn build_playoff_commands() -> Command {
-    let mut cmd = Command::new("playoffs")
-        .about("Playoff-related data operations");
-    
-    cmd = cmd.subcommand(
-        Command::new("bracket")
-            .about("Fetch playoff bracket")
-            .arg(Arg::new("year")
-                .help("The year (YYYY)")
-                .required(true))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("series-metadata")
-            .about("Fetch playoff series metadata")
-            .arg(Arg::new("season")
-                .help("The season (YYYYYYYY)")
-                .required(true))
-            .arg(Arg::new("letter")
-                .help("The series letter")
-                .required(true))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("standings-season")
-            .about("Fetch playoff standings for a specific season")
-            .arg(Arg::new("season")
-                .help("The season (YYYYYYYY)")
-                .required(true))
-    );
-    
-    cmd = cmd.subcommand(
-        Command::new("series-schedule")
-            .about("Fetch playoff series schedule")
-            .arg(Arg::new("year")
-                .help("The year (YYYY)")
-                .required(true))
-            .arg(Arg::new("letter")
-                .help("The series letter")
-                .required(true))
-    );
-    
-    cmd
-}
-
 /// Main command handler
 pub async fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     match matches.subcommand() {
         Some(("games", sub_matches)) => handle_data_type_command(DataType::Games, sub_matches).await,
         Some(("players", sub_matches)) => handle_data_type_command(DataType::Players, sub_matches).await,
         Some(("teams", sub_matches)) => handle_data_type_command(DataType::Teams, sub_matches).await,
-        Some(("schedule", sub_matches)) => handle_data_type_command(DataType::Schedule, sub_matches).await,
-        Some(("playoffs", sub_matches)) => handle_data_type_command(DataType::Playoffs, sub_matches).await,
         Some(("inspect", sub_matches)) => handle_inspect_command(sub_matches).await,
         Some(("list-endpoints", sub_matches)) => handle_list_endpoints_command(sub_matches),
         _ => {
@@ -405,7 +331,6 @@ async fn handle_data_type_command(data_type: DataType, matches: &ArgMatches) -> 
         (DataType::Teams, "roster-season") => "team_roster_season",
         (DataType::Teams, "schedule-season") => "team_schedule_season",
         (DataType::Teams, "schedule-month") => "team_schedule_month",
-        (DataType::Schedule, "by-date") => "schedule_by_date",
         _ => return Err(format!("Unknown command for {:?}", data_type).into())
     };
 
