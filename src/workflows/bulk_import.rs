@@ -3,37 +3,9 @@ use tokio::time::sleep;
 use serde_json::Value;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::ingest::{ApiParams, fetch_and_store_with_retry};
-use crate::endpoints::get_endpoint;
-use std::path::PathBuf;
+use crate::ingest::{process_game_endpoint, ProcessResult};
 
-#[derive(Debug)]
-enum ProcessResult {
-    Success,
-    Skipped,
-}
 
-/// Generate cache file path for an endpoint and parameters
-fn get_cache_path(endpoint_name: &str, game_id: i64) -> PathBuf {
-    let mut path = PathBuf::from("data/raw");
-    
-    // Create directory structure based on endpoint type
-    let parts: Vec<&str> = endpoint_name.split('_').collect();
-    if parts.len() > 1 {
-        path.push(parts[0]); // e.g., "games", "players", "teams"
-    }
-    
-    // Create filename based on endpoint and game_id
-    let filename = format!("{}_{}.json", endpoint_name, game_id);
-    path.push(filename);
-    path
-}
-
-/// Check if cached data exists for a game endpoint
-fn cache_exists_for_game(endpoint_name: &str, game_id: i64) -> bool {
-    let cache_path = get_cache_path(endpoint_name, game_id);
-    cache_path.exists()
-}
 
 pub async fn bulk_import_all_games(
     games_file_path: &str, 
@@ -143,46 +115,3 @@ pub async fn bulk_import_all_games(
     Ok(())
 }
 
-async fn process_game_endpoint(
-    game_id: i64,
-    endpoint_name: &str,
-    max_retries: u32,
-) -> Result<ProcessResult, Box<dyn std::error::Error>> {
-    let endpoint = get_endpoint(endpoint_name)
-        .ok_or_else(|| format!("Endpoint '{}' not found", endpoint_name))?;
-    
-    if !endpoint.implemented {
-        return Err(format!("Endpoint '{}' is not implemented", endpoint_name).into());
-    }
-    
-    let mut api_params = ApiParams::new();
-    api_params.add_param("game_id", &game_id.to_string());
-    
-    // Check if we already have this data cached
-    if cache_exists_for_game(endpoint.name, game_id) {
-        // Occasionally log skips to show we're checking the cache
-        if game_id % 1000 == 0 {
-            println!("⏭️  Skipping game {} ({}) - already in cache", game_id, endpoint_name);
-        }
-        return Ok(ProcessResult::Skipped);
-    }
-    
-    // Try to fetch with retries
-    for attempt in 1..=max_retries {
-        match fetch_and_store_with_retry(endpoint, &api_params).await {
-            Ok(()) => return Ok(ProcessResult::Success),
-            Err(e) if attempt == max_retries => {
-                return Err(format!("Failed after {} attempts: {}", max_retries, e).into());
-            }
-            Err(e) => {
-                println!("⚠️ Attempt {}/{} failed for game {} ({}): {}", 
-                        attempt, max_retries, game_id, endpoint_name, e);
-                // Exponential backoff
-                let delay = Duration::from_secs(2_u64.pow(attempt - 1));
-                sleep(delay).await;
-            }
-        }
-    }
-    
-    unreachable!()
-}
