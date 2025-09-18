@@ -1,0 +1,658 @@
+{
+  "columns": [
+    {
+      "character_maximum_length": null,
+      "column_default": "gen_random_uuid()",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "nhl_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "date",
+      "data_type": "date",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "home_team_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "away_team_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "0",
+      "column_name": "home_score",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "0",
+      "column_name": "away_score",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "0",
+      "column_name": "home_shots",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "0",
+      "column_name": "away_shots",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "result_period",
+      "data_type": "USER-DEFINED",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "0",
+      "column_name": "game_type",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "season",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "games",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "gen_random_uuid()",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "scorer_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "primary_assist_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "secondary_assist_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "game_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "for_team_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "against_team_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "goalie_in_net_id",
+      "data_type": "uuid",
+      "is_nullable": "YES",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "shot_type",
+      "data_type": "USER-DEFINED",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "period",
+      "data_type": "smallint",
+      "is_nullable": "NO",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "time_in_period",
+      "data_type": "interval",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "strength",
+      "data_type": "USER-DEFINED",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "modifier",
+      "data_type": "USER-DEFINED",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "goals",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "gen_random_uuid()",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "players",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "nhl_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "players",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "first_name",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "players",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "last_name",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "players",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "primary_position",
+      "data_type": "USER-DEFINED",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "players",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "shoots",
+      "data_type": "USER-DEFINED",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "players",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "birth_country",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "players",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "gen_random_uuid()",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "teams",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "nhl_id",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "teams",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "place",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "teams",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "name",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "teams",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "abbreviation",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "teams",
+      "table_schema": "public"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "gen_random_uuid()",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "payloads",
+      "table_schema": "raw"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "nhl_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "table_name": "payloads",
+      "table_schema": "raw"
+    },
+    {
+      "character_maximum_length": 50,
+      "column_default": null,
+      "column_name": "endpoint",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "payloads",
+      "table_schema": "raw"
+    },
+    {
+      "character_maximum_length": 255,
+      "column_default": null,
+      "column_name": "storage_key",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "payloads",
+      "table_schema": "raw"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "file_size",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "numeric_precision": 64,
+      "numeric_scale": 0,
+      "table_name": "payloads",
+      "table_schema": "raw"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "now()",
+      "column_name": "created_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "payloads",
+      "table_schema": "raw"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": "now()",
+      "column_name": "updated_at",
+      "data_type": "timestamp without time zone",
+      "is_nullable": "YES",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "payloads",
+      "table_schema": "raw"
+    },
+    {
+      "character_maximum_length": 64,
+      "column_default": null,
+      "column_name": "checksum",
+      "data_type": "character varying",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "payloads",
+      "table_schema": "raw"
+    },
+    {
+      "character_maximum_length": null,
+      "column_default": null,
+      "column_name": "entity_type",
+      "data_type": "USER-DEFINED",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "table_name": "payloads",
+      "table_schema": "raw"
+    }
+  ],
+  "constraints": [
+    {
+      "column_name": "away_team_id",
+      "constraint_name": "games_away_fk",
+      "constraint_type": "FOREIGN KEY",
+      "table_name": "games"
+    },
+    {
+      "column_name": "home_team_id",
+      "constraint_name": "games_home_fk",
+      "constraint_type": "FOREIGN KEY",
+      "table_name": "games"
+    },
+    {
+      "column_name": "nhl_id",
+      "constraint_name": "games_nhl_id_key",
+      "constraint_type": "UNIQUE",
+      "table_name": "games"
+    },
+    {
+      "column_name": "id",
+      "constraint_name": "games_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "table_name": "games"
+    },
+    {
+      "column_name": "game_id",
+      "constraint_name": "game_period_time_uniqueness",
+      "constraint_type": "UNIQUE",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "time_in_period",
+      "constraint_name": "game_period_time_uniqueness",
+      "constraint_type": "UNIQUE",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "period",
+      "constraint_name": "game_period_time_uniqueness",
+      "constraint_type": "UNIQUE",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "against_team_id",
+      "constraint_name": "goals_against_team_fk",
+      "constraint_type": "FOREIGN KEY",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "for_team_id",
+      "constraint_name": "goals_for_team_fk",
+      "constraint_type": "FOREIGN KEY",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "game_id",
+      "constraint_name": "goals_game_fk",
+      "constraint_type": "FOREIGN KEY",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "goalie_in_net_id",
+      "constraint_name": "goals_goalie_fk",
+      "constraint_type": "FOREIGN KEY",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "id",
+      "constraint_name": "goals_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "primary_assist_id",
+      "constraint_name": "goals_primary_fk",
+      "constraint_type": "FOREIGN KEY",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "scorer_id",
+      "constraint_name": "goals_scorer_fk",
+      "constraint_type": "FOREIGN KEY",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "secondary_assist_id",
+      "constraint_name": "goals_secondary_fk",
+      "constraint_type": "FOREIGN KEY",
+      "table_name": "goals"
+    },
+    {
+      "column_name": "entity_type",
+      "constraint_name": "duplicate_entries",
+      "constraint_type": "UNIQUE",
+      "table_name": "payloads"
+    },
+    {
+      "column_name": "nhl_id",
+      "constraint_name": "duplicate_entries",
+      "constraint_type": "UNIQUE",
+      "table_name": "payloads"
+    },
+    {
+      "column_name": "endpoint",
+      "constraint_name": "duplicate_entries",
+      "constraint_type": "UNIQUE",
+      "table_name": "payloads"
+    },
+    {
+      "column_name": "id",
+      "constraint_name": "game_payloads_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "table_name": "payloads"
+    },
+    {
+      "column_name": "nhl_id",
+      "constraint_name": "players_nhl_id_key",
+      "constraint_type": "UNIQUE",
+      "table_name": "players"
+    },
+    {
+      "column_name": "id",
+      "constraint_name": "players_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "table_name": "players"
+    },
+    {
+      "column_name": "abbreviation",
+      "constraint_name": "teams_abbreviation_key",
+      "constraint_type": "UNIQUE",
+      "table_name": "teams"
+    },
+    {
+      "column_name": "nhl_id",
+      "constraint_name": "teams_nhl_id_key",
+      "constraint_type": "UNIQUE",
+      "table_name": "teams"
+    },
+    {
+      "column_name": "id",
+      "constraint_name": "teams_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "table_name": "teams"
+    }
+  ],
+  "database": "neondb",
+  "timestamp": "2025-09-18T13:19:21.828675428+00:00"
+}
