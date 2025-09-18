@@ -45,6 +45,12 @@ pub fn build_cli() -> Command {
             .about("List files in object storage")
             .arg(Arg::new("prefix").help("Filter by prefix (optional)"))
     );
+    
+    // Add inspect-schema command
+    app = app.subcommand(
+        Command::new("inspect-schema")
+            .about("Inspect database schema and save to file")
+    );
 
     app
 }
@@ -297,6 +303,7 @@ pub async fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::err
         Some(("test-storage", _)) => handle_test_storage_command().await,
         Some(("fetch-to-storage", sub_matches)) => handle_fetch_to_storage_command(sub_matches).await,
         Some(("list-storage", sub_matches)) => handle_list_storage_command(sub_matches).await,
+        Some(("inspect-schema", _)) => handle_inspect_schema_command().await,
         _ => {
             // No subcommand provided, so we'll print help
             build_cli().print_help()?;
@@ -444,6 +451,14 @@ async fn handle_list_storage_command(matches: &ArgMatches) -> Result<(), Box<dyn
     match crate::storage::list::list_storage_files(prefix).await {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("List storage failed: {}", e).into()),
+    }
+}
+
+/// Handle the inspect-schema command
+async fn handle_inspect_schema_command() -> Result<(), Box<dyn std::error::Error>> {
+    match crate::storage::schema_inspector::inspect_and_save_schema().await {
+        Ok(()) => Ok(()),
+        Err(e) => Err(format!("Schema inspection failed: {}", e).into()),
     }
 }
 

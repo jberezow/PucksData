@@ -22,6 +22,9 @@ dotenvy = "0.15"
 sha2 = "0.10"
 # Async traits
 async-trait = "0.1"
+# Database connectivity
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "time"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 # For future use with mocking HTTP requests

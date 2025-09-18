@@ -4,6 +4,7 @@ pub mod list;
 pub mod local;
 pub mod r2;
 pub mod test;
+pub mod schema_inspector;
 
 use async_trait::async_trait;
 use std::error::Error;
