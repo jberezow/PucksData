@@ -24,6 +24,27 @@ pub fn build_cli() -> Command {
                     .required(false),
             ),
     );
+    
+    // Add test-storage command
+    app = app.subcommand(
+        Command::new("test-storage")
+            .about("Test object storage connection")
+    );
+    
+    // Add fetch-to-storage command
+    app = app.subcommand(
+        Command::new("fetch-to-storage")
+            .about("Fetch NHL data and store in object storage")
+            .arg(Arg::new("endpoint").help("Endpoint name (e.g., game_boxscore)").required(true))
+            .arg(Arg::new("params").help("Parameters (key=value pairs)").action(clap::ArgAction::Append))
+    );
+    
+    // Add list-storage command
+    app = app.subcommand(
+        Command::new("list-storage")
+            .about("List files in object storage")
+            .arg(Arg::new("prefix").help("Filter by prefix (optional)"))
+    );
 
     app
 }
@@ -273,6 +294,9 @@ pub async fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::err
         }
 
         Some(("list-endpoints", sub_matches)) => handle_list_endpoints_command(sub_matches),
+        Some(("test-storage", _)) => handle_test_storage_command().await,
+        Some(("fetch-to-storage", sub_matches)) => handle_fetch_to_storage_command(sub_matches).await,
+        Some(("list-storage", sub_matches)) => handle_list_storage_command(sub_matches).await,
         _ => {
             // No subcommand provided, so we'll print help
             build_cli().print_help()?;
@@ -380,6 +404,47 @@ async fn handle_data_type_command(
     }
 
     ingest::fetch_endpoint(endpoint_name, &params).await
+}
+
+/// Handle the test-storage command
+async fn handle_test_storage_command() -> Result<(), Box<dyn std::error::Error>> {
+    match crate::storage::test::test_r2_connection().await {
+        Ok(()) => Ok(()),
+        Err(e) => Err(format!("Storage test failed: {}", e).into()),
+    }
+}
+
+/// Handle the fetch-to-storage command
+async fn handle_fetch_to_storage_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
+    let endpoint_name = matches.get_one::<String>("endpoint")
+        .ok_or("endpoint is required")?;
+    
+    let mut params = Vec::new();
+    if let Some(values) = matches.get_many::<String>("params") {
+        for val in values {
+            let parts: Vec<&str> = val.split('=').collect();
+            if parts.len() == 2 {
+                params.push((parts[0], parts[1]));
+            } else {
+                return Err(format!("Invalid parameter format: {}", val).into());
+            }
+        }
+    }
+    
+    match crate::ingest::fetch_and_store_enhanced(endpoint_name, &params).await {
+        Ok(()) => Ok(()),
+        Err(e) => Err(format!("Fetch to storage failed: {}", e).into()),
+    }
+}
+
+/// Handle the list-storage command
+async fn handle_list_storage_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
+    let prefix = matches.get_one::<String>("prefix").map(|s| s.as_str());
+    
+    match crate::storage::list::list_storage_files(prefix).await {
+        Ok(()) => Ok(()),
+        Err(e) => Err(format!("List storage failed: {}", e).into()),
+    }
 }
 
 /// Handle the list-endpoints command
