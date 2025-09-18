@@ -12,6 +12,16 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 time = { version = "0.3", features = ["serde", "macros", "parsing"] }
 indicatif = "0.17"
+# Object storage dependencies
+aws-sdk-s3 = { version = "1.0", features = ["behavior-version-latest"] }
+aws-config = { version = "1.0", features = ["behavior-version-latest"] }
+aws-credential-types = "1.0"
+# Environment and configuration
+dotenvy = "0.15"
+# Checksums
+sha2 = "0.10"
+# Async traits
+async-trait = "0.1"
 
 [dev-dependencies]
 # For future use with mocking HTTP requests

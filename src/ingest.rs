@@ -1,11 +1,13 @@
 use crate::api;
 use crate::endpoints::{Endpoint, get_endpoint};
 use crate::cache::{write_to_cache};
+use crate::storage::{create_storage_backend, StorageConfig, keys::generate_storage_key, integrity::calculate_checksum};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use serde_json::Value;
 use std::time::Duration;
 use tokio::time::sleep;
+use std::error::Error;
 
 pub struct ApiParams {
     params: HashMap<String, String>,
@@ -230,4 +232,110 @@ pub async fn process_game_endpoint(
 pub enum ProcessResult {
     Success,
     Skipped,
+}
+
+/// Enhanced ingest function that uses the new storage system
+pub async fn fetch_and_store_enhanced(
+    endpoint_name: &str,
+    params: &[(&str, &str)],
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let endpoint = get_endpoint(endpoint_name)
+        .ok_or_else(|| format!("Endpoint '{}' not found", endpoint_name))?;
+    
+    if !endpoint.implemented {
+        return Err(format!("Endpoint '{}' is not implemented", endpoint_name).into());
+    }
+    
+    // Convert params to HashMap
+    let mut param_map = HashMap::new();
+    for (key, value) in params {
+        param_map.insert(key.to_string(), value.to_string());
+    }
+    
+    // Validate required parameters
+    for param in &endpoint.parameters {
+        if param.required && !param_map.contains_key(param.name) {
+            return Err(format!("Required parameter '{}' missing for endpoint '{}'", 
+                              param.name, endpoint_name).into());
+        }
+    }
+    
+    // Generate storage key
+    let storage_key = generate_storage_key(endpoint_name, &param_map);
+    
+    // Initialize storage backend
+    let config = StorageConfig::from_env()?;
+    let storage = create_storage_backend(&config).await?;
+    
+    // Check if we already have this data
+    if storage.exists(&storage_key).await? {
+        println!("✅ Found {} data in storage: {}", endpoint_name, storage_key);
+        return Ok(());
+    }
+    
+    println!("🌐 Fetching {} data from NHL API...", endpoint_name);
+    
+    // Build URL with parameters
+    let mut url = endpoint.url.to_string();
+    for (key, value) in &param_map {
+        url = url.replace(&format!("{{{}}}", key), value);
+    }
+    
+    // Fetch from NHL API
+    match api::fetch_api_json(&url).await {
+        Ok(json_str) => {
+            // Calculate checksum for integrity
+            let checksum = calculate_checksum(&json_str);
+            
+            // Store in object storage
+            storage.put(&storage_key, &json_str).await?;
+            
+            println!("💾 Saved {} data to storage: {}", endpoint_name, storage_key);
+            println!("🔐 Checksum: {}", checksum);
+            
+            Ok(())
+        }
+        Err(api::ApiError::NotFound) => {
+            println!("❌ Resource not found at {}", url);
+            Err("Resource not found (404)".into())
+        }
+        Err(api::ApiError::NetworkError(e)) => {
+            println!("❌ Network error while fetching {}: {}", url, e);
+            Err(Box::new(e))
+        }
+        Err(api::ApiError::Other(code)) => {
+            println!("❌ HTTP error {} while fetching {}", code, url);
+            Err(format!("HTTP error: {}", code).into())
+        }
+    }
+}
+
+/// Retrieve data from storage (for testing/verification)
+pub async fn get_from_storage(
+    endpoint_name: &str,
+    params: &[(&str, &str)],
+) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+    // Convert params to HashMap
+    let mut param_map = HashMap::new();
+    for (key, value) in params {
+        param_map.insert(key.to_string(), value.to_string());
+    }
+    
+    // Generate storage key
+    let storage_key = generate_storage_key(endpoint_name, &param_map);
+    
+    // Initialize storage backend
+    let config = StorageConfig::from_env()?;
+    let storage = create_storage_backend(&config).await?;
+    
+    // Get data from storage
+    let data = storage.get(&storage_key).await?;
+    
+    if let Some(ref content) = data {
+        let checksum = calculate_checksum(content);
+        println!("📥 Retrieved {} data from storage: {}", endpoint_name, storage_key);
+        println!("🔐 Checksum: {}", checksum);
+    }
+    
+    Ok(data)
 }

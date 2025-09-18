@@ -6,3 +6,4 @@ pub mod endpoints;
 pub mod api_urls;
 pub mod cli_builder;
 pub mod cache;
+pub mod storage;
