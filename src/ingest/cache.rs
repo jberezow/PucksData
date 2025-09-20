@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::cache::write_to_cache;
+use crate::AnyError;
 
 use super::params::ApiParams;
 
@@ -37,9 +38,9 @@ pub fn store_in_cache(
     endpoint_name: &str,
     params: &ApiParams,
     data: &serde_json::Value,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), AnyError> {
     let cache_path = get_cache_path(endpoint_name, params);
     let content = serde_json::to_string_pretty(data)?;
-    write_to_cache(&cache_path, &content)?;
+    write_to_cache(&cache_path, &content).map_err(|e| -> AnyError { Box::new(e) })?;
     Ok(())
 }

@@ -1,4 +1,5 @@
 mod cache;
+mod metadata;
 mod params;
 mod pipeline;
 

@@ -4,32 +4,30 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
 use crate::ingest::{process_game_endpoint, ProcessResult};
+use crate::AnyError;
 
 pub async fn bulk_import_all_games(
     games_file_path: &str,
-    endpoints: &[&str], // Which endpoints to fetch for each game
+    endpoints: &[&str],
     max_retries: u32,
     batch_size: usize,
     start_year: Option<i32>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), AnyError> {
     println!("🚀 Starting bulk import of NHL games...");
 
-    // Load games data
     let games_json = std::fs::read_to_string(games_file_path)?;
     let games_data: Value = serde_json::from_str(&games_json)?;
 
     let all_games = games_data["data"]
         .as_array()
-        .ok_or("Invalid games data format")?;
+        .ok_or_else(|| -> AnyError { "Invalid games data format".into() })?;
 
-    // Filter games by start year if specified
     let filtered_games: Vec<&Value> = if let Some(year) = start_year {
         all_games
             .iter()
             .filter(|game| {
                 if let Some(game_id) = game["id"].as_i64() {
-                    // Extract year from game ID (format: YYYYTTGGGG)
-                    let game_year = game_id / 1000000;
+                    let game_year = game_id / 1_000_000;
                     game_year >= year as i64
                 } else {
                     false
@@ -53,13 +51,14 @@ pub async fn bulk_import_all_games(
     let mut skip_count = 0;
     let start_time = Instant::now();
 
-    // Create overall progress bar
     let total_games = filtered_games.len();
     let overall_pb = ProgressBar::new(total_games as u64);
-    overall_pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} games ({per_sec}, ETA: {eta})")
-        .unwrap()
-        .progress_chars("#>-"));
+    overall_pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} games ({per_sec}, ETA: {eta})")
+            .unwrap()
+            .progress_chars("#>-")
+    );
 
     for (batch_idx, game_batch) in filtered_games.chunks(batch_size).enumerate() {
         println!(
@@ -68,7 +67,6 @@ pub async fn bulk_import_all_games(
             game_batch.len()
         );
 
-        // Create batch progress bar
         let batch_pb = ProgressBar::new(game_batch.len() as u64);
         batch_pb.set_style(
             ProgressStyle::default_bar()
@@ -78,9 +76,10 @@ pub async fn bulk_import_all_games(
         );
 
         for game in game_batch.iter() {
-            let game_id = game["id"].as_i64().ok_or("Game missing ID field")?;
+            let game_id = game["id"]
+                .as_i64()
+                .ok_or_else(|| -> AnyError { "Game missing ID field".into() })?;
 
-            // Fetch raw data for each endpoint
             for endpoint_name in endpoints {
                 match process_game_endpoint(game_id, endpoint_name, max_retries).await {
                     Ok(ProcessResult::Success) => success_count += 1,
@@ -98,13 +97,11 @@ pub async fn bulk_import_all_games(
             batch_pb.inc(1);
             overall_pb.inc(1);
 
-            // Small delay between games to be respectful
             sleep(Duration::from_millis(50)).await;
         }
 
         batch_pb.finish_and_clear();
 
-        // Longer pause between batches
         println!("⏸️  Batch complete, pausing 2 seconds...");
         sleep(Duration::from_secs(2)).await;
     }

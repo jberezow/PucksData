@@ -1,6 +1,7 @@
 use crate::endpoints::{get_all_endpoints, get_endpoint, DataType, Endpoint};
 use crate::ingest;
 use crate::workflows::bulk_import_all_games;
+use crate::AnyError;
 use clap::{Arg, ArgMatches, Command};
 
 /// Build the top-level CLI application
@@ -291,7 +292,7 @@ fn build_teams_commands() -> Command {
 }
 
 /// Main command handler
-pub async fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn handle_command(matches: &ArgMatches) -> Result<(), AnyError> {
     match matches.subcommand() {
         Some(("games", sub_matches)) => {
             handle_data_type_command(DataType::Games, sub_matches).await
@@ -322,7 +323,7 @@ pub async fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::err
 async fn handle_data_type_command(
     data_type: DataType,
     matches: &ArgMatches,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), AnyError> {
     let subcommand_name = matches.subcommand_name().unwrap_or("default");
 
     // Special handling for bulk import
@@ -420,7 +421,7 @@ async fn handle_data_type_command(
 }
 
 /// Handle the test-storage command
-async fn handle_test_storage_command() -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_test_storage_command() -> Result<(), AnyError> {
     match crate::storage::test::test_r2_connection().await {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("Storage test failed: {}", e).into()),
@@ -428,9 +429,7 @@ async fn handle_test_storage_command() -> Result<(), Box<dyn std::error::Error>>
 }
 
 /// Handle the fetch-to-storage command
-async fn handle_fetch_to_storage_command(
-    matches: &ArgMatches,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_fetch_to_storage_command(matches: &ArgMatches) -> Result<(), AnyError> {
     let endpoint_name = matches
         .get_one::<String>("endpoint")
         .ok_or("endpoint is required")?;
@@ -454,9 +453,7 @@ async fn handle_fetch_to_storage_command(
 }
 
 /// Handle the list-storage command
-async fn handle_list_storage_command(
-    matches: &ArgMatches,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_list_storage_command(matches: &ArgMatches) -> Result<(), AnyError> {
     let prefix = matches.get_one::<String>("prefix").map(|s| s.as_str());
 
     match crate::storage::list::list_storage_files(prefix).await {
@@ -466,7 +463,7 @@ async fn handle_list_storage_command(
 }
 
 /// Handle the inspect-schema command
-async fn handle_inspect_schema_command() -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_inspect_schema_command() -> Result<(), AnyError> {
     match crate::storage::schema_inspector::inspect_and_save_schema().await {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("Schema inspection failed: {}", e).into()),
@@ -474,7 +471,7 @@ async fn handle_inspect_schema_command() -> Result<(), Box<dyn std::error::Error
 }
 
 /// Handle the list-endpoints command
-fn handle_list_endpoints_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_list_endpoints_command(matches: &ArgMatches) -> Result<(), AnyError> {
     let filter_type = matches.get_one::<String>("data_type").map(|s| s.as_str());
 
     println!("Available API Endpoints:");
