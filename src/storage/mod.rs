@@ -3,8 +3,8 @@ pub mod keys;
 pub mod list;
 pub mod local;
 pub mod r2;
-pub mod test;
 pub mod schema_inspector;
+pub mod test;
 
 use async_trait::async_trait;
 use std::error::Error;

@@ -1,4 +1,4 @@
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 /// Calculate SHA-256 checksum for data integrity verification
 pub fn calculate_checksum(data: &str) -> String {
@@ -21,16 +21,19 @@ mod tests {
     fn test_checksum_calculation() {
         let data = "test data";
         let checksum = calculate_checksum(data);
-        
+
         // SHA-256 of "test data"
-        assert_eq!(checksum, "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9");
+        assert_eq!(
+            checksum,
+            "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9"
+        );
     }
 
     #[test]
     fn test_checksum_verification() {
         let data = "test data";
         let checksum = calculate_checksum(data);
-        
+
         assert!(verify_checksum(data, &checksum));
         assert!(!verify_checksum(data, "wrong_checksum"));
     }

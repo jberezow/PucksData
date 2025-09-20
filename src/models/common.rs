@@ -31,27 +31,31 @@ where
 {
     let s: Option<String> = Option::deserialize(deserializer)?;
     match s {
-        Some(date_str) => {
-            Date::parse(&date_str, &time::format_description::well_known::Iso8601::DATE)
-                .map(Some)
-                .map_err(serde::de::Error::custom)
-        }
+        Some(date_str) => Date::parse(
+            &date_str,
+            &time::format_description::well_known::Iso8601::DATE,
+        )
+        .map(Some)
+        .map_err(serde::de::Error::custom),
         None => Ok(None),
     }
 }
 
 // Custom deserializer for OffsetDateTime from ISO 8601 string
-pub fn deserialize_datetime_option<'de, D>(deserializer: D) -> Result<Option<OffsetDateTime>, D::Error>
+pub fn deserialize_datetime_option<'de, D>(
+    deserializer: D,
+) -> Result<Option<OffsetDateTime>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let s: Option<String> = Option::deserialize(deserializer)?;
     match s {
-        Some(datetime_str) => {
-            OffsetDateTime::parse(&datetime_str, &time::format_description::well_known::Iso8601::DEFAULT)
-                .map(Some)
-                .map_err(serde::de::Error::custom)
-        }
+        Some(datetime_str) => OffsetDateTime::parse(
+            &datetime_str,
+            &time::format_description::well_known::Iso8601::DEFAULT,
+        )
+        .map(Some)
+        .map_err(serde::de::Error::custom),
         None => Ok(None),
     }
-} 
+}

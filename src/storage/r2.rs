@@ -26,7 +26,7 @@ impl R2Storage {
             None, // expiration
             "r2-credentials",
         );
-        
+
         // Configure S3 client for R2
         let config = Config::builder()
             .credentials_provider(credentials)
@@ -34,9 +34,9 @@ impl R2Storage {
             .region(Region::new("auto")) // R2 uses "auto" region
             .force_path_style(true) // Required for R2
             .build();
-        
+
         let client = Client::from_conf(config);
-        
+
         Ok(Self {
             client,
             bucket: bucket.to_string(),
@@ -47,7 +47,8 @@ impl R2Storage {
 #[async_trait]
 impl StorageBackend for R2Storage {
     async fn get(&self, key: &str) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
-        match self.client
+        match self
+            .client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
@@ -69,7 +70,7 @@ impl StorageBackend for R2Storage {
             }
         }
     }
-    
+
     async fn put(&self, key: &str, data: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.client
             .put_object()
@@ -78,12 +79,13 @@ impl StorageBackend for R2Storage {
             .body(data.as_bytes().to_vec().into())
             .send()
             .await?;
-        
+
         Ok(())
     }
-    
+
     async fn exists(&self, key: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
-        match self.client
+        match self
+            .client
             .head_object()
             .bucket(&self.bucket)
             .key(key)
@@ -101,7 +103,7 @@ impl StorageBackend for R2Storage {
             }
         }
     }
-    
+
     async fn delete(&self, key: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.client
             .delete_object()
@@ -109,18 +111,19 @@ impl StorageBackend for R2Storage {
             .key(key)
             .send()
             .await?;
-        
+
         Ok(())
     }
-    
+
     async fn list(&self, prefix: &str) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
-        let response = self.client
+        let response = self
+            .client
             .list_objects_v2()
             .bucket(&self.bucket)
             .prefix(prefix)
             .send()
             .await?;
-        
+
         let mut keys = Vec::new();
         if let Some(contents) = response.contents {
             for object in contents {
@@ -129,7 +132,7 @@ impl StorageBackend for R2Storage {
                 }
             }
         }
-        
+
         Ok(keys)
     }
 }

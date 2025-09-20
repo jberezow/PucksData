@@ -3,19 +3,19 @@ use crate::storage::{create_storage_backend, StorageConfig};
 /// Test R2 storage connection
 pub async fn test_r2_connection() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("🧪 Testing R2 storage connection...");
-    
+
     let config = StorageConfig::from_env()?;
     let storage = create_storage_backend(&config).await?;
-    
+
     // Test basic operations
     let test_key = "test/connection_test.json";
     let test_data = r#"{"test": "data", "timestamp": "2024-01-01T00:00:00Z"}"#;
-    
+
     // Test put
     println!("📤 Testing PUT operation...");
     storage.put(test_key, test_data).await?;
     println!("✅ PUT successful");
-    
+
     // Test exists
     println!("🔍 Testing EXISTS operation...");
     let exists = storage.exists(test_key).await?;
@@ -24,7 +24,7 @@ pub async fn test_r2_connection() -> Result<(), Box<dyn std::error::Error + Send
     } else {
         return Err("File should exist after PUT".into());
     }
-    
+
     // Test get
     println!("📥 Testing GET operation...");
     let retrieved_data = storage.get(test_key).await?;
@@ -38,7 +38,7 @@ pub async fn test_r2_connection() -> Result<(), Box<dyn std::error::Error + Send
         }
         None => return Err("File should exist and be retrievable".into()),
     }
-    
+
     // Test list
     println!("📋 Testing LIST operation...");
     let files = storage.list("test/").await?;
@@ -47,12 +47,12 @@ pub async fn test_r2_connection() -> Result<(), Box<dyn std::error::Error + Send
     } else {
         println!("⚠️ LIST didn't find our test file, but that's okay");
     }
-    
+
     // Clean up - delete test file
     println!("🗑️ Cleaning up test file...");
     storage.delete(test_key).await?;
     println!("✅ DELETE successful");
-    
+
     // Verify deletion
     let exists_after_delete = storage.exists(test_key).await?;
     if !exists_after_delete {
@@ -60,7 +60,7 @@ pub async fn test_r2_connection() -> Result<(), Box<dyn std::error::Error + Send
     } else {
         println!("⚠️ File still exists after deletion, but that's okay for some storage backends");
     }
-    
+
     println!("🎉 All R2 storage tests passed!");
     Ok(())
 }

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 
 /// Data type categorization for endpoints
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -37,13 +37,13 @@ pub struct Endpoint {
     pub description: &'static str,
     pub data_type: DataType,
     pub implemented: bool,
-    
+
     // Parameter definitions
     pub parameters: Vec<Parameter>,
-    
+
     // For testing
     pub test_params: HashMap<&'static str, &'static str>,
-    
+
     // For CLI documentation
     pub example: &'static str,
 }
@@ -55,7 +55,8 @@ pub fn get_endpoint(name: &str) -> Option<&'static Endpoint> {
 
 /// Get all endpoints for a specific data type
 pub fn get_endpoints_by_type(data_type: DataType) -> Vec<&'static Endpoint> {
-    ALL_ENDPOINTS.iter()
+    ALL_ENDPOINTS
+        .iter()
         .filter(|e| e.data_type == data_type)
         .collect()
 }
@@ -67,9 +68,7 @@ pub fn get_all_endpoints() -> &'static [Endpoint] {
 
 /// Get all implemented endpoints
 pub fn get_implemented_endpoints() -> Vec<&'static Endpoint> {
-    ALL_ENDPOINTS.iter()
-        .filter(|e| e.implemented)
-        .collect()
+    ALL_ENDPOINTS.iter().filter(|e| e.implemented).collect()
 }
 
 // Registry of all endpoints - using Lazy for initialization
@@ -82,14 +81,12 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch a game story by game ID",
             data_type: DataType::Games,
             implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "game_id",
-                    description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
-                    required: true,
-                    example: "2023020001",
-                },
-            ],
+            parameters: vec![Parameter {
+                name: "game_id",
+                description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
+                required: true,
+                example: "2023020001",
+            }],
             test_params: {
                 let mut map = HashMap::new();
                 map.insert("game_id", "2023020001");
@@ -103,14 +100,12 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch a game boxscore by game ID",
             data_type: DataType::Games,
             implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "game_id",
-                    description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
-                    required: true,
-                    example: "2023020001",
-                },
-            ],
+            parameters: vec![Parameter {
+                name: "game_id",
+                description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
+                required: true,
+                example: "2023020001",
+            }],
             test_params: {
                 let mut map = HashMap::new();
                 map.insert("game_id", "2023020001");
@@ -124,14 +119,12 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch play-by-play data by game ID",
             data_type: DataType::Games,
             implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "game_id",
-                    description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
-                    required: true,
-                    example: "2023020001",
-                },
-            ],
+            parameters: vec![Parameter {
+                name: "game_id",
+                description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
+                required: true,
+                example: "2023020001",
+            }],
             test_params: {
                 let mut map = HashMap::new();
                 map.insert("game_id", "2023020001");
@@ -155,14 +148,12 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch game content",
             data_type: DataType::Games,
             implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "game_id",
-                    description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
-                    required: true,
-                    example: "2023020001",
-                },
-            ],
+            parameters: vec![Parameter {
+                name: "game_id",
+                description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
+                required: true,
+                example: "2023020001",
+            }],
             test_params: {
                 let mut map = HashMap::new();
                 map.insert("game_id", "2023020001");
@@ -170,7 +161,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             },
             example: "pucksdata games content 2023020001",
         },
-
         // Player endpoints
         Endpoint {
             name: "player_summary",
@@ -178,14 +168,13 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch a player summary by player ID",
             data_type: DataType::Players,
             implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "player_id",
-                    description: "The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)",
-                    required: true,
-                    example: "8478402",
-                },
-            ],
+            parameters: vec![Parameter {
+                name: "player_id",
+                description:
+                    "The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)",
+                required: true,
+                example: "8478402",
+            }],
             test_params: {
                 let mut map = HashMap::new();
                 map.insert("player_id", "8478402");
@@ -212,7 +201,8 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             parameters: vec![
                 Parameter {
                     name: "player_id",
-                    description: "The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)",
+                    description:
+                        "The NHL player ID (format: numeric, e.g., 8478402 for Connor McDavid)",
                     required: true,
                     example: "8478402",
                 },
@@ -238,7 +228,6 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             },
             example: "pucksdata players game-log 8478402 20232024 2",
         },
-        
         // Team endpoints
         Endpoint {
             name: "team_current_stats",
@@ -246,14 +235,12 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch current team statistics",
             data_type: DataType::Teams,
             implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "team_code",
-                    description: "The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)",
-                    required: true,
-                    example: "EDM",
-                },
-            ],
+            parameters: vec![Parameter {
+                name: "team_code",
+                description: "The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)",
+                required: true,
+                example: "EDM",
+            }],
             test_params: {
                 let mut map = HashMap::new();
                 map.insert("team_code", "EDM");
@@ -302,14 +289,12 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch standings by date",
             data_type: DataType::Teams,
             implemented: true,
-            parameters: vec![
-                Parameter {
-                    name: "date",
-                    description: "The date (format: YYYY-MM-DD, e.g., 2024-02-15)",
-                    required: true,
-                    example: "2024-02-15",
-                },
-            ],
+            parameters: vec![Parameter {
+                name: "date",
+                description: "The date (format: YYYY-MM-DD, e.g., 2024-02-15)",
+                required: true,
+                example: "2024-02-15",
+            }],
             test_params: {
                 let mut map = HashMap::new();
                 map.insert("date", "2024-02-15");
@@ -412,4 +397,4 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             example: "pucksdata teams schedule-month EDM 2024-02-15",
         },
     ]
-}); 
+});

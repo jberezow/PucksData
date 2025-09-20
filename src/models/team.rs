@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use crate::models::common::NameField;
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[allow(non_snake_case)]
@@ -25,8 +25,8 @@ impl Team {
     pub fn get_score(&self) -> Option<i32> {
         self.score
     }
-    
+
     pub fn get_sog(&self) -> Option<i32> {
         self.sog
     }
-} 
+}

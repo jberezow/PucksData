@@ -1,7 +1,9 @@
+use crate::models::common::{
+    deserialize_date_option, deserialize_datetime_option, NameField, PeriodDescriptor,
+};
+use crate::models::team::Team;
 use serde::Deserialize;
 use time::{Date, OffsetDateTime};
-use crate::models::common::{NameField, PeriodDescriptor, deserialize_date_option, deserialize_datetime_option};
-use crate::models::team::Team;
 
 #[derive(Debug, Deserialize)]
 #[allow(non_snake_case)]
@@ -25,17 +27,17 @@ pub struct Game {
     pub eastern_utc_offset: Option<String>,
     #[serde(rename = "venueUTCOffset")]
     pub venue_utc_offset: Option<String>,
-    
+
     #[serde(rename = "homeTeam")]
     pub home_team: Team,
     #[serde(rename = "awayTeam")]
     pub away_team: Team,
-    
+
     #[serde(rename = "gameState")]
     pub game_state: Option<String>,
     #[serde(rename = "gameScheduleState")]
     pub game_schedule_state: Option<String>,
-    
+
     #[serde(rename = "limitedScoring")]
     pub limited_scoring: Option<bool>,
     #[serde(rename = "shootoutInUse")]
@@ -48,9 +50,7 @@ pub struct Game {
     pub max_periods: Option<i32>,
     #[serde(rename = "regPeriods")]
     pub reg_periods: Option<i32>,
-    
+
     #[serde(rename = "periodDescriptor")]
     pub period_descriptor: Option<PeriodDescriptor>,
 }
-
-
