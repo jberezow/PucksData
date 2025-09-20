@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use serde_json::Value;
-use tokio::time::sleep;
 
 use crate::api;
 use crate::endpoints::{get_endpoint, Endpoint};
@@ -185,22 +183,6 @@ async fn load_or_fetch_payload(
     }
 }
 
-async fn fetch_and_store_with_retry(
-    endpoint: &Endpoint,
-    params: &ApiParams,
-) -> Result<(), AnyError> {
-    let params_map = params.as_map();
-
-    match load_or_fetch_payload(endpoint, params_map).await {
-        Ok(payload) => {
-            persist_local_cache(endpoint, params, &payload.content)?;
-            log_payload_source(endpoint.name, &payload);
-            Ok(())
-        }
-        Err(e) => Err(e),
-    }
-}
-
 fn log_payload_source(endpoint_name: &str, payload: &PayloadResult) {
     let checksum = calculate_checksum(&payload.content);
     match payload.source {
@@ -218,53 +200,6 @@ fn log_payload_source(endpoint_name: &str, payload: &PayloadResult) {
         ),
     }
     println!("🔐 Checksum: {}", checksum);
-}
-
-/// Possible outcomes from processing an individual game request.
-#[derive(Debug)]
-pub enum ProcessResult {
-    Success,
-    Skipped,
-}
-
-/// Process a single game endpoint, honoring cached content and retry policy.
-pub async fn process_game_endpoint(
-    game_id: i64,
-    endpoint_name: &str,
-    max_retries: u32,
-) -> Result<ProcessResult, AnyError> {
-    let endpoint = get_endpoint(endpoint_name)
-        .ok_or_else(|| format!("Endpoint '{}' not found", endpoint_name))?;
-
-    if !endpoint.implemented {
-        return Err(format!("Endpoint '{}' is not implemented", endpoint_name).into());
-    }
-
-    let mut api_params = ApiParams::new();
-    api_params.add_param("game_id", &game_id.to_string());
-
-    if cache_exists(endpoint.name, &api_params) {
-        return Ok(ProcessResult::Skipped);
-    }
-
-    for attempt in 1..=max_retries {
-        match fetch_and_store_with_retry(endpoint, &api_params).await {
-            Ok(()) => return Ok(ProcessResult::Success),
-            Err(e) if attempt == max_retries => {
-                return Err(format!("Failed after {} attempts: {}", max_retries, e).into())
-            }
-            Err(e) => {
-                println!(
-                    "⚠️ Attempt {}/{} failed for game {} ({}): {}",
-                    attempt, max_retries, game_id, endpoint_name, e
-                );
-                let delay = Duration::from_secs(2_u64.pow(attempt - 1));
-                sleep(delay).await;
-            }
-        }
-    }
-
-    unreachable!()
 }
 
 /// Fetch NHL data with the storage-first strategy, persisting to object storage when needed.
