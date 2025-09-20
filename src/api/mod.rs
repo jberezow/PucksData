@@ -1,11 +1,13 @@
 pub mod client;
 
+use once_cell::sync::Lazy;
 use reqwest;
 use std::fmt;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 
-static mut LAST_REQUEST_TIME: Option<Instant> = None;
+static LAST_REQUEST_TIME: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::new(None));
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(100); // 10 requests per second max
 
 #[derive(Debug)]
@@ -34,29 +36,29 @@ impl From<reqwest::Error> for ApiError {
 }
 
 async fn enforce_rate_limit() {
-    unsafe {
-        if let Some(last_time) = LAST_REQUEST_TIME {
-            let elapsed = last_time.elapsed();
-            if elapsed < MIN_REQUEST_INTERVAL {
-                let sleep_duration = MIN_REQUEST_INTERVAL - elapsed;
-                sleep(sleep_duration).await;
-            }
+    let mut guard = LAST_REQUEST_TIME.lock().await;
+
+    if let Some(last_time) = *guard {
+        let elapsed = last_time.elapsed();
+        if elapsed < MIN_REQUEST_INTERVAL {
+            let sleep_duration = MIN_REQUEST_INTERVAL - elapsed;
+            sleep(sleep_duration).await;
         }
-        LAST_REQUEST_TIME = Some(Instant::now());
     }
+
+    *guard = Some(Instant::now());
 }
 
 pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
-    // Rate limiting to avoid overwhelming the API
     enforce_rate_limit().await;
-    
+
     let client = reqwest::Client::new();
     let response = client
         .get(url)
         .header("User-Agent", "pucksdata/1.0 (Hockey Statistics Research)")
         .send()
         .await?;
-    
+
     match response.status() {
         reqwest::StatusCode::OK => Ok(response.text().await?),
         reqwest::StatusCode::NOT_FOUND => Err(ApiError::NotFound),
@@ -64,7 +66,7 @@ pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
             println!("⚠️ Rate limited, waiting 5 seconds...");
             sleep(Duration::from_secs(5)).await;
             Err(ApiError::Other(429))
-        },
+        }
         status => Err(ApiError::Other(status.as_u16())),
     }
 }

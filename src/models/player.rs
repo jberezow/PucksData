@@ -1,6 +1,6 @@
+use crate::models::common::{deserialize_date_option, DraftDetails, NameField};
 use serde::Deserialize;
 use time::Date;
-use crate::models::common::{NameField, DraftDetails, deserialize_date_option};
 
 #[derive(Debug, Deserialize)]
 #[allow(non_snake_case)]
@@ -25,5 +25,3 @@ pub struct PlayerBio {
     pub shootsCatches: Option<String>,
     pub draftDetails: Option<DraftDetails>,
 }
-
- 

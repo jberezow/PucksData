@@ -24,32 +24,36 @@ pub fn build_cli() -> Command {
                     .required(false),
             ),
     );
-    
+
     // Add test-storage command
-    app = app.subcommand(
-        Command::new("test-storage")
-            .about("Test object storage connection")
-    );
-    
+    app = app.subcommand(Command::new("test-storage").about("Test object storage connection"));
+
     // Add fetch-to-storage command
     app = app.subcommand(
         Command::new("fetch-to-storage")
             .about("Fetch NHL data and store in object storage")
-            .arg(Arg::new("endpoint").help("Endpoint name (e.g., game_boxscore)").required(true))
-            .arg(Arg::new("params").help("Parameters (key=value pairs)").action(clap::ArgAction::Append))
+            .arg(
+                Arg::new("endpoint")
+                    .help("Endpoint name (e.g., game_boxscore)")
+                    .required(true),
+            )
+            .arg(
+                Arg::new("params")
+                    .help("Parameters (key=value pairs)")
+                    .action(clap::ArgAction::Append),
+            ),
     );
-    
+
     // Add list-storage command
     app = app.subcommand(
         Command::new("list-storage")
             .about("List files in object storage")
-            .arg(Arg::new("prefix").help("Filter by prefix (optional)"))
+            .arg(Arg::new("prefix").help("Filter by prefix (optional)")),
     );
-    
+
     // Add inspect-schema command
     app = app.subcommand(
-        Command::new("inspect-schema")
-            .about("Inspect database schema and save to file")
+        Command::new("inspect-schema").about("Inspect database schema and save to file"),
     );
 
     app
@@ -301,7 +305,9 @@ pub async fn handle_command(matches: &ArgMatches) -> Result<(), Box<dyn std::err
 
         Some(("list-endpoints", sub_matches)) => handle_list_endpoints_command(sub_matches),
         Some(("test-storage", _)) => handle_test_storage_command().await,
-        Some(("fetch-to-storage", sub_matches)) => handle_fetch_to_storage_command(sub_matches).await,
+        Some(("fetch-to-storage", sub_matches)) => {
+            handle_fetch_to_storage_command(sub_matches).await
+        }
         Some(("list-storage", sub_matches)) => handle_list_storage_command(sub_matches).await,
         Some(("inspect-schema", _)) => handle_inspect_schema_command().await,
         _ => {
@@ -422,10 +428,13 @@ async fn handle_test_storage_command() -> Result<(), Box<dyn std::error::Error>>
 }
 
 /// Handle the fetch-to-storage command
-async fn handle_fetch_to_storage_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let endpoint_name = matches.get_one::<String>("endpoint")
+async fn handle_fetch_to_storage_command(
+    matches: &ArgMatches,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let endpoint_name = matches
+        .get_one::<String>("endpoint")
         .ok_or("endpoint is required")?;
-    
+
     let mut params = Vec::new();
     if let Some(values) = matches.get_many::<String>("params") {
         for val in values {
@@ -437,7 +446,7 @@ async fn handle_fetch_to_storage_command(matches: &ArgMatches) -> Result<(), Box
             }
         }
     }
-    
+
     match crate::ingest::fetch_and_store_enhanced(endpoint_name, &params).await {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("Fetch to storage failed: {}", e).into()),
@@ -445,9 +454,11 @@ async fn handle_fetch_to_storage_command(matches: &ArgMatches) -> Result<(), Box
 }
 
 /// Handle the list-storage command
-async fn handle_list_storage_command(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_list_storage_command(
+    matches: &ArgMatches,
+) -> Result<(), Box<dyn std::error::Error>> {
     let prefix = matches.get_one::<String>("prefix").map(|s| s.as_str());
-    
+
     match crate::storage::list::list_storage_files(prefix).await {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("List storage failed: {}", e).into()),
