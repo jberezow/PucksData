@@ -17,6 +17,14 @@ impl DataType {
             DataType::Teams => "teams",
         }
     }
+
+    pub fn as_entity_type(&self) -> &'static str {
+        match self {
+            DataType::Games => "game",
+            DataType::Players => "player",
+            DataType::Teams => "team",
+        }
+    }
 }
 
 /// Definition of a parameter for an endpoint
