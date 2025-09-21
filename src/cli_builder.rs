@@ -1,7 +1,9 @@
-use crate::endpoints::{get_all_endpoints, get_endpoint, DataType, Endpoint};
+use crate::endpoints::{get_endpoints_by_type, DataType, Endpoint, Parameter};
 use crate::ingest;
 use crate::AnyError;
 use clap::{Arg, ArgMatches, Command};
+
+const DATA_TYPES: [DataType; 3] = [DataType::Games, DataType::Players, DataType::Teams];
 
 /// Build the top-level CLI application
 pub fn build_cli() -> Command {
@@ -9,10 +11,11 @@ pub fn build_cli() -> Command {
         .about("NHL Stats Engine CLI - A tool for fetching and caching NHL data")
         .version(env!("CARGO_PKG_VERSION"));
 
-    // Add predefined commands for the most common use cases
-    app = app.subcommand(build_games_commands());
-    app = app.subcommand(build_players_commands());
-    app = app.subcommand(build_teams_commands());
+    for data_type in DATA_TYPES {
+        if let Some(command) = build_data_type_command(data_type) {
+            app = app.subcommand(command);
+        }
+    }
 
     // Add list-endpoints command to help discovery
     app = app.subcommand(
@@ -59,173 +62,64 @@ pub fn build_cli() -> Command {
     app
 }
 
-/// Build commands for games data
-fn build_games_commands() -> Command {
-    let mut cmd = Command::new("games").about("Games-related data operations");
+fn build_data_type_command(data_type: DataType) -> Option<Command> {
+    let endpoints: Vec<&Endpoint> = get_endpoints_by_type(data_type)
+        .into_iter()
+        .filter(|endpoint| endpoint.implemented)
+        .collect();
 
-    // Manually add each game endpoint
-    cmd = cmd.subcommand(
-        Command::new("story")
-            .about("Fetch a game story by game ID")
-            .arg(Arg::new("game_id").help("The NHL game ID").required(true)),
-    );
+    if endpoints.is_empty() {
+        return None;
+    }
 
-    cmd = cmd.subcommand(
-        Command::new("boxscore")
-            .about("Fetch a game boxscore by game ID")
-            .arg(Arg::new("game_id").required(true)),
-    );
+    let mut command = Command::new(data_type.as_str()).about(data_type_about(data_type));
 
-    cmd = cmd.subcommand(
-        Command::new("play-by-play")
-            .about("Fetch play-by-play data by game ID")
-            .arg(Arg::new("game_id").help("The NHL game ID").required(true)),
-    );
+    for endpoint in endpoints {
+        command = command.subcommand(build_endpoint_subcommand(endpoint));
+    }
 
-    cmd = cmd.subcommand(Command::new("all").about("Fetch all games data"));
-
-    cmd = cmd.subcommand(
-        Command::new("content")
-            .about("Fetch game content")
-            .arg(Arg::new("game_id").help("The NHL game ID").required(true)),
-    );
-
-    cmd
+    Some(command)
 }
 
-/// Build commands for players data
-fn build_players_commands() -> Command {
-    let mut cmd = Command::new("players").about("Players-related data operations");
+fn build_endpoint_subcommand(endpoint: &Endpoint) -> Command {
+    let mut subcommand = Command::new(endpoint.cli_subcommand_name()).about(endpoint.description);
 
-    cmd = cmd.subcommand(
-        Command::new("summary")
-            .about("Fetch a player summary by player ID")
-            .arg(
-                Arg::new("player_id")
-                    .help("The NHL player ID")
-                    .required(true),
-            ),
-    );
+    for (index, parameter) in endpoint.parameters.iter().enumerate() {
+        subcommand = subcommand.arg(build_arg_from_parameter(parameter, index + 1));
+    }
 
-    cmd = cmd.subcommand(Command::new("all").about("Fetch all players data"));
-
-    cmd = cmd.subcommand(
-        Command::new("game-log")
-            .about("Fetch player game log for a specific season and game type")
-            .arg(
-                Arg::new("player_id")
-                    .help("The NHL player ID")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("season")
-                    .help("The season (YYYYYYYY)")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("game_type")
-                    .help("The game type (2=Reg, 3=Post)")
-                    .required(true),
-            ),
-    );
-
-    cmd
+    subcommand
 }
 
-/// Build commands for teams data
-fn build_teams_commands() -> Command {
-    let mut cmd = Command::new("teams").about("Teams-related data operations");
+fn build_arg_from_parameter(parameter: &Parameter, index: usize) -> Arg {
+    Arg::new(parameter.name)
+        .help(parameter.description)
+        .required(parameter.required)
+        .index(index)
+}
 
-    cmd = cmd.subcommand(
-        Command::new("current-stats")
-            .about("Fetch current team statistics")
-            .arg(
-                Arg::new("team_code")
-                    .help("The NHL team code (e.g. TOR)")
-                    .required(true),
-            ),
-    );
+fn data_type_about(data_type: DataType) -> &'static str {
+    match data_type {
+        DataType::Games => "Games-related data operations",
+        DataType::Players => "Players-related data operations",
+        DataType::Teams => "Teams-related data operations",
+    }
+}
 
-    cmd = cmd.subcommand(
-        Command::new("stats-by-season")
-            .about("Fetch team statistics for a specific season and game type")
-            .arg(
-                Arg::new("team_code")
-                    .help("The NHL team code")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("season")
-                    .help("The season (YYYYYYYY)")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("game_type")
-                    .help("The game type (2=Reg, 3=Post)")
-                    .required(true),
-            ),
-    );
+fn find_endpoint_by_cli_name(data_type: DataType, cli_name: &str) -> Option<&'static Endpoint> {
+    get_endpoints_by_type(data_type)
+        .into_iter()
+        .filter(|endpoint| endpoint.implemented)
+        .find(|endpoint| endpoint.cli_subcommand_name() == cli_name)
+}
 
-    cmd = cmd.subcommand(
-        Command::new("standings-by-date")
-            .about("Fetch standings by date")
-            .arg(
-                Arg::new("date")
-                    .help("The date (YYYY-MM-DD)")
-                    .required(true),
-            ),
-    );
-
-    cmd = cmd.subcommand(
-        Command::new("standings-season").about("Fetch standings for a specific season"),
-    );
-
-    cmd = cmd.subcommand(
-        Command::new("roster-season")
-            .about("Fetch team roster for a specific season")
-            .arg(
-                Arg::new("team_code")
-                    .help("The NHL team code")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("season")
-                    .help("The season (YYYYYYYY)")
-                    .required(true),
-            ),
-    );
-
-    cmd = cmd.subcommand(
-        Command::new("schedule-season")
-            .about("Fetch team schedule for a specific season")
-            .arg(
-                Arg::new("team_code")
-                    .help("The NHL team code")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("season")
-                    .help("The season (YYYYYYYY)")
-                    .required(true),
-            ),
-    );
-
-    cmd = cmd.subcommand(
-        Command::new("schedule-month")
-            .about("Fetch team schedule for a specific month")
-            .arg(
-                Arg::new("team_code")
-                    .help("The NHL team code")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("date")
-                    .help("The date (YYYY-MM-DD)")
-                    .required(true),
-            ),
-    );
-
-    cmd
+fn parse_data_type_filter(value: &str) -> Option<DataType> {
+    match value {
+        "games" => Some(DataType::Games),
+        "players" => Some(DataType::Players),
+        "teams" => Some(DataType::Teams),
+        _ => None,
+    }
 }
 
 /// Main command handler
@@ -261,38 +155,26 @@ async fn handle_data_type_command(
     data_type: DataType,
     matches: &ArgMatches,
 ) -> Result<(), AnyError> {
-    let subcommand_name = matches.subcommand_name().unwrap_or("default");
+    let (subcommand_name, sub_matches) = matches
+        .subcommand()
+        .ok_or_else(|| format!("No {} subcommand provided", data_type.as_str()))?;
 
-    let endpoint_name = match (data_type, subcommand_name) {
-        (DataType::Games, "story") => "game_story",
-        (DataType::Games, "boxscore") => "game_boxscore",
-        (DataType::Games, "play-by-play") => "game_play_by_play",
-        (DataType::Games, "all") => "games_all", // A placeholder
-        (DataType::Games, "content") => "game_content",
-        (DataType::Players, "summary") => "player_summary",
-        (DataType::Players, "game-log") => "player_game_log",
-        (DataType::Teams, "current-stats") => "team_current_stats",
-        (DataType::Teams, "stats-by-season") => "team_stats_by_season",
-        (DataType::Teams, "standings-by-date") => "team_standings_date",
-        (DataType::Teams, "standings-season") => "team_standings_season",
-        (DataType::Teams, "roster-season") => "team_roster_season",
-        (DataType::Teams, "schedule-season") => "team_schedule_season",
-        (DataType::Teams, "schedule-month") => "team_schedule_month",
-        _ => return Err(format!("Unknown command for {:?}", data_type).into()),
-    };
+    let endpoint = find_endpoint_by_cli_name(data_type, subcommand_name).ok_or_else(|| {
+        format!(
+            "Unknown command '{}' for {}",
+            subcommand_name,
+            data_type.as_str()
+        )
+    })?;
 
-    let endpoint = get_endpoint(endpoint_name)
-        .ok_or_else(|| format!("Endpoint '{}' not found", endpoint_name))?;
-
-    let sub_matches = matches.subcommand().unwrap().1;
     let mut params = Vec::new();
-    for param_def in &endpoint.parameters {
-        if let Some(value) = sub_matches.get_one::<String>(param_def.name) {
-            params.push((param_def.name, value.as_str()));
+    for parameter in &endpoint.parameters {
+        if let Some(value) = sub_matches.get_one::<String>(parameter.name) {
+            params.push((parameter.name, value.as_str()));
         }
     }
 
-    ingest::fetch_endpoint(endpoint_name, &params).await
+    ingest::fetch_endpoint(endpoint.name, &params).await
 }
 
 /// Handle the test-storage command
@@ -347,65 +229,79 @@ async fn handle_inspect_schema_command() -> Result<(), AnyError> {
 
 /// Handle the list-endpoints command
 fn handle_list_endpoints_command(matches: &ArgMatches) -> Result<(), AnyError> {
-    let filter_type = matches.get_one::<String>("data_type").map(|s| s.as_str());
+    let filter = matches.get_one::<String>("data_type");
+    let filter_data_type = match filter {
+        Some(value) => match parse_data_type_filter(value) {
+            Some(data_type) => Some(data_type),
+            None => {
+                println!(
+                    "Unknown data type '{}'. Available values: games, players, teams.",
+                    value
+                );
+                return Ok(());
+            }
+        },
+        None => None,
+    };
 
     println!("Available API Endpoints:");
     println!("=======================");
 
-    let all_endpoints = get_all_endpoints();
+    let mut any_printed = false;
 
-    // Group endpoints by data type
-    let mut by_type: std::collections::HashMap<DataType, Vec<&Endpoint>> =
-        std::collections::HashMap::new();
-
-    for endpoint in all_endpoints {
-        if let Some(filter) = filter_type {
-            if endpoint.data_type.as_str() != filter {
+    for data_type in DATA_TYPES {
+        if let Some(expected) = filter_data_type {
+            if data_type != expected {
                 continue;
             }
         }
 
-        by_type
-            .entry(endpoint.data_type)
-            .or_default()
-            .push(endpoint);
-    }
+        let endpoints: Vec<&Endpoint> = get_endpoints_by_type(data_type)
+            .into_iter()
+            .filter(|endpoint| endpoint.implemented)
+            .collect();
 
-    // Display endpoints by type
-    for (data_type, endpoints) in by_type.iter() {
+        if endpoints.is_empty() {
+            continue;
+        }
+
+        any_printed = true;
+
         println!("\n{} ({}):", data_type.as_str(), endpoints.len());
         println!("{}", "-".repeat(data_type.as_str().len() + 4));
 
         for endpoint in endpoints {
-            let name_parts: Vec<&str> = endpoint.name.split('_').collect();
-            if name_parts.len() > 1 {
-                let subcommand_name = name_parts[1..].join("-");
+            let cli_name = endpoint.cli_subcommand_name();
+            println!(
+                "  {} {} - {}",
+                data_type.as_str(),
+                cli_name,
+                endpoint.description
+            );
 
-                println!(
-                    "  {} {} - {}",
-                    data_type.as_str(),
-                    subcommand_name,
-                    endpoint.description
-                );
+            let required_params: Vec<_> = endpoint
+                .parameters
+                .iter()
+                .filter(|parameter| parameter.required)
+                .collect();
 
-                // Print required parameters if any
-                let required_params: Vec<_> =
-                    endpoint.parameters.iter().filter(|p| p.required).collect();
-
-                if !required_params.is_empty() {
-                    println!("    Required parameters:");
-                    for param in required_params {
-                        println!(
-                            "      {} - {} (example: {})",
-                            param.name, param.description, param.example
-                        );
-                    }
+            if !required_params.is_empty() {
+                println!("    Required parameters:");
+                for param in required_params {
+                    println!(
+                        "      {} - {} (example: {})",
+                        param.name, param.description, param.example
+                    );
                 }
-
-                println!("    Example: {}", endpoint.example);
-                println!();
             }
+
+            println!("    Example: {}", endpoint.example);
+            println!();
         }
+    }
+
+    if !any_printed {
+        println!("No endpoints found for provided filter.");
     }
 
     Ok(())

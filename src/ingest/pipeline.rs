@@ -42,15 +42,7 @@ pub async fn fetch_endpoint(endpoint_name: &str, params: &[(&str, &str)]) -> Res
         api_params.add_param(key, value);
     }
 
-    for param in &endpoint.parameters {
-        if param.required && api_params.get_param(param.name).is_none() {
-            return Err(format!(
-                "Required parameter '{}' missing for endpoint '{}'",
-                param.name, endpoint_name
-            )
-            .into());
-        }
-    }
+    ensure_required_parameters(endpoint, |name| api_params.get_param(name))?;
 
     if cache_exists(endpoint.name, &api_params) {
         println!("✅ Found {} data in cache", endpoint.name);
@@ -75,18 +67,11 @@ fn persist_local_cache(
     Ok(())
 }
 
-fn interpolate_url(endpoint: &Endpoint, params: &HashMap<String, String>) -> String {
-    let mut url = endpoint.url.to_string();
-    for (key, value) in params {
-        url = url.replace(&format!("{{{}}}", key), value);
-    }
-    url
-}
-
 async fn load_or_fetch_payload(
     endpoint: &Endpoint,
     params: &HashMap<String, String>,
 ) -> Result<PayloadResult, AnyError> {
+    let url = endpoint.build_url(params)?;
     let storage_key = generate_storage_key(endpoint.name, params);
     let config = StorageConfig::from_env()?;
     let storage = create_storage_backend(&config).await?;
@@ -153,7 +138,6 @@ async fn load_or_fetch_payload(
         });
     }
 
-    let url = interpolate_url(endpoint, params);
     println!("🌐 Fetching {} data from NHL API...", endpoint.name);
 
     match api::fetch_api_json(&url).await {
@@ -219,15 +203,7 @@ pub async fn fetch_and_store_enhanced(
         param_map.insert((*key).to_string(), (*value).to_string());
     }
 
-    for param in &endpoint.parameters {
-        if param.required && !param_map.contains_key(param.name) {
-            return Err(format!(
-                "Required parameter '{}' missing for endpoint '{}'",
-                param.name, endpoint_name
-            )
-            .into());
-        }
-    }
+    ensure_required_parameters(endpoint, |name| param_map.get(name).map(|s| s.as_str()))?;
 
     let payload = load_or_fetch_payload(endpoint, &param_map).await?;
     log_payload_source(endpoint.name, &payload);
@@ -262,4 +238,21 @@ pub async fn get_from_storage(
     }
 
     Ok(data)
+}
+
+fn ensure_required_parameters<'a>(
+    endpoint: &Endpoint,
+    mut lookup: impl FnMut(&str) -> Option<&'a str>,
+) -> Result<(), AnyError> {
+    for param in &endpoint.parameters {
+        if param.required && lookup(param.name).is_none() {
+            return Err(format!(
+                "Required parameter '{}' missing for endpoint '{}'",
+                param.name, endpoint.name
+            )
+            .into());
+        }
+    }
+
+    Ok(())
 }
