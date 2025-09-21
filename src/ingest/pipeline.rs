@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use serde_json::Value;
-use tokio::time::sleep;
 
 use crate::api;
 use crate::endpoints::{get_endpoint, Endpoint};
@@ -44,15 +42,7 @@ pub async fn fetch_endpoint(endpoint_name: &str, params: &[(&str, &str)]) -> Res
         api_params.add_param(key, value);
     }
 
-    for param in &endpoint.parameters {
-        if param.required && api_params.get_param(param.name).is_none() {
-            return Err(format!(
-                "Required parameter '{}' missing for endpoint '{}'",
-                param.name, endpoint_name
-            )
-            .into());
-        }
-    }
+    ensure_required_parameters(endpoint, |name| api_params.get_param(name))?;
 
     if cache_exists(endpoint.name, &api_params) {
         println!("✅ Found {} data in cache", endpoint.name);
@@ -77,18 +67,11 @@ fn persist_local_cache(
     Ok(())
 }
 
-fn interpolate_url(endpoint: &Endpoint, params: &HashMap<String, String>) -> String {
-    let mut url = endpoint.url.to_string();
-    for (key, value) in params {
-        url = url.replace(&format!("{{{}}}", key), value);
-    }
-    url
-}
-
 async fn load_or_fetch_payload(
     endpoint: &Endpoint,
     params: &HashMap<String, String>,
 ) -> Result<PayloadResult, AnyError> {
+    let url = endpoint.build_url(params)?;
     let storage_key = generate_storage_key(endpoint.name, params);
     let config = StorageConfig::from_env()?;
     let storage = create_storage_backend(&config).await?;
@@ -155,7 +138,6 @@ async fn load_or_fetch_payload(
         });
     }
 
-    let url = interpolate_url(endpoint, params);
     println!("🌐 Fetching {} data from NHL API...", endpoint.name);
 
     match api::fetch_api_json(&url).await {
@@ -185,22 +167,6 @@ async fn load_or_fetch_payload(
     }
 }
 
-async fn fetch_and_store_with_retry(
-    endpoint: &Endpoint,
-    params: &ApiParams,
-) -> Result<(), AnyError> {
-    let params_map = params.as_map();
-
-    match load_or_fetch_payload(endpoint, params_map).await {
-        Ok(payload) => {
-            persist_local_cache(endpoint, params, &payload.content)?;
-            log_payload_source(endpoint.name, &payload);
-            Ok(())
-        }
-        Err(e) => Err(e),
-    }
-}
-
 fn log_payload_source(endpoint_name: &str, payload: &PayloadResult) {
     let checksum = calculate_checksum(&payload.content);
     match payload.source {
@@ -220,53 +186,6 @@ fn log_payload_source(endpoint_name: &str, payload: &PayloadResult) {
     println!("🔐 Checksum: {}", checksum);
 }
 
-/// Possible outcomes from processing an individual game request.
-#[derive(Debug)]
-pub enum ProcessResult {
-    Success,
-    Skipped,
-}
-
-/// Process a single game endpoint, honoring cached content and retry policy.
-pub async fn process_game_endpoint(
-    game_id: i64,
-    endpoint_name: &str,
-    max_retries: u32,
-) -> Result<ProcessResult, AnyError> {
-    let endpoint = get_endpoint(endpoint_name)
-        .ok_or_else(|| format!("Endpoint '{}' not found", endpoint_name))?;
-
-    if !endpoint.implemented {
-        return Err(format!("Endpoint '{}' is not implemented", endpoint_name).into());
-    }
-
-    let mut api_params = ApiParams::new();
-    api_params.add_param("game_id", &game_id.to_string());
-
-    if cache_exists(endpoint.name, &api_params) {
-        return Ok(ProcessResult::Skipped);
-    }
-
-    for attempt in 1..=max_retries {
-        match fetch_and_store_with_retry(endpoint, &api_params).await {
-            Ok(()) => return Ok(ProcessResult::Success),
-            Err(e) if attempt == max_retries => {
-                return Err(format!("Failed after {} attempts: {}", max_retries, e).into())
-            }
-            Err(e) => {
-                println!(
-                    "⚠️ Attempt {}/{} failed for game {} ({}): {}",
-                    attempt, max_retries, game_id, endpoint_name, e
-                );
-                let delay = Duration::from_secs(2_u64.pow(attempt - 1));
-                sleep(delay).await;
-            }
-        }
-    }
-
-    unreachable!()
-}
-
 /// Fetch NHL data with the storage-first strategy, persisting to object storage when needed.
 pub async fn fetch_and_store_enhanced(
     endpoint_name: &str,
@@ -284,15 +203,7 @@ pub async fn fetch_and_store_enhanced(
         param_map.insert((*key).to_string(), (*value).to_string());
     }
 
-    for param in &endpoint.parameters {
-        if param.required && !param_map.contains_key(param.name) {
-            return Err(format!(
-                "Required parameter '{}' missing for endpoint '{}'",
-                param.name, endpoint_name
-            )
-            .into());
-        }
-    }
+    ensure_required_parameters(endpoint, |name| param_map.get(name).map(|s| s.as_str()))?;
 
     let payload = load_or_fetch_payload(endpoint, &param_map).await?;
     log_payload_source(endpoint.name, &payload);
@@ -327,4 +238,21 @@ pub async fn get_from_storage(
     }
 
     Ok(data)
+}
+
+fn ensure_required_parameters<'a>(
+    endpoint: &Endpoint,
+    mut lookup: impl FnMut(&str) -> Option<&'a str>,
+) -> Result<(), AnyError> {
+    for param in &endpoint.parameters {
+        if param.required && lookup(param.name).is_none() {
+            return Err(format!(
+                "Required parameter '{}' missing for endpoint '{}'",
+                param.name, endpoint.name
+            )
+            .into());
+        }
+    }
+
+    Ok(())
 }
