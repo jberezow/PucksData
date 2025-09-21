@@ -1,6 +1,8 @@
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
+use crate::AnyError;
+
 /// Data type categorization for endpoints
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DataType {
@@ -45,6 +47,7 @@ pub struct Endpoint {
     pub description: &'static str,
     pub data_type: DataType,
     pub implemented: bool,
+    pub cli_name: &'static str,
 
     // Parameter definitions
     pub parameters: Vec<Parameter>,
@@ -54,6 +57,46 @@ pub struct Endpoint {
 
     // For CLI documentation
     pub example: &'static str,
+}
+
+impl Endpoint {
+    /// CLI subcommand name corresponding to the endpoint (e.g. `game_boxscore` -> `boxscore`).
+    pub fn cli_subcommand_name(&self) -> &'static str {
+        self.cli_name
+    }
+
+    /// Build a concrete URL by interpolating `{param}` placeholders from the provided map.
+    pub fn build_url(&self, params: &HashMap<String, String>) -> Result<String, AnyError> {
+        for parameter in &self.parameters {
+            if parameter.required && !params.contains_key(parameter.name) {
+                return Err(format!(
+                    "Required parameter '{}' missing for endpoint '{}'",
+                    parameter.name, self.name
+                )
+                .into());
+            }
+        }
+
+        let mut url = self.url.to_string();
+        for (key, value) in params {
+            url = url.replace(&format!("{{{}}}", key), value);
+        }
+
+        if let Some(start) = url.find('{') {
+            let end = url[start..]
+                .find('}')
+                .map(|idx| start + idx + 1)
+                .unwrap_or(url.len());
+            let placeholder = &url[start..end];
+            return Err(format!(
+                "Unresolved URL placeholder '{}' for endpoint '{}'",
+                placeholder, self.name
+            )
+            .into());
+        }
+
+        Ok(url)
+    }
 }
 
 /// Get endpoint by name
@@ -89,6 +132,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch a game story by game ID",
             data_type: DataType::Games,
             implemented: true,
+            cli_name: "story",
             parameters: vec![Parameter {
                 name: "game_id",
                 description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
@@ -108,6 +152,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch a game boxscore by game ID",
             data_type: DataType::Games,
             implemented: true,
+            cli_name: "boxscore",
             parameters: vec![Parameter {
                 name: "game_id",
                 description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
@@ -127,6 +172,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch play-by-play data by game ID",
             data_type: DataType::Games,
             implemented: true,
+            cli_name: "play-by-play",
             parameters: vec![Parameter {
                 name: "game_id",
                 description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
@@ -146,6 +192,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch all games data",
             data_type: DataType::Games,
             implemented: true,
+            cli_name: "all",
             parameters: vec![],
             test_params: HashMap::new(),
             example: "pucksdata games all",
@@ -156,6 +203,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch game content",
             data_type: DataType::Games,
             implemented: true,
+            cli_name: "content",
             parameters: vec![Parameter {
                 name: "game_id",
                 description: "The NHL game ID (format: YYYYTTGGGG, e.g., 2023020001)",
@@ -176,6 +224,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch a player summary by player ID",
             data_type: DataType::Players,
             implemented: true,
+            cli_name: "summary",
             parameters: vec![Parameter {
                 name: "player_id",
                 description:
@@ -196,6 +245,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch all players data",
             data_type: DataType::Players,
             implemented: true,
+            cli_name: "all",
             parameters: vec![],
             test_params: HashMap::new(),
             example: "pucksdata players all",
@@ -206,6 +256,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch player game log for a specific season and game type",
             data_type: DataType::Players,
             implemented: true,
+            cli_name: "game-log",
             parameters: vec![
                 Parameter {
                     name: "player_id",
@@ -243,6 +294,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch current team statistics",
             data_type: DataType::Teams,
             implemented: true,
+            cli_name: "current-stats",
             parameters: vec![Parameter {
                 name: "team_code",
                 description: "The NHL team code (format: 3 letters, e.g., TOR, BOS, NYR, LAK)",
@@ -262,6 +314,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch team statistics for a specific season and game type",
             data_type: DataType::Teams,
             implemented: true,
+            cli_name: "stats-by-season",
             parameters: vec![
                 Parameter {
                     name: "team_code",
@@ -297,6 +350,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch standings by date",
             data_type: DataType::Teams,
             implemented: true,
+            cli_name: "standings-by-date",
             parameters: vec![Parameter {
                 name: "date",
                 description: "The date (format: YYYY-MM-DD, e.g., 2024-02-15)",
@@ -316,6 +370,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch standings for all seasons",
             data_type: DataType::Teams,
             implemented: true,
+            cli_name: "standings-season",
             parameters: vec![],
             test_params: HashMap::new(),
             example: "pucksdata teams standings-season",
@@ -326,6 +381,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch team roster for a specific season",
             data_type: DataType::Teams,
             implemented: true,
+            cli_name: "roster-season",
             parameters: vec![
                 Parameter {
                     name: "team_code",
@@ -354,6 +410,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch team schedule for a specific season",
             data_type: DataType::Teams,
             implemented: true,
+            cli_name: "schedule-season",
             parameters: vec![
                 Parameter {
                     name: "team_code",
@@ -382,6 +439,7 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
             description: "Fetch team schedule for a specific month",
             data_type: DataType::Teams,
             implemented: true,
+            cli_name: "schedule-month",
             parameters: vec![
                 Parameter {
                     name: "team_code",
