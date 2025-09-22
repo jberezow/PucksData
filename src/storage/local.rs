@@ -68,16 +68,73 @@ impl StorageBackend for LocalStorage {
             return Ok(files);
         }
 
-        let mut entries = fs::read_dir(&prefix_path).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            if entry.file_type().await?.is_file() {
-                if let Some(file_name) = entry.file_name().to_str() {
-                    let key = format!("{}/{}", prefix, file_name);
-                    files.push(key);
+        let mut stack = vec![(prefix.to_string(), prefix_path)];
+
+        while let Some((current_prefix, current_path)) = stack.pop() {
+            let mut entries = match fs::read_dir(&current_path).await {
+                Ok(entries) => entries,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(Box::new(e)),
+            };
+
+            while let Some(entry) = entries.next_entry().await? {
+                let file_type = entry.file_type().await?;
+                let file_name = match entry.file_name().to_str() {
+                    Some(name) => name.to_string(),
+                    None => continue,
+                };
+
+                let relative_key = if current_prefix.is_empty() {
+                    file_name.clone()
+                } else {
+                    format!("{}/{}", current_prefix, file_name)
+                };
+
+                if file_type.is_dir() {
+                    stack.push((relative_key, entry.path()));
+                } else if file_type.is_file() {
+                    files.push(relative_key);
                 }
             }
         }
 
+        files.sort();
         Ok(files)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn lists_nested_files_recursively() {
+        let temp_dir = TempDir::new().expect("tempdir");
+        let base_path = temp_dir.path().join("cache");
+        tokio::fs::create_dir_all(base_path.join("games/2023"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(base_path.join("games/2024/nested"))
+            .await
+            .unwrap();
+        tokio::fs::write(base_path.join("games/2023/file.json"), "{}")
+            .await
+            .unwrap();
+        tokio::fs::write(base_path.join("games/2024/nested/file.json"), "{}")
+            .await
+            .unwrap();
+
+        let storage = LocalStorage::new(base_path.to_str().unwrap());
+        let mut files = storage.list("games").await.unwrap();
+        files.sort();
+
+        assert_eq!(
+            files,
+            vec![
+                "games/2023/file.json".to_string(),
+                "games/2024/nested/file.json".to_string()
+            ]
+        );
     }
 }
