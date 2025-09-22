@@ -75,7 +75,10 @@ pub fn generate_storage_key(endpoint_name: &str, params: &HashMap<String, String
         // Fallback for unknown endpoints
         _ => {
             let mut key = format!("unknown/{endpoint_name}");
-            for (param_key, param_value) in params {
+            let mut sorted_params: Vec<_> = params.iter().collect();
+            sorted_params.sort_by(|a, b| a.0.cmp(b.0));
+
+            for (param_key, param_value) in sorted_params {
                 key.push_str(&format!("_{param_key}_{param_value}"));
             }
             key.push_str(".json");
@@ -138,6 +141,22 @@ mod tests {
         assert_eq!(
             generate_storage_key("team_roster_season", &params),
             "teams/rosters/EDM_roster_20232024.json"
+        );
+    }
+
+    #[test]
+    fn test_unknown_endpoint_key_is_deterministic() {
+        let mut params_a = HashMap::new();
+        params_a.insert("b".to_string(), "2".to_string());
+        params_a.insert("a".to_string(), "1".to_string());
+
+        let mut params_b = HashMap::new();
+        params_b.insert("a".to_string(), "1".to_string());
+        params_b.insert("b".to_string(), "2".to_string());
+
+        assert_eq!(
+            generate_storage_key("custom_endpoint", &params_a),
+            generate_storage_key("custom_endpoint", &params_b)
         );
     }
 }
