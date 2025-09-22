@@ -104,14 +104,8 @@ pub async fn resolve_entity_context(
 ) -> Result<EntityContext, AnyError> {
     let entity_type = endpoint.data_type.as_entity_type().to_string();
     let nhl_id = match endpoint.data_type {
-        DataType::Games => params
-            .get("game_id")
-            .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or_default(),
-        DataType::Players => params
-            .get("player_id")
-            .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or_default(),
+        DataType::Games => parse_required_identifier(params, "game_id", "game")?,
+        DataType::Players => parse_required_identifier(params, "player_id", "player")?,
         DataType::Teams => resolve_team_identifier(params, pool).await?,
     };
 
@@ -125,13 +119,12 @@ async fn resolve_team_identifier(
     params: &HashMap<String, String>,
     pool: &PgPool,
 ) -> Result<i64, AnyError> {
-    if let Some(code) = params.get("team_code") {
-        if let Some(nhl_id) = lookup_team_nhl_id(pool, code).await? {
-            return Ok(nhl_id as i64);
-        }
-    }
+    let team_code = params.get("team_code").ok_or_else(|| -> AnyError {
+        "Missing required parameter 'team_code' for team endpoint".into()
+    })?;
 
-    Ok(0)
+    let nhl_id = lookup_team_nhl_id(pool, team_code).await?;
+    handle_team_lookup_result(team_code, nhl_id)
 }
 
 async fn lookup_team_nhl_id(pool: &PgPool, team_code: &str) -> Result<Option<i32>, AnyError> {
@@ -141,4 +134,113 @@ async fn lookup_team_nhl_id(pool: &PgPool, team_code: &str) -> Result<Option<i32
         .await?;
 
     Ok(result.map(|row| row.get("nhl_id")))
+}
+
+fn parse_required_identifier(
+    params: &HashMap<String, String>,
+    key: &str,
+    entity_name: &str,
+) -> Result<i64, AnyError> {
+    let raw_value = params.get(key).ok_or_else(|| -> AnyError {
+        format!(
+            "Missing required parameter '{}' for {} endpoint",
+            key, entity_name
+        )
+        .into()
+    })?;
+
+    raw_value.parse::<i64>().map_err(|_| -> AnyError {
+        format!("Invalid value '{}' for parameter '{}'", raw_value, key).into()
+    })
+}
+
+fn handle_team_lookup_result(team_code: &str, nhl_id: Option<i32>) -> Result<i64, AnyError> {
+    nhl_id.map(|value| value as i64).ok_or_else(|| -> AnyError {
+        format!("No team found for abbreviation '{}'", team_code).into()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::endpoints::{DataType, Endpoint};
+    use sqlx::postgres::PgPoolOptions;
+
+    fn test_endpoint(data_type: DataType) -> Endpoint {
+        Endpoint {
+            name: "test",
+            url: "https://example.com",
+            description: "",
+            data_type,
+            implemented: true,
+            cli_name: "test",
+            parameters: vec![],
+            test_params: HashMap::new(),
+            example: "",
+        }
+    }
+
+    fn lazy_pool() -> PgPool {
+        PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://postgres:password@localhost/test")
+            .expect("lazy pool")
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_game_id() {
+        let endpoint = test_endpoint(DataType::Games);
+        let pool = lazy_pool();
+        let mut params = HashMap::new();
+        params.insert("game_id".to_string(), "invalid".to_string());
+
+        let err = resolve_entity_context(&endpoint, &params, &pool)
+            .await
+            .expect_err("invalid game id should error");
+
+        assert!(err
+            .to_string()
+            .contains("Invalid value 'invalid' for parameter 'game_id'"));
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_player_id() {
+        let endpoint = test_endpoint(DataType::Players);
+        let pool = lazy_pool();
+        let mut params = HashMap::new();
+        params.insert("player_id".to_string(), "oops".to_string());
+
+        let err = resolve_entity_context(&endpoint, &params, &pool)
+            .await
+            .expect_err("invalid player id should error");
+
+        assert!(err
+            .to_string()
+            .contains("Invalid value 'oops' for parameter 'player_id'"));
+    }
+
+    #[tokio::test]
+    async fn rejects_missing_team_code() {
+        let endpoint = test_endpoint(DataType::Teams);
+        let pool = lazy_pool();
+        let params = HashMap::new();
+
+        let err = resolve_entity_context(&endpoint, &params, &pool)
+            .await
+            .expect_err("missing team_code should error");
+
+        assert!(err
+            .to_string()
+            .contains("Missing required parameter 'team_code' for team endpoint"));
+    }
+
+    #[test]
+    fn rejects_unknown_team_code() {
+        let err =
+            handle_team_lookup_result("XYZ", None).expect_err("unknown team code should error");
+
+        assert!(err
+            .to_string()
+            .contains("No team found for abbreviation 'XYZ'"));
+    }
 }
