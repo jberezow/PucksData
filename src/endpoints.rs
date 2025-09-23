@@ -464,3 +464,61 @@ pub static ALL_ENDPOINTS: Lazy<Vec<Endpoint>> = Lazy::new(|| {
         },
     ]
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    // Basic smoke tests for the endpoint registry.
+
+    /// Ensures a known endpoint is registered with the expected metadata.
+    #[test]
+    fn finds_known_endpoint() {
+        let endpoint = get_endpoint("game_boxscore").expect("game_boxscore should exist");
+
+        assert_eq!(endpoint.name, "game_boxscore");
+        assert_eq!(endpoint.data_type, DataType::Games);
+        assert!(
+            endpoint.implemented,
+            "game_boxscore should be marked implemented"
+        );
+    }
+
+    /// Verifies that required parameters appear in the rendered URL.
+    #[test]
+    fn builds_url_with_expected_formatting() {
+        let endpoint = get_endpoint("game_boxscore").expect("game_boxscore should exist");
+        let mut params = HashMap::new();
+        params.insert("game_id".to_string(), "2023020001".to_string());
+
+        let url = endpoint
+            .build_url(&params)
+            .expect("should build URL when required parameters are present");
+
+        assert!(url.contains("2023020001"), "URL should contain game ID");
+        assert!(url.starts_with("https://"), "URL should be HTTPS");
+        assert!(
+            url.contains("api-web.nhle.com"),
+            "URL should point to NHL API domain"
+        );
+    }
+
+    /// Reports a clear error when required parameters are missing.
+    #[test]
+    fn errors_when_required_parameter_missing() {
+        let endpoint = get_endpoint("game_boxscore").expect("game_boxscore should exist");
+        let params = HashMap::new();
+
+        let error = endpoint
+            .build_url(&params)
+            .expect_err("should error when required parameter missing");
+
+        assert!(
+            error
+                .to_string()
+                .contains("Required parameter 'game_id' missing for endpoint 'game_boxscore'"),
+            "error should mention missing parameter"
+        );
+    }
+}
