@@ -14,7 +14,3 @@ hasura/metadata/databases/*/introspection/
 
 # Backup folders (created during upgrades)
 hasura/migrations_backup/
-
-# Schema file
-/current_schema.json
-/.nvmrc
