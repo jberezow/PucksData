@@ -2,7 +2,6 @@ use crate::models::common::NameField;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-#[allow(non_snake_case)]
 pub struct Team {
     pub id: i32,
     #[serde(rename = "abbrev")]

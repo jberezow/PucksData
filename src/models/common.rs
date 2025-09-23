@@ -7,17 +7,15 @@ pub struct NameField {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(non_snake_case)]
 pub struct DraftDetails {
     pub year: Option<i32>,
-    pub teamAbbrev: Option<String>,
+    pub team_abbrev: Option<String>,
     pub round: Option<i32>,
-    pub pickInRound: Option<i32>,
-    pub overallPick: Option<i32>,
+    pub pick_in_round: Option<i32>,
+    pub overall_pick: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(non_snake_case)]
 pub struct PeriodDescriptor {
     pub number: i32,
     #[serde(rename = "periodType")]
