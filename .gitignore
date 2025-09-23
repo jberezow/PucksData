@@ -16,4 +16,5 @@ hasura/metadata/databases/*/introspection/
 hasura/migrations_backup/
 
 # Schema file
-current_schema.json
+/current_schema.json
+/.nvmrc
