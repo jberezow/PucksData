@@ -2,6 +2,9 @@ pub mod common;
 pub mod game;
 pub mod player;
 pub mod team;
+pub mod hit;
+pub mod block;
+pub mod shot;
 
 // Export commonly needed items
 pub use common::{
