@@ -16,6 +16,8 @@ struct FranchiseRecord {
 #[derive(serde::Deserialize)]
 struct TeamAbbrevRecord {
     id: i64,
+    #[serde(rename = "franchiseId")]
+    franchise_id: Option<i64>,  // null for placeholder entries (e.g. "TBD", "NHL")
     #[serde(rename = "triCode")]
     tri_code: String,
 }
@@ -53,11 +55,22 @@ pub async fn fetch_teams() -> Result<Vec<DbTeam>, AnyError> {
     let abbrev_resp: ApiResponse<TeamAbbrevRecord> =
         serde_json::from_str(&abbrev_json)?;
 
-    // Build id -> triCode map
-    let abbrev_map: HashMap<i64, String> = abbrev_resp
-        .data
+    // Build franchiseId -> triCode map.
+    // The /team endpoint has one row per franchise *era* (e.g. Quebec Nordiques and
+    // Colorado Avalanche both share franchiseId=27). Keep the entry with the highest
+    // team id, which corresponds to the most recent/current name and triCode.
+    let mut abbrev_map: HashMap<i64, (i64, String)> = HashMap::new();
+    for r in abbrev_resp.data {
+        // Skip placeholder entries (e.g. "TBD", "NHL") that have no franchise association.
+        let Some(franchise_id) = r.franchise_id else { continue };
+        let entry = abbrev_map.entry(franchise_id).or_insert((i64::MIN, String::new()));
+        if r.id > entry.0 {
+            *entry = (r.id, r.tri_code);
+        }
+    }
+    let abbrev_map: HashMap<i64, String> = abbrev_map
         .into_iter()
-        .map(|r| (r.id, r.tri_code))
+        .map(|(fid, (_, code))| (fid, code))
         .collect();
 
     // Join franchises with abbreviations

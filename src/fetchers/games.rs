@@ -101,8 +101,8 @@ pub async fn fetch_game_boxscore(game_id: i64) -> Result<BoxscoreGame, ApiError>
 /// Fetch the list of all season year integers from the seasons endpoint (for --all mode).
 pub async fn fetch_seasons_list() -> Result<Vec<i32>, AnyError> {
     let json = fetch_api_json("https://api-web.nhle.com/v1/season").await?;
-    let years: Vec<String> = serde_json::from_str(&json)?;
-    Ok(years.iter().filter_map(|s| s.parse::<i32>().ok()).collect())
+    let years: Vec<i32> = serde_json::from_str(&json)?;
+    Ok(years)
 }
 
 // ── Transform ─────────────────────────────────────────────────────────────────
