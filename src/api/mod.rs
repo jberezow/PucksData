@@ -1,13 +1,12 @@
-pub mod client;
-
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use reqwest;
 use std::fmt;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
-static LAST_REQUEST_TIME: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::new(None));
+static LAST_REQUEST_TIME: LazyLock<Mutex<Option<Instant>>> =
+    LazyLock::new(|| Mutex::new(None));
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(100); // 10 requests per second max
 
 #[derive(Debug)]
@@ -63,7 +62,7 @@ pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
         reqwest::StatusCode::OK => Ok(response.text().await?),
         reqwest::StatusCode::NOT_FOUND => Err(ApiError::NotFound),
         reqwest::StatusCode::TOO_MANY_REQUESTS => {
-            println!("⚠️ Rate limited, waiting 5 seconds...");
+            println!("Rate limited, waiting 5 seconds...");
             sleep(Duration::from_secs(5)).await;
             Err(ApiError::Other(429))
         }
