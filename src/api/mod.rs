@@ -1,19 +1,19 @@
 use std::sync::LazyLock;
 use reqwest;
 use std::fmt;
-use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
-use tokio::time::sleep;
 
-static LAST_REQUEST_TIME: LazyLock<Mutex<Option<Instant>>> =
-    LazyLock::new(|| Mutex::new(None));
-const MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(100); // 10 requests per second max
+static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .user_agent("pucksdata/1.0 (Hockey Statistics Research)")
+        .build()
+        .expect("failed to build reqwest client")
+});
 
 #[derive(Debug)]
 pub enum ApiError {
     NotFound,
     NetworkError(reqwest::Error),
-    Other(u16), // For other HTTP status codes
+    Other(u16),
 }
 
 impl std::error::Error for ApiError {}
@@ -34,38 +34,12 @@ impl From<reqwest::Error> for ApiError {
     }
 }
 
-async fn enforce_rate_limit() {
-    let mut guard = LAST_REQUEST_TIME.lock().await;
-
-    if let Some(last_time) = *guard {
-        let elapsed = last_time.elapsed();
-        if elapsed < MIN_REQUEST_INTERVAL {
-            let sleep_duration = MIN_REQUEST_INTERVAL - elapsed;
-            sleep(sleep_duration).await;
-        }
-    }
-
-    *guard = Some(Instant::now());
-}
-
 pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
-    enforce_rate_limit().await;
-
-    let client = reqwest::Client::new();
-    let response = client
-        .get(url)
-        .header("User-Agent", "pucksdata/1.0 (Hockey Statistics Research)")
-        .send()
-        .await?;
+    let response = CLIENT.get(url).send().await?;
 
     match response.status() {
         reqwest::StatusCode::OK => Ok(response.text().await?),
         reqwest::StatusCode::NOT_FOUND => Err(ApiError::NotFound),
-        reqwest::StatusCode::TOO_MANY_REQUESTS => {
-            println!("Rate limited, waiting 5 seconds...");
-            sleep(Duration::from_secs(5)).await;
-            Err(ApiError::Other(429))
-        }
         status => Err(ApiError::Other(status.as_u16())),
     }
 }
