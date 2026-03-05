@@ -71,8 +71,11 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 println!("Fetched {count} records, upserted {count}");
             }
             FetchEntity::Players => {
-                // Implemented in Plan 03-02
-                eprintln!("Players fetch not yet implemented");
+                let pool = db::get_pool().await?;
+                let records = fetchers::players::fetch_players().await?;
+                let count = records.len();
+                loaders::players::upsert_players(pool, &records).await?;
+                println!("Fetched {count} records, upserted {count}");
             }
             FetchEntity::Games(args) => {
                 // Implemented in Plan 03-03

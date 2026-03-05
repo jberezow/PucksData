@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM players WHERE player_id = 9000001",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "f9c55799aa9576109954889479cb37bd95cb1870925a1765226a8a533ffac23a"
+}

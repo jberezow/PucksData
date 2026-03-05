@@ -36,5 +36,45 @@ fn test_player_landing_deserialize() {
 #[tokio::test]
 async fn test_players_upsert_idempotent() {
     if std::env::var("DATABASE_URL").is_err() { return; }
-    // TODO: Plan 03-02 fills in this test body (Task 2)
+    let pool = pucksdata::db::get_pool().await.unwrap();
+    let record = pucksdata::models::DbPlayer {
+        player_id: 9000001,
+        first_name: "Test".into(),
+        last_name: "Player".into(),
+        position: Some("C".into()),
+        shoots_catches: Some("L".into()),
+        current_team_abbrev: None,
+        birth_date: None,
+        height_cm: Some(185),
+        weight_kg: Some(90),
+        draft_year: None,
+        draft_round: None,
+        draft_pick: None,
+        draft_team_abbrev: None,
+        draft_overall_pick: None,
+    };
+    pucksdata::loaders::players::upsert_players(pool, &[record]).await.unwrap();
+    pucksdata::loaders::players::upsert_players(pool, &[pucksdata::models::DbPlayer {
+        player_id: 9000001,
+        first_name: "Test".into(),
+        last_name: "Player Updated".into(),
+        position: Some("C".into()),
+        shoots_catches: Some("L".into()),
+        current_team_abbrev: None,
+        birth_date: None,
+        height_cm: Some(185),
+        weight_kg: Some(90),
+        draft_year: None,
+        draft_round: None,
+        draft_pick: None,
+        draft_team_abbrev: None,
+        draft_overall_pick: None,
+    }]).await.unwrap();
+    let count: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM players WHERE player_id = 9000001")
+        .fetch_one(pool).await.unwrap().unwrap_or(0);
+    assert_eq!(count, 1, "upsert produced more than one row");
+    let name: String = sqlx::query_scalar!("SELECT last_name FROM players WHERE player_id = 9000001")
+        .fetch_one(pool).await.unwrap();
+    assert_eq!(name, "Player Updated");
+    sqlx::query!("DELETE FROM players WHERE player_id = 9000001").execute(pool).await.unwrap();
 }
