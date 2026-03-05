@@ -4,27 +4,28 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-reqwest = { version = "0.11", features = ["blocking", "json"] }
-clap = { version = "4.4", features = ["derive"] }
-serde_json = "1.0"
-once_cell = "1.19.0"  # For LazyLock in non-nightly Rust
+# HTTP
+reqwest = { version = "0.12", features = ["json"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "uuid", "time"] }
+
+# Async runtime
 tokio = { version = "1", features = ["full"] }
+
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI (used in Phase 3)
+clap = { version = "4.4", features = ["derive"] }
+
+# Date/time
 time = { version = "0.3", features = ["serde", "macros", "parsing"] }
-indicatif = "0.17"
-# Object storage dependencies
-aws-sdk-s3 = { version = "1.0", features = ["behavior-version-latest"] }
-aws-config = { version = "1.0", features = ["behavior-version-latest"] }
-aws-credential-types = "1.0"
-# Environment and configuration
-dotenvy = "0.15"
-# Checksums
-sha2 = "0.10"
-# Async traits
-async-trait = "0.1"
-# Database connectivity
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "time"] }
 chrono = { version = "0.4", features = ["serde"] }
+
+# Environment
+dotenvy = "0.15"
 
 [dev-dependencies]
 # For future use with mocking HTTP requests
