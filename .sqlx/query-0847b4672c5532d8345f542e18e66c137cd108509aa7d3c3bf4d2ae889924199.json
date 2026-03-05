@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM seasons WHERE season_year = 19001901",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "0847b4672c5532d8345f542e18e66c137cd108509aa7d3c3bf4d2ae889924199"
+}

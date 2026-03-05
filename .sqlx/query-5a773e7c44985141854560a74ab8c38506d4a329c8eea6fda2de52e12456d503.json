@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO seasons (season_year, start_date, end_date, regular_season_end_date)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (season_year) DO UPDATE SET\n                start_date              = EXCLUDED.start_date,\n                end_date                = EXCLUDED.end_date,\n                regular_season_end_date = EXCLUDED.regular_season_end_date\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a773e7c44985141854560a74ab8c38506d4a329c8eea6fda2de52e12456d503"
+}
