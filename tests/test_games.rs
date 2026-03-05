@@ -66,12 +66,111 @@ fn test_games_deserialize_stats_response() {
 #[tokio::test]
 async fn test_games_upsert_idempotent() {
     if std::env::var("DATABASE_URL").is_err() { return; }
-    // TODO: Plan 03-03 fills in this test body
+    let pool = pucksdata::db::get_pool().await.unwrap();
+
+    // Insert a test team first to satisfy the FK constraint on home_team_id / away_team_id
+    // Use high IDs unlikely to conflict with real NHL data
+    sqlx::query!(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
+         VALUES (99001, 'Test Home', 'Home', 'Testville', 'HME'),
+                (99002, 'Test Away', 'Away', 'Testville', 'AWY')
+         ON CONFLICT (team_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    let game_date = time::macros::date!(2024 - 10 - 08);
+    let record = pucksdata::models::DbGame {
+        game_id: 9900000001_i64,
+        season: 20242025,
+        game_date,
+        start_time_utc: None,
+        home_team_id: 99001,
+        away_team_id: 99002,
+        game_type: 2,
+        venue: Some("Test Arena".into()),
+        venue_location: Some("Testville, TS".into()),
+        game_state: Some("OFF".into()),
+        home_score: Some(3),
+        away_score: Some(1),
+    };
+
+    // Insert once
+    pucksdata::loaders::games::upsert_games(pool, &[record]).await.unwrap();
+
+    // Insert again with updated venue — should produce exactly one row
+    let record2 = pucksdata::models::DbGame {
+        game_id: 9900000001_i64,
+        season: 20242025,
+        game_date,
+        start_time_utc: None,
+        home_team_id: 99001,
+        away_team_id: 99002,
+        game_type: 2,
+        venue: Some("Test Arena Updated".into()),
+        venue_location: Some("Testville, TS".into()),
+        game_state: Some("OFF".into()),
+        home_score: Some(3),
+        away_score: Some(1),
+    };
+    pucksdata::loaders::games::upsert_games(pool, &[record2]).await.unwrap();
+
+    let count: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM games WHERE game_id = 9900000001"
+    ).fetch_one(pool).await.unwrap().unwrap_or(0);
+    assert_eq!(count, 1, "upsert produced more than one row");
+
+    let venue: Option<String> = sqlx::query_scalar!(
+        "SELECT venue FROM games WHERE game_id = 9900000001"
+    ).fetch_one(pool).await.unwrap();
+    assert_eq!(venue.as_deref(), Some("Test Arena Updated"));
+
+    // Cleanup
+    sqlx::query!("DELETE FROM games WHERE game_id = 9900000001").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99001, 99002)").execute(pool).await.unwrap();
 }
 
 #[tokio::test]
 #[ignore]
 async fn test_fetch_idempotency() {
     if std::env::var("DATABASE_URL").is_err() { return; }
-    // TODO: Plan 03-03 fills in this test body
+    let pool = pucksdata::db::get_pool().await.unwrap();
+
+    // Use a small, known-complete season for the integration test.
+    // Season 20242025 is recent and teams must already be loaded via `pucksdata fetch teams`.
+    // This test validates QUAL-01: re-running any fetch command produces the same DB state.
+    let test_season = 20242025_i32;
+
+    use indicatif::{ProgressBar, ProgressStyle};
+    let pb = ProgressBar::new(0);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}"
+        ).unwrap().progress_chars("=>-"),
+    );
+
+    // First run
+    let games_run1 = pucksdata::fetchers::games::fetch_games_for_season_enriched(test_season, &pb).await;
+    assert!(!games_run1.is_empty(), "expected at least one game for season {test_season}");
+    pucksdata::loaders::games::upsert_games(pool, &games_run1).await.unwrap();
+
+    let count_after_run1: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM games WHERE season = $1", test_season
+    ).fetch_one(pool).await.unwrap().unwrap_or(0);
+
+    // Second run — upsert semantics should produce identical row count
+    let games_run2 = pucksdata::fetchers::games::fetch_games_for_season_enriched(test_season, &pb).await;
+    pucksdata::loaders::games::upsert_games(pool, &games_run2).await.unwrap();
+
+    let count_after_run2: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM games WHERE season = $1", test_season
+    ).fetch_one(pool).await.unwrap().unwrap_or(0);
+
+    assert_eq!(
+        count_after_run1, count_after_run2,
+        "Re-running games fetch for season {test_season} changed the row count: \
+         run1={count_after_run1}, run2={count_after_run2}. Upsert semantics violated."
+    );
+
+    pb.finish_with_message(format!(
+        "Idempotency verified: {count_after_run2} games for season {test_season} after 2 runs"
+    ));
 }

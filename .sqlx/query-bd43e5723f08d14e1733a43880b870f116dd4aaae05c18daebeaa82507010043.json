@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO games\n                (game_id, season, game_date, start_time_utc, home_team_id, away_team_id,\n                 game_type, venue, venue_location, game_state, home_score, away_score)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n            ON CONFLICT (game_id) DO UPDATE SET\n                season         = EXCLUDED.season,\n                game_date      = EXCLUDED.game_date,\n                start_time_utc = EXCLUDED.start_time_utc,\n                home_team_id   = EXCLUDED.home_team_id,\n                away_team_id   = EXCLUDED.away_team_id,\n                game_type      = EXCLUDED.game_type,\n                venue          = EXCLUDED.venue,\n                venue_location = EXCLUDED.venue_location,\n                game_state     = EXCLUDED.game_state,\n                home_score     = EXCLUDED.home_score,\n                away_score     = EXCLUDED.away_score\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Date",
+        "Timestamptz",
+        "Int8",
+        "Int8",
+        "Int2",
+        "Text",
+        "Text",
+        "Text",
+        "Int2",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd43e5723f08d14e1733a43880b870f116dd4aaae05c18daebeaa82507010043"
+}

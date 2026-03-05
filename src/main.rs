@@ -78,9 +78,62 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 println!("Fetched {count} records, upserted {count}");
             }
             FetchEntity::Games(args) => {
-                // Implemented in Plan 03-03
-                let _ = args;
-                eprintln!("Games fetch not yet implemented");
+                use indicatif::{ProgressBar, ProgressStyle};
+                let pool = db::get_pool().await?;
+
+                if let Some(game_id) = args.scope.game {
+                    // --game <id>: single game fetch
+                    let game = fetchers::games::fetch_single_game(game_id).await?;
+                    loaders::games::upsert_games(pool, &[game]).await?;
+                    println!("Fetched 1 record, upserted 1");
+
+                } else if let Some(season) = args.scope.season {
+                    // --season <year>: all games for one season
+                    let pb = ProgressBar::new(0);
+                    pb.set_style(
+                        ProgressStyle::with_template(
+                            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}"
+                        )
+                        .unwrap()
+                        .progress_chars("=>-"),
+                    );
+                    let games = fetchers::games::fetch_games_for_season_enriched(season, &pb).await;
+                    let count = games.len();
+                    loaders::games::upsert_games(pool, &games).await?;
+                    pb.finish_with_message(format!("Fetched {count} records, upserted {count}"));
+
+                } else {
+                    // --all: iterate all seasons sequentially
+                    let seasons = fetchers::games::fetch_seasons_list().await?;
+                    let total_seasons = seasons.len();
+                    let mut total_games = 0usize;
+
+                    let pb = ProgressBar::new(0);
+                    pb.set_style(
+                        ProgressStyle::with_template(
+                            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}"
+                        )
+                        .unwrap()
+                        .progress_chars("=>-"),
+                    );
+
+                    for (i, season) in seasons.iter().enumerate() {
+                        pb.println(format!(
+                            "[{}/{}] Fetching season {}...",
+                            i + 1, total_seasons, season
+                        ));
+                        pb.set_position(0);
+                        let games = fetchers::games::fetch_games_for_season_enriched(*season, &pb).await;
+                        let count = games.len();
+                        if count > 0 {
+                            loaders::games::upsert_games(pool, &games).await?;
+                        }
+                        total_games += count;
+                    }
+                    pb.finish_with_message(format!(
+                        "Fetched {total_games} total games across {total_seasons} seasons, upserted {total_games}"
+                    ));
+                }
             }
         },
     }
