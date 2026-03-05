@@ -14,3 +14,6 @@ hasura/metadata/databases/*/introspection/
 
 # Backup folders (created during upgrades)
 hasura/migrations_backup/
+
+# Development test data
+test.json
