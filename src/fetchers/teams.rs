@@ -15,9 +15,8 @@ struct FranchiseRecord {
 
 #[derive(serde::Deserialize)]
 struct TeamAbbrevRecord {
-    id: i64,
-    #[serde(rename = "franchiseId")]
-    franchise_id: Option<i64>,  // null for placeholder entries (e.g. "TBD", "NHL")
+    #[serde(rename = "fullName")]
+    full_name: String,
     #[serde(rename = "triCode")]
     tri_code: String,
 }
@@ -55,28 +54,24 @@ pub async fn fetch_teams() -> Result<Vec<DbTeam>, AnyError> {
     let abbrev_resp: ApiResponse<TeamAbbrevRecord> =
         serde_json::from_str(&abbrev_json)?;
 
-    // Build franchiseId -> triCode map.
-    // The /team endpoint has one row per franchise *era* (e.g. Quebec Nordiques and
-    // Colorado Avalanche both share franchiseId=27). Keep the entry with the highest
-    // team id, which corresponds to the most recent/current name and triCode.
-    let mut abbrev_map: HashMap<i64, (i64, String)> = HashMap::new();
-    for r in abbrev_resp.data {
-        // Skip placeholder entries (e.g. "TBD", "NHL") that have no franchise association.
-        let Some(franchise_id) = r.franchise_id else { continue };
-        let entry = abbrev_map.entry(franchise_id).or_insert((i64::MIN, String::new()));
-        if r.id > entry.0 {
-            *entry = (r.id, r.tri_code);
-        }
-    }
-    let abbrev_map: HashMap<i64, String> = abbrev_map
+    // Build fullName -> triCode map from the /team endpoint.
+    // The /team endpoint has one row per franchise *era* (e.g. "Quebec Nordiques" and
+    // "Colorado Avalanche" are both present for franchiseId=27). The /franchise endpoint
+    // carries the *current* fullName for each franchise, and that name matches exactly one
+    // /team entry's fullName — so we can resolve the correct triCode by name lookup.
+    // This is more reliable than keeping the highest/lowest team_id because relocated
+    // franchises don't have a consistent id ordering relative to their historical entries
+    // (e.g. franchise 35 Winnipeg Jets has a higher id than the historical Atlanta Thrashers).
+    let abbrev_map: HashMap<String, String> = abbrev_resp
+        .data
         .into_iter()
-        .map(|(fid, (_, code))| (fid, code))
+        .map(|r| (r.full_name, r.tri_code))
         .collect();
 
-    // Join franchises with abbreviations
+    // Join franchises with abbreviations by matching on fullName.
     let mut teams = Vec::new();
     for franchise in franchise_resp.data {
-        match abbrev_map.get(&franchise.id) {
+        match abbrev_map.get(&franchise.full_name) {
             Some(abbrev) => {
                 teams.push(DbTeam {
                     team_id: franchise.id,

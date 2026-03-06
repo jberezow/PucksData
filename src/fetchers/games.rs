@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::Deserialize;
 
 use crate::{api::{fetch_api_json, ApiError}, models::DbGame, AnyError};
@@ -68,16 +69,47 @@ pub struct BoxscoreGame {
     pub away_team: BoxscoreTeam,
 }
 
+// ── Team ID mapping ───────────────────────────────────────────────────────────
+
+/// Deserialization record for the /team endpoint used to build the ID map.
+#[derive(Deserialize)]
+struct TeamIdRecord {
+    id: i64,
+    #[serde(rename = "franchiseId")]
+    franchise_id: Option<i64>,
+}
+
+/// Fetch a map of NHL team ID → franchise ID.
+///
+/// The stats /game endpoint returns `homeTeamId`/`visitingTeamId` in the NHL team ID space
+/// (e.g. VGK=54, SEA=55), but the `teams` table is keyed by franchise ID (e.g. VGK=38, SEA=39).
+/// This map is used to translate game team IDs to franchise IDs before DB insertion.
+pub async fn fetch_team_id_to_franchise_id_map() -> Result<HashMap<i64, i64>, AnyError> {
+    #[derive(Deserialize)]
+    struct TeamListResponse {
+        data: Vec<TeamIdRecord>,
+    }
+    let json = fetch_api_json("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
+    let resp: TeamListResponse = serde_json::from_str(&json)?;
+    let map = resp.data.into_iter()
+        .filter_map(|r| r.franchise_id.map(|fid| (r.id, fid)))
+        .collect();
+    Ok(map)
+}
+
 // ── Fetchers ─────────────────────────────────────────────────────────────────
 
 /// Fetch all games for a season from the stats endpoint (paginates at limit=500).
+///
+/// IMPORTANT: The NHL stats API uses `season` (not `seasonId`) and `id` (not `gameId`) as field
+/// names in cayenneExp/sort parameters. Using the wrong names returns HTTP 400.
 pub async fn fetch_games_for_season(season_year: i32) -> Result<Vec<StatsGameRecord>, AnyError> {
     let mut all_games: Vec<StatsGameRecord> = Vec::new();
     let mut start: usize = 0;
     let limit: usize = 500;
     loop {
         let url = format!(
-            "https://api.nhle.com/stats/rest/en/game?limit={limit}&start={start}&sort=gameId&dir=asc&cayenneExp=seasonId%3D{season_year}"
+            "https://api.nhle.com/stats/rest/en/game?limit={limit}&start={start}&sort=id&dir=asc&cayenneExp=season%3D{season_year}"
         );
         let json = fetch_api_json(&url).await?;
         let resp: StatsApiResponse<StatsGameRecord> = serde_json::from_str(&json)?;
@@ -108,7 +140,17 @@ pub async fn fetch_seasons_list() -> Result<Vec<i32>, AnyError> {
 // ── Transform ─────────────────────────────────────────────────────────────────
 
 /// Merge a stats record and an optional boxscore into a DbGame.
-pub fn transform_game(stats: &StatsGameRecord, boxscore: Option<&BoxscoreGame>) -> Result<DbGame, AnyError> {
+///
+/// `team_id_map` translates NHL team IDs (as returned by the stats /game endpoint's
+/// `homeTeamId`/`visitingTeamId` fields) to franchise IDs, which are the primary keys
+/// stored in the `teams` table. Without this translation the FK constraint on
+/// `games(home_team_id)` / `games(away_team_id)` will fire for any team whose NHL team ID
+/// differs from its franchise ID (e.g. VGK: team_id=54, franchise_id=38).
+pub fn transform_game(
+    stats: &StatsGameRecord,
+    boxscore: Option<&BoxscoreGame>,
+    team_id_map: &HashMap<i64, i64>,
+) -> Result<DbGame, AnyError> {
     use time::macros::format_description;
     let game_date = time::Date::parse(
         &stats.game_date,
@@ -127,13 +169,24 @@ pub fn transform_game(stats: &StatsGameRecord, boxscore: Option<&BoxscoreGame>) 
         None => (None, None, None, None),
     };
 
+    // Translate NHL team IDs → franchise IDs (teams table primary key).
+    //
+    // Fallback to raw ID is intentionally NOT used here: non-NHL team IDs (e.g. European
+    // exhibition clubs like EHC Red Bull München / id=7509) are absent from both the /team
+    // endpoint and the teams table. Inserting the raw ID would always produce an FK violation.
+    // Instead we surface an Err so the caller can skip + warn for that game.
+    let home_team_id = team_id_map.get(&stats.home_team_id).copied()
+        .ok_or_else(|| format!("unmapped home_team_id {} for game {}", stats.home_team_id, stats.id))?;
+    let away_team_id = team_id_map.get(&stats.away_team_id).copied()
+        .ok_or_else(|| format!("unmapped away_team_id {} for game {}", stats.away_team_id, stats.id))?;
+
     Ok(DbGame {
         game_id: stats.id,
         season: stats.season,
         game_date,
         start_time_utc,
-        home_team_id: stats.home_team_id,
-        away_team_id: stats.away_team_id,
+        home_team_id,
+        away_team_id,
         game_type: stats.game_type,
         venue,
         venue_location,
@@ -153,6 +206,14 @@ pub async fn fetch_games_for_season_enriched(
     season_year: i32,
     pb: &indicatif::ProgressBar,
 ) -> Vec<DbGame> {
+    let team_id_map = match fetch_team_id_to_franchise_id_map().await {
+        Ok(m) => m,
+        Err(e) => {
+            pb.suspend(|| eprintln!("warn: failed to fetch team ID map: {e}"));
+            return Vec::new();
+        }
+    };
+
     let stats_records = match fetch_games_for_season(season_year).await {
         Ok(r) => r,
         Err(e) => {
@@ -165,6 +226,7 @@ pub async fn fetch_games_for_season_enriched(
     pb.set_message(format!("games (season {season_year:08})"));
 
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_BOXSCORES));
+    let team_id_map = std::sync::Arc::new(team_id_map);
     let mut join_set: tokio::task::JoinSet<(StatsGameRecord, Option<BoxscoreGame>)> =
         tokio::task::JoinSet::new();
 
@@ -174,6 +236,9 @@ pub async fn fetch_games_for_season_enriched(
             let _permit = sem.acquire_owned().await.unwrap();
             let bs = match fetch_game_boxscore(stats.id).await {
                 Ok(b) => Some(b),
+                // 404 is expected for unplayed games (e.g. playoff series that ended
+                // before game 6 or 7). Silently use stats-only data — no warning needed.
+                Err(crate::api::ApiError::NotFound) => None,
                 Err(e) => {
                     eprintln!("warn: boxscore fetch failed for game {}: {e:?}, using stats-only data", stats.id);
                     None
@@ -188,7 +253,7 @@ pub async fn fetch_games_for_season_enriched(
         pb.inc(1);
         match res {
             Ok((stats, bs)) => {
-                match transform_game(&stats, bs.as_ref()) {
+                match transform_game(&stats, bs.as_ref(), &team_id_map) {
                     Ok(game) => games.push(game),
                     Err(e) => pb.suspend(|| eprintln!("warn: transform failed for game {}: {e}", stats.id)),
                 }
@@ -203,6 +268,7 @@ pub async fn fetch_games_for_season_enriched(
 
 /// Fetch a single game by ID (for --game mode). Fetches stats + boxscore and transforms.
 pub async fn fetch_single_game(game_id: i64) -> Result<DbGame, AnyError> {
+    let team_id_map = fetch_team_id_to_franchise_id_map().await?;
     let url = format!(
         "https://api.nhle.com/stats/rest/en/game?cayenneExp=id%3D{game_id}"
     );
@@ -211,5 +277,5 @@ pub async fn fetch_single_game(game_id: i64) -> Result<DbGame, AnyError> {
     let stats = resp.data.into_iter().next()
         .ok_or_else(|| format!("game {game_id} not found in stats API"))?;
     let bs = fetch_game_boxscore(game_id).await.ok();
-    transform_game(&stats, bs.as_ref())
+    transform_game(&stats, bs.as_ref(), &team_id_map)
 }
