@@ -48,3 +48,72 @@ pub struct DbGame {
     pub home_score: Option<i16>,
     pub away_score: Option<i16>,
 }
+
+// ── Event model structs ───────────────────────────────────────────────────────
+
+/// Base event row — maps to the `events` table.
+pub struct DbEvent {
+    pub game_id: i64,
+    pub event_id_in_game: i32,
+    pub period: i16,
+    pub period_type: String,
+    pub time_in_period: String,
+    pub event_type: String,
+    pub x_coord: Option<i16>,
+    pub y_coord: Option<i16>,
+    pub zone_code: Option<String>,
+    pub event_owner_team_id: Option<i64>,  // franchise ID after translation
+    pub home_goalie_present: bool,
+    pub home_skater_count: i16,
+    pub away_skater_count: i16,
+    pub away_goalie_present: bool,
+    pub strength: String,
+}
+
+/// Goal child row — maps to the `goals` table.
+pub struct DbGoal {
+    pub event_id_in_game: i32,  // used to look up events(id) after base insert
+    pub scorer_player_id: Option<i64>,
+    pub assist1_player_id: Option<i64>,
+    pub assist2_player_id: Option<i64>,
+    pub goalie_id: Option<i64>,
+    pub shot_type: Option<String>,
+}
+
+/// Shot-on-goal child row — maps to the `shots` table.
+pub struct DbShot {
+    pub event_id_in_game: i32,
+    pub shooting_player_id: Option<i64>,
+    pub goalie_in_net_id: Option<i64>,
+    pub shot_type: Option<String>,
+}
+
+/// Hit child row — maps to the `hits` table.
+pub struct DbHit {
+    pub event_id_in_game: i32,
+    pub hitting_player_id: Option<i64>,
+    pub hittee_player_id: Option<i64>,
+}
+
+/// Blocked-shot child row — maps to the `blocks` table.
+pub struct DbBlock {
+    pub event_id_in_game: i32,
+    pub blocking_player_id: Option<i64>,
+    pub shooting_player_id: Option<i64>,
+}
+
+/// Penalty child row — maps to the `penalties` table.
+pub struct DbPenalty {
+    pub event_id_in_game: i32,
+    pub committed_by_player_id: Option<i64>,
+    pub drawn_by_player_id: Option<i64>,
+    pub infraction_type: Option<String>,
+    pub duration_minutes: Option<i16>,
+}
+
+/// Faceoff child row — maps to the `faceoffs` table.
+pub struct DbFaceoff {
+    pub event_id_in_game: i32,
+    pub winning_player_id: Option<i64>,
+    pub losing_player_id: Option<i64>,
+}
