@@ -248,9 +248,88 @@ fn test_goal_orphan_warning() {
 
 #[tokio::test]
 async fn test_events_upsert_idempotent() {
-    // Integration test stub — Plan 03 fills this in.
-    // Early return when DATABASE_URL absent (shows "ok" in CI without a live DB).
     if std::env::var("DATABASE_URL").is_err() { return; }
-    // TODO (Plan 03): Insert a test game's events twice, verify row count is identical.
-    assert!(true);
+    let pool = pucksdata::db::get_pool().await.unwrap();
+
+    // Insert prerequisite test team and game rows
+    sqlx::query!(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
+         VALUES (99001, 'Test Home', 'Home', 'Testville', 'HME'),
+                (99002, 'Test Away', 'Away', 'Testville', 'AWY')
+         ON CONFLICT (team_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    sqlx::query!(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
+         VALUES (9900000002, 20232024, '2024-01-01', 99001, 99002, 2)
+         ON CONFLICT (game_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    // Build a minimal DbEvent + DbGoal for game 9900000002
+    let event = pucksdata::models::DbEvent {
+        game_id: 9900000002,
+        event_id_in_game: 1,
+        period: 1,
+        period_type: "REG".into(),
+        time_in_period: "05:00".into(),
+        event_type: "goal".into(),
+        x_coord: None,
+        y_coord: None,
+        zone_code: None,
+        event_owner_team_id: None,
+        home_goalie_present: true,
+        home_skater_count: 5,
+        away_skater_count: 5,
+        away_goalie_present: true,
+        strength: "ev".into(),
+    };
+    let goal = pucksdata::models::DbGoal {
+        event_id_in_game: 1,
+        scorer_player_id: None,
+        assist1_player_id: None,
+        assist2_player_id: None,
+        goalie_id: None,
+        shot_type: None,
+    };
+
+    // First upsert
+    pucksdata::loaders::events::upsert_game_events(
+        pool, 9900000002, &[event], &[goal], &[], &[], &[], &[], &[]
+    ).await.unwrap();
+
+    // Rebuild event + goal (can't reuse moved values)
+    let event2 = pucksdata::models::DbEvent {
+        game_id: 9900000002, event_id_in_game: 1, period: 1,
+        period_type: "REG".into(), time_in_period: "05:00".into(),
+        event_type: "goal".into(), x_coord: None, y_coord: None,
+        zone_code: None, event_owner_team_id: None,
+        home_goalie_present: true, home_skater_count: 5,
+        away_skater_count: 5, away_goalie_present: true, strength: "ev".into(),
+    };
+    let goal2 = pucksdata::models::DbGoal {
+        event_id_in_game: 1, scorer_player_id: None,
+        assist1_player_id: None, assist2_player_id: None,
+        goalie_id: None, shot_type: None,
+    };
+
+    // Second upsert — must produce same row count
+    pucksdata::loaders::events::upsert_game_events(
+        pool, 9900000002, &[event2], &[goal2], &[], &[], &[], &[], &[]
+    ).await.unwrap();
+
+    let event_count: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM events WHERE game_id = 9900000002"
+    ).fetch_one(pool).await.unwrap().unwrap_or(0);
+    assert_eq!(event_count, 1, "upsert produced more than one event row");
+
+    let goal_count: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM goals g JOIN events e ON e.id = g.event_id WHERE e.game_id = 9900000002"
+    ).fetch_one(pool).await.unwrap().unwrap_or(0);
+    assert_eq!(goal_count, 1, "upsert produced more than one goal row");
+
+    // Cleanup (child rows cascade on events delete if FK is deferred, otherwise delete in order)
+    sqlx::query!("DELETE FROM goals WHERE event_id IN (SELECT id FROM events WHERE game_id = 9900000002)").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM events WHERE game_id = 9900000002").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id = 9900000002").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99001, 99002)").execute(pool).await.unwrap();
 }

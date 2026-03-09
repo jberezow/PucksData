@@ -27,6 +27,14 @@ enum FetchEntity {
     Seasons,
     /// Fetch NHL games
     Games(GamesArgs),
+    /// Fetch play-by-play events for a game
+    Events(EventsArgs),
+}
+
+#[derive(Args)]
+struct EventsArgs {
+    /// Game ID to fetch play-by-play events for
+    game_id: i64,
 }
 
 #[derive(Args)]
@@ -76,6 +84,49 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 let count = records.len();
                 loaders::players::upsert_players(pool, &records).await?;
                 println!("Fetched {count} records, upserted {count}");
+            }
+            FetchEntity::Events(args) => {
+                use indicatif::{ProgressBar, ProgressStyle};
+                let pool = db::get_pool().await?;
+                let pb = ProgressBar::new(3);
+                pb.set_style(
+                    ProgressStyle::with_template(
+                        "[{elapsed_precise}] [{bar:20.cyan/blue}] {pos}/{len} {msg}"
+                    )
+                    .unwrap()
+                    .progress_chars("=>-"),
+                );
+
+                pb.set_message("fetching team ID map...");
+                let team_id_map = fetchers::games::fetch_team_id_to_franchise_id_map().await?;
+                pb.inc(1);
+
+                pb.set_message(format!("fetching play-by-play for game {}...", args.game_id));
+                let pbp = fetchers::events::fetch_play_by_play(args.game_id).await?;
+                pb.inc(1);
+
+                pb.set_message("transforming and loading events...");
+                let (events, goals, shots, hits, blocks, penalties, faceoffs, skip_warnings) =
+                    fetchers::events::transform_events(&pbp, &team_id_map);
+                for warning in &skip_warnings {
+                    pb.suspend(|| eprintln!("{warning}"));
+                }
+                let (ec, gc, sc, hc, bc, pc, fc) = loaders::events::upsert_game_events(
+                    pool,
+                    args.game_id,
+                    &events,
+                    &goals,
+                    &shots,
+                    &hits,
+                    &blocks,
+                    &penalties,
+                    &faceoffs,
+                ).await?;
+                pb.inc(1);
+                pb.finish_with_message(format!(
+                    "game {}: {} events, {} goals, {} shots, {} hits, {} blocks, {} penalties, {} faceoffs",
+                    args.game_id, ec, gc, sc, hc, bc, pc, fc
+                ));
             }
             FetchEntity::Games(args) => {
                 use indicatif::{ProgressBar, ProgressStyle};
