@@ -4,5 +4,6 @@ pub mod db;
 pub mod models;
 pub mod fetchers;
 pub mod loaders;
+pub mod process;
 
 pub type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
