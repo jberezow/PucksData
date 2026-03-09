@@ -1,0 +1,7 @@
+[env]
+# Use offline sqlx query cache by default.
+# The pooler URL (Neon -pooler hostname) does not support the extended query
+# protocol that sqlx compile-time macros require. Run `cargo sqlx prepare`
+# with the direct (non-pooler) DATABASE_URL to regenerate the cache.
+# See STATE.md Phase 3-01 decision notes.
+SQLX_OFFLINE = "true"

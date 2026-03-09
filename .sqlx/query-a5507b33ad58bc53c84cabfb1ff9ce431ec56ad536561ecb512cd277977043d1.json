@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO blocks (event_id, blocking_player_id, shooting_player_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (event_id) DO UPDATE SET\n            blocking_player_id = EXCLUDED.blocking_player_id,\n            shooting_player_id = EXCLUDED.shooting_player_id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5507b33ad58bc53c84cabfb1ff9ce431ec56ad536561ecb512cd277977043d1"
+}
