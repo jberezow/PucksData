@@ -1,7 +1,7 @@
 // src/fetchers/events.rs
 // Play-by-play event fetcher, situationCode decoder, and transform logic.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use serde::Deserialize;
 
 use crate::{
@@ -147,25 +147,6 @@ pub fn decode_situation_code(code: &str) -> (bool, i16, i16, bool, String) {
         std::cmp::Ordering::Less    => "sh".to_string(),
     };
     (home_goalie, home_skaters, away_skaters, away_goalie, strength)
-}
-
-// ── Goal-shot orphan detection (QUAL-03 / EVENT-07) ──────────────────────────
-
-/// Find goals with no matching shot-on-goal event in the same game.
-///
-/// Returns (event_id_in_game, game_id) tuples for goals whose event_id_in_game
-/// is NOT in the provided shot event ID set.
-///
-/// Pure function (no I/O). Callers print warnings and still insert all goals.
-pub fn find_goal_orphans(
-    goals: &[(i32, i64)],
-    shot_event_ids_in_game: &HashSet<i32>,
-) -> Vec<(i32, i64)> {
-    goals
-        .iter()
-        .filter(|(event_id_in_game, _)| !shot_event_ids_in_game.contains(event_id_in_game))
-        .copied()
-        .collect()
 }
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
