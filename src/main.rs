@@ -15,6 +15,8 @@ enum Commands {
         #[command(subcommand)]
         entity: FetchEntity,
     },
+    /// Run full historical backfill (events only; entity tables must be pre-populated)
+    Backfill(BackfillArgs),
 }
 
 #[derive(Subcommand)]
@@ -41,6 +43,13 @@ struct EventsArgs {
 struct GamesArgs {
     #[command(flatten)]
     scope: GamesScope,
+}
+
+#[derive(Args)]
+struct BackfillArgs {
+    /// Restrict backfill to a single season (e.g. 20232024)
+    #[arg(long)]
+    season: Option<i32>,
 }
 
 #[derive(Args)]
@@ -187,6 +196,10 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 }
             }
         },
+        Commands::Backfill(args) => {
+            let pool = db::get_pool().await?;
+            pucksdata::process::backfill::run_backfill(&pool, args.season).await?;
+        }
     }
 
     Ok(())
