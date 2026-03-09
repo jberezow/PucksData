@@ -1,8 +1,9 @@
 // src/loaders/events.rs
 // Transactional loader for game events and all six child event types.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use crate::fetchers::events::find_goal_orphans;
 use crate::models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot};
 
 /// Insert all events for a game atomically in a single PostgreSQL transaction.
@@ -19,6 +20,7 @@ use crate::models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbSho
 /// PK for use as the FK in child tables.
 pub async fn upsert_game_events(
     pool: &sqlx::PgPool,
+    game_id: i64,
     events: &[DbEvent],
     goals: &[DbGoal],
     shots: &[DbShot],
@@ -83,9 +85,8 @@ pub async fn upsert_game_events(
     let events_inserted = events.len();
 
     // ── Insert child event records ────────────────────────────────────────────
-    // Plan 02 implements goals and shots; Plan 03 implements hits, blocks,
-    // penalties, and faceoffs. Stub functions below return Ok(()) immediately
-    // as placeholders — they will be filled in by subsequent plans.
+    // Goals and shots: full upsert SQL (ON CONFLICT DO UPDATE) — Plan 02.
+    // Hits, blocks, penalties, faceoffs: full upsert SQL — Plan 03.
 
     let mut goals_inserted = 0usize;
     for goal in goals {
@@ -135,6 +136,27 @@ pub async fn upsert_game_events(
         }
     }
 
+    // ── Goal-shot orphan detection (QUAL-03 / EVENT-07) ──────────────────────
+    // Build a HashSet of shot event_id_in_game values for O(1) lookup.
+    let shot_event_id_set: HashSet<i32> = shots
+        .iter()
+        .map(|s| s.event_id_in_game)
+        .collect();
+
+    // Build (event_id_in_game, game_id) tuples for every goal in the batch.
+    let goal_tuples: Vec<(i32, i64)> = goals
+        .iter()
+        .map(|g| (g.event_id_in_game, game_id))
+        .collect();
+
+    // Emit a warning for every goal that has no matching shot-on-goal event.
+    // Orphan goals are still committed — no transaction abort.
+    for (event_id_in_game, gid) in find_goal_orphans(&goal_tuples, &shot_event_id_set) {
+        eprintln!(
+            "warn: QUAL-03 — goal event {event_id_in_game} in game {gid} has no matching shot-on-goal event"
+        );
+    }
+
     // Single commit — all events for the game or none (atomic guarantee)
     tx.commit().await?;
 
@@ -149,9 +171,11 @@ pub async fn upsert_game_events(
     ))
 }
 
-// ── Child upsert stubs (Plan 02 fills in goals and shots; Plan 03 fills in the rest) ──
+// ── Child upsert functions ───────────────────────────────────────────────────
+// Goals and shots: implemented in Plan 02. Hits, blocks, penalties, faceoffs: Plan 03.
 
-/// Stub: Insert a goal child record. Plan 02 implements the full SQL.
+/// Insert or update a goal child record.
+/// ON CONFLICT (event_id) DO UPDATE makes this idempotent (QUAL-01).
 pub async fn upsert_goal(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event_db_id: i64,
@@ -181,7 +205,8 @@ pub async fn upsert_goal(
     Ok(())
 }
 
-/// Stub: Insert a shot child record. Plan 02 implements the full SQL.
+/// Insert or update a shot child record.
+/// ON CONFLICT (event_id) DO UPDATE makes this idempotent (QUAL-01).
 pub async fn upsert_shot(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event_db_id: i64,
