@@ -85,8 +85,7 @@ pub async fn upsert_game_events(
     let events_inserted = events.len();
 
     // ── Insert child event records ────────────────────────────────────────────
-    // Goals and shots: full upsert SQL (ON CONFLICT DO UPDATE) — Plan 02.
-    // Hits, blocks, penalties, faceoffs: full upsert SQL — Plan 03.
+    // All six child types use ON CONFLICT DO UPDATE for idempotency (QUAL-01).
 
     let mut goals_inserted = 0usize;
     for goal in goals {
@@ -172,7 +171,8 @@ pub async fn upsert_game_events(
 }
 
 // ── Child upsert functions ───────────────────────────────────────────────────
-// Goals and shots: implemented in Plan 02. Hits, blocks, penalties, faceoffs: Plan 03.
+// All six child event types: goals, shots, hits, blocks, penalties, faceoffs.
+// Each uses ON CONFLICT (event_id) DO UPDATE for idempotency (QUAL-01).
 
 /// Insert or update a goal child record.
 /// ON CONFLICT (event_id) DO UPDATE makes this idempotent (QUAL-01).
@@ -231,7 +231,8 @@ pub async fn upsert_shot(
     Ok(())
 }
 
-/// Stub: Insert a hit child record. Plan 03 implements the full SQL.
+/// Insert or update a hit child record.
+/// ON CONFLICT (event_id) DO UPDATE makes this idempotent (QUAL-01).
 pub async fn upsert_hit(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event_db_id: i64,
@@ -254,7 +255,8 @@ pub async fn upsert_hit(
     Ok(())
 }
 
-/// Stub: Insert a blocked-shot child record. Plan 03 implements the full SQL.
+/// Insert or update a blocked-shot child record.
+/// ON CONFLICT (event_id) DO UPDATE makes this idempotent (QUAL-01).
 pub async fn upsert_block(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event_db_id: i64,
@@ -277,7 +279,8 @@ pub async fn upsert_block(
     Ok(())
 }
 
-/// Stub: Insert a penalty child record. Plan 03 implements the full SQL.
+/// Insert or update a penalty child record.
+/// ON CONFLICT (event_id) DO UPDATE makes this idempotent (QUAL-01).
 pub async fn upsert_penalty(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event_db_id: i64,
@@ -305,7 +308,8 @@ pub async fn upsert_penalty(
     Ok(())
 }
 
-/// Stub: Insert a faceoff child record. Plan 03 implements the full SQL.
+/// Insert or update a faceoff child record.
+/// ON CONFLICT (event_id) DO UPDATE makes this idempotent (QUAL-01).
 pub async fn upsert_faceoff(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event_db_id: i64,
