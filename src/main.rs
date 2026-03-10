@@ -17,6 +17,8 @@ enum Commands {
     },
     /// Run full historical backfill (events only; entity tables must be pre-populated)
     Backfill(BackfillArgs),
+    /// Sync all completed games (game_state OFF/OVER/FINAL) that have no events in the database
+    Sync(SyncArgs),
 }
 
 #[derive(Subcommand)]
@@ -50,6 +52,14 @@ struct BackfillArgs {
     /// Restrict backfill to a single season (e.g. 20232024)
     #[arg(long)]
     season: Option<i32>,
+}
+
+#[derive(Args)]
+struct SyncArgs {
+    /// Override gap detection: re-process all completed games on or after this date (YYYY-MM-DD).
+    /// Without this flag, the sync watermark is derived structurally from the database.
+    #[arg(long, value_name = "DATE")]
+    from: Option<String>,
 }
 
 #[derive(Args)]
@@ -199,6 +209,14 @@ async fn main() -> Result<(), pucksdata::AnyError> {
         Commands::Backfill(args) => {
             let pool = db::get_pool().await?;
             pucksdata::process::backfill::run_backfill(&pool, args.season).await?;
+        }
+        Commands::Sync(args) => {
+            let pool = db::get_pool().await?;
+            let from_date = args.from.as_deref().map(|s| {
+                time::Date::parse(s, &time::macros::format_description!("[year]-[month]-[day]"))
+                    .map_err(|e| format!("invalid --from date '{}': {}", s, e))
+            }).transpose()?;
+            pucksdata::process::sync::run_sync(&pool, from_date).await?;
         }
     }
 
