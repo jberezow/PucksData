@@ -19,7 +19,7 @@ pub fn is_game_completed(state: &str) -> bool {
 /// Gap detection query (SYNC-02): returns games where game_date < today and no events row exists.
 /// from_date: optional floor on game_date (None = all historical games, Some(d) = >= d).
 /// Returns (game_id, game_state) pairs — game_state filtering is done in Rust (QUAL-SYNC-01).
-pub(crate) async fn query_sync_candidates(
+pub async fn query_sync_candidates(
     pool: &sqlx::PgPool,
     from_date: Option<time::Date>,
 ) -> Result<Vec<(i64, Option<String>)>, sqlx::Error> {
