@@ -1,6 +1,9 @@
 // src/process/sync.rs
 // Sync orchestration: gap detection (completed games with no events) and the run_sync() orchestrator.
-// Implements SYNC-01, SYNC-02, SYNC-03, QUAL-SYNC-01, DAEMON-04.
+// Implements SYNC-01, SYNC-02, SYNC-03, QUAL-SYNC-01, QUAL-SYNC-02, DAEMON-04, SCHEMA-15.
+
+use sqlx::postgres::PgAdvisoryLock;
+use sqlx::Either;
 
 /// Summary returned by run_sync() on every success path.
 pub struct SyncSummary {
@@ -14,6 +17,31 @@ pub struct SyncSummary {
 /// Any other value is unknown — caller should log a warning and skip.
 pub fn is_game_completed(state: &str) -> bool {
     matches!(state, "OFF" | "OVER" | "FINAL")
+}
+
+/// Acquire the pucksdata daemon advisory lock for single-instance enforcement (QUAL-SYNC-02).
+/// Returns Ok(guard) if the lock was acquired — caller MUST hold the guard for the process lifetime.
+/// The guard is RAII: dropping it releases the lock and returns the connection to the pool.
+/// Returns Err with a clean message if another daemon instance is already running.
+///
+/// PITFALL 1: Do NOT drop the guard early. Hold it in a `let _lock = acquire_daemon_lock(...).await?`
+///            binding at the top of the daemon arm in main.rs (Phase 8 task). Underscore prefix
+///            keeps the binding alive without an "unused variable" warning.
+/// PITFALL 2: try_acquire takes PoolConnection<Postgres>, not &PgPool. pool.acquire() is called first.
+/// PITFALL 3: PgAdvisoryLockGuard<'lock, C> borrows from PgAdvisoryLock — Box::leak gives 'static lifetime
+///            so the guard can be returned from this function without lifetime errors.
+pub async fn acquire_daemon_lock(
+    pool: &sqlx::PgPool,
+) -> Result<sqlx::postgres::PgAdvisoryLockGuard<'static, sqlx::pool::PoolConnection<sqlx::Postgres>>, crate::AnyError> {
+    // Box::leak gives the lock a 'static lifetime — valid for a daemon that holds the guard until exit.
+    let lock: &'static PgAdvisoryLock = Box::leak(Box::new(PgAdvisoryLock::new("pucksdata_daemon")));
+    let conn = pool.acquire().await?;
+    match lock.try_acquire(conn).await? {
+        Either::Left(guard) => Ok(guard),
+        Either::Right(_conn) => {
+            Err("pucksdata daemon is already running (advisory lock held by another instance)".into())
+        }
+    }
 }
 
 /// Gap detection query (SYNC-02): returns games where game_date < today and no events row exists.
@@ -42,6 +70,7 @@ pub async fn query_sync_candidates(
 /// Run the sync process: entity refresh → gap detection → event ingestion via load_one_game.
 /// from_date: optional floor on game_date for candidate detection.
 /// Returns Ok(SyncSummary) on all success paths (including zero candidates).
+/// Single return point at bottom — sync_state upsert fires on BOTH zero-candidate and non-zero paths.
 pub async fn run_sync(
     pool: &sqlx::PgPool,
     from_date: Option<time::Date>,
@@ -83,51 +112,46 @@ pub async fn run_sync(
     }
 
     let total = games_to_process.len();
-    if total == 0 {
-        let elapsed = started_at.elapsed();
-        let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
-        println!(
-            "[{}] sync complete: 0 processed, 0 failed, elapsed {}s",
-            ts, elapsed.as_secs()
-        );
-        return Ok(SyncSummary { processed: 0, failed: 0, elapsed });
-    }
+    let (processed, failed) = if total == 0 {
+        (0usize, 0usize)
+    } else {
+        // Step 5: Semaphore + JoinSet concurrency (same as run_backfill — MAX_CONCURRENT_GAMES = 5)
+        const MAX_CONCURRENT_GAMES: usize = 5;
+        let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_GAMES));
+        let mut join_set: JoinSet<(i64, Result<(), crate::AnyError>)> = JoinSet::new();
 
-    // Step 5: Semaphore + JoinSet concurrency (same as run_backfill — MAX_CONCURRENT_GAMES = 5)
-    const MAX_CONCURRENT_GAMES: usize = 5;
-    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_GAMES));
-    let mut join_set: JoinSet<(i64, Result<(), crate::AnyError>)> = JoinSet::new();
+        for (n, game_id) in games_to_process.iter().enumerate() {
+            let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
+            let game_id = *game_id;
+            let pool_clone = pool.clone();
+            let map = team_id_map.clone();
+            println!("Processing game {} of {} (id={})", n + 1, total, game_id);
 
-    for (n, game_id) in games_to_process.iter().enumerate() {
-        let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
-        let game_id = *game_id;
-        let pool_clone = pool.clone();
-        let map = team_id_map.clone();
-        println!("Processing game {} of {} (id={})", n + 1, total, game_id);
+            join_set.spawn(async move {
+                let _permit = permit; // released on drop
+                let result = crate::process::backfill::load_one_game(&pool_clone, game_id, &map).await;
+                (game_id, result)
+            });
+        }
 
-        join_set.spawn(async move {
-            let _permit = permit; // released on drop
-            let result = crate::process::backfill::load_one_game(&pool_clone, game_id, &map).await;
-            (game_id, result)
-        });
-    }
+        let mut processed = 0usize;
+        let mut failed = 0usize;
 
-    let mut processed = 0usize;
-    let mut failed = 0usize;
-
-    while let Some(outcome) = join_set.join_next().await {
-        match outcome {
-            Ok((_, Ok(()))) => processed += 1,
-            Ok((game_id, Err(e))) => {
-                eprintln!("warn: game {} failed: {}", game_id, e);
-                failed += 1;
-            }
-            Err(join_err) => {
-                eprintln!("warn: task join error: {}", join_err);
-                failed += 1;
+        while let Some(outcome) = join_set.join_next().await {
+            match outcome {
+                Ok((_, Ok(()))) => processed += 1,
+                Ok((game_id, Err(e))) => {
+                    eprintln!("warn: game {} failed: {}", game_id, e);
+                    failed += 1;
+                }
+                Err(join_err) => {
+                    eprintln!("warn: task join error: {}", join_err);
+                    failed += 1;
+                }
             }
         }
-    }
+        (processed, failed)
+    };
 
     let elapsed = started_at.elapsed();
     let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
@@ -135,6 +159,24 @@ pub async fn run_sync(
         "[{}] sync complete: {} processed, {} failed, elapsed {}s",
         ts, processed, failed, elapsed.as_secs()
     );
+
+    // Step 6: Upsert sync_state metadata (SCHEMA-15).
+    // Runs on BOTH zero-candidate and non-zero paths — single return point prevents Pitfall 3.
+    // Informational only — failure here does not invalidate the sync; but we propagate Err
+    // so the operator knows the metadata write failed.
+    let now = time::OffsetDateTime::now_utc();
+    sqlx::query!(
+        r#"INSERT INTO sync_state (key, last_sync_at, last_sync_games, updated_at)
+       VALUES ('singleton', $1, $2, $1)
+       ON CONFLICT (key) DO UPDATE
+         SET last_sync_at    = EXCLUDED.last_sync_at,
+             last_sync_games = EXCLUDED.last_sync_games,
+             updated_at      = EXCLUDED.updated_at"#,
+        now,
+        processed as i32
+    )
+    .execute(pool)
+    .await?;
 
     Ok(SyncSummary { processed, failed, elapsed })
 }
