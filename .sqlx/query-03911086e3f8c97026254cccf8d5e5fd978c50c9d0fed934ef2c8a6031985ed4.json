@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sync_state (key, last_sync_at, last_sync_games, updated_at)\n       VALUES ('singleton', $1, $2, $1)\n       ON CONFLICT (key) DO UPDATE\n         SET last_sync_at    = EXCLUDED.last_sync_at,\n             last_sync_games = EXCLUDED.last_sync_games,\n             updated_at      = EXCLUDED.updated_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "03911086e3f8c97026254cccf8d5e5fd978c50c9d0fed934ef2c8a6031985ed4"
+}
