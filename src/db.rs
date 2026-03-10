@@ -1,5 +1,6 @@
 // src/db.rs
 use sqlx::{postgres::PgPoolOptions, PgPool};
+use std::time::Duration;
 use tokio::sync::OnceCell;
 
 static POOL: OnceCell<PgPool> = OnceCell::const_new();
@@ -15,6 +16,8 @@ pub async fn get_pool() -> Result<&'static PgPool, sqlx::Error> {
             .unwrap_or(5);
         PgPoolOptions::new()
             .max_connections(max_connections)
+            .idle_timeout(Duration::from_secs(240))   // recycle before Neon's ~300s compute suspend
+            .max_lifetime(Duration::from_secs(1800))  // belt-and-suspenders 30-min recycle
             .connect(&database_url)
             .await
     })
