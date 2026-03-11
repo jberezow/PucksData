@@ -1,0 +1,25 @@
+# Exclude multi-GB compiled artifacts from build context — CRITICAL
+# Without this, 'docker build' transfers 1-5GB to daemon before any build step.
+target/
+
+# Exclude secrets — pass DATABASE_URL via docker run -e, never bake into image
+.env
+*.env
+
+# Exclude git history
+.git
+.gitignore
+
+# Exclude planning/documentation
+.planning/
+README.md
+*.md
+
+# Exclude editor/IDE files
+.idea/
+.vscode/
+*.swp
+
+# NOTE: Do NOT exclude .sqlx/ — the offline query cache is required during cargo build
+# NOTE: Do NOT exclude .cargo/ — config.toml sets SQLX_OFFLINE=true
+# NOTE: Do NOT exclude Cargo.lock — required for reproducible dependency builds
