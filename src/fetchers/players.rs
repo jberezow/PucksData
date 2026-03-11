@@ -66,9 +66,19 @@ struct ApiResponse<T> {
 }
 
 #[derive(serde::Deserialize)]
-struct ActiveTeamRecord {
-    #[serde(rename = "triCode")]
-    tri_code: String,
+struct LocalizedAbbrev {
+    default: String,
+}
+
+#[derive(serde::Deserialize)]
+struct StandingsTeam {
+    #[serde(rename = "teamAbbrev")]
+    team_abbrev: LocalizedAbbrev,
+}
+
+#[derive(serde::Deserialize)]
+struct StandingsResponse {
+    standings: Vec<StandingsTeam>,
 }
 
 #[derive(serde::Deserialize)]
@@ -83,12 +93,18 @@ struct RosterResponse {
     goalies: Vec<RosterPlayer>,
 }
 
-/// Fetch abbreviations for all currently active NHL franchises.
+/// Fetch abbreviations for all currently active NHL teams.
+///
+/// Uses the standings endpoint (`/v1/standings/now`) which always reflects
+/// the 32 teams currently competing in the NHL season. This avoids the
+/// `/stats/rest/en/team?cayenneExp=active=1` filter (HTTP 400 — that endpoint
+/// has no `active` column) and the `/franchise` list (includes 40 entries:
+/// historical defunct franchises such as the Brooklyn Americans and Hamilton
+/// Tigers, plus relocated teams like the Arizona Coyotes).
 async fn fetch_active_team_abbrevs() -> Result<Vec<String>, AnyError> {
-    let url = "https://api.nhle.com/stats/rest/en/team?limit=-1&cayenneExp=active%3D1";
-    let json = fetch_api_json(url).await?;
-    let resp: ApiResponse<ActiveTeamRecord> = serde_json::from_str(&json)?;
-    Ok(resp.data.into_iter().map(|r| r.tri_code).collect())
+    let json = fetch_api_json("https://api-web.nhle.com/v1/standings/now").await?;
+    let resp: StandingsResponse = serde_json::from_str(&json)?;
+    Ok(resp.standings.into_iter().map(|s| s.team_abbrev.default).collect())
 }
 
 /// Fetch all player IDs on a team's current roster.
