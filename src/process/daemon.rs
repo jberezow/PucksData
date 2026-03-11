@@ -46,29 +46,44 @@ async fn run_loop(
     interval_secs: u64,
     interval: &mut tokio::time::Interval,
 ) -> Result<(), crate::AnyError> {
-    // SIGTERM stream — created OUTSIDE the loop (Pitfall 5: recreating the stream
-    // on each iteration drops previously-pending signals).
-    let mut sigterm = tokio::signal::unix::signal(
-        tokio::signal::unix::SignalKind::terminate(),
-    )?;
+    // Shutdown channel: signal tasks send true immediately on receipt so the
+    // message appears right away; the main loop drains after the current sync
+    // completes (Pitfall 1: never interrupt a sync mid-way).
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
+
+    let tx1 = shutdown_tx.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        eprintln!("received Ctrl-C — shutting down");
+        tx1.send(true).ok();
+    });
+
+    let tx2 = shutdown_tx.clone();
+    tokio::spawn(async move {
+        if let Ok(mut sigterm) = tokio::signal::unix::signal(
+            tokio::signal::unix::SignalKind::terminate(),
+        ) {
+            sigterm.recv().await;
+            eprintln!("received SIGTERM — shutting down");
+            tx2.send(true).ok();
+        }
+    });
 
     loop {
         tokio::select! {
-            // Tick branch: run_sync() is called inside the BODY (not as a future),
-            // guaranteeing data integrity — partial syncs are never interrupted (Pitfall 1).
+            // Tick branch: run_sync() runs to completion inside the body so a
+            // sync is never interrupted mid-way (Pitfall 1).  After it returns,
+            // check the shutdown flag before waiting for the next tick.
             _ = interval.tick() => {
                 tick_sync(pool, interval_secs).await;
+                if *shutdown_rx.borrow() {
+                    break;
+                }
             }
 
-            // Ctrl-C handler.
-            _ = tokio::signal::ctrl_c() => {
-                eprintln!("received Ctrl-C — shutting down");
-                break;
-            }
-
-            // SIGTERM handler.
-            _ = sigterm.recv() => {
-                eprintln!("received SIGTERM — shutting down");
+            // Fired when a signal task sends true.  Only reachable between ticks
+            // (i.e. while idle); mid-sync signals are caught by the borrow check above.
+            _ = shutdown_rx.changed() => {
                 break;
             }
         }
@@ -83,17 +98,24 @@ async fn run_loop(
     interval_secs: u64,
     interval: &mut tokio::time::Interval,
 ) -> Result<(), crate::AnyError> {
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
+
+    let tx1 = shutdown_tx.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        eprintln!("received Ctrl-C — shutting down");
+        tx1.send(true).ok();
+    });
+
     loop {
         tokio::select! {
-            // Tick branch: run_sync() is called inside the BODY (not as a future),
-            // guaranteeing data integrity — partial syncs are never interrupted (Pitfall 1).
             _ = interval.tick() => {
                 tick_sync(pool, interval_secs).await;
+                if *shutdown_rx.borrow() {
+                    break;
+                }
             }
-
-            // Ctrl-C handler.
-            _ = tokio::signal::ctrl_c() => {
-                eprintln!("received Ctrl-C — shutting down");
+            _ = shutdown_rx.changed() => {
                 break;
             }
         }
