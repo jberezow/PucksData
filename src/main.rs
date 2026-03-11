@@ -19,6 +19,8 @@ enum Commands {
     Backfill(BackfillArgs),
     /// Sync all completed games (game_state OFF/OVER/FINAL) that have no events in the database
     Sync(SyncArgs),
+    /// Run as a long-lived daemon, calling sync on a configurable interval
+    Daemon(DaemonArgs),
 }
 
 #[derive(Subcommand)]
@@ -60,6 +62,18 @@ struct SyncArgs {
     /// Without this flag, the sync watermark is derived structurally from the database.
     #[arg(long, value_name = "DATE")]
     from: Option<String>,
+}
+
+#[derive(Args)]
+struct DaemonArgs {
+    /// Sync interval in seconds (default: 21600 = 6 hours).
+    /// Also read from SYNC_INTERVAL_SECS env var if flag absent.
+    #[arg(long, value_name = "SECS")]
+    interval_secs: Option<u64>,
+
+    /// Run a full backfill before entering the sync loop.
+    #[arg(long)]
+    backfill_on_start: bool,
 }
 
 #[derive(Args)]
@@ -217,6 +231,14 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                     .map_err(|e| format!("invalid --from date '{}': {}", s, e))
             }).transpose()?;
             pucksdata::process::sync::run_sync(&pool, from_date).await?;
+        }
+        Commands::Daemon(args) => {
+            let pool = db::get_pool().await?;
+            let interval_secs = args.interval_secs
+                .or_else(|| std::env::var("SYNC_INTERVAL_SECS").ok()
+                    .and_then(|s| s.parse().ok()))
+                .unwrap_or(21600); // 6 hours default
+            pucksdata::process::daemon::run_daemon(&pool, interval_secs, args.backfill_on_start).await?;
         }
     }
 
