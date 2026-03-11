@@ -65,52 +65,112 @@ struct ApiResponse<T> {
     total: Option<i64>,
 }
 
-/// Fetch all player IDs from the NHL stats REST API.
-///
-/// First tries the `limit=-1` single-shot endpoint.  If that returns zero
-/// records (the endpoint's behaviour is unconfirmed) it falls back to
-/// paginated skater + goalie summary endpoints, deduplicates, and sorts.
-pub async fn enumerate_player_ids() -> Result<Vec<i64>, AnyError> {
-    // Try single-shot endpoint first
-    let url = "https://api.nhle.com/stats/rest/en/players?limit=-1&sort=playerId&dir=asc";
-    let json = fetch_api_json(url).await?;
-    let resp: ApiResponse<PlayerIdRecord> = serde_json::from_str(&json)?;
+#[derive(serde::Deserialize)]
+struct ActiveTeamRecord {
+    #[serde(rename = "triCode")]
+    tri_code: String,
+}
 
-    if !resp.data.is_empty() {
-        let ids: Vec<i64> = resp.data.into_iter().map(|r| r.player_id).collect();
-        return Ok(ids);
+#[derive(serde::Deserialize)]
+struct RosterPlayer {
+    id: i64,
+}
+
+#[derive(serde::Deserialize)]
+struct RosterResponse {
+    forwards: Vec<RosterPlayer>,
+    defensemen: Vec<RosterPlayer>,
+    goalies: Vec<RosterPlayer>,
+}
+
+/// Fetch abbreviations for all currently active NHL franchises.
+async fn fetch_active_team_abbrevs() -> Result<Vec<String>, AnyError> {
+    let url = "https://api.nhle.com/stats/rest/en/team?limit=-1&cayenneExp=active%3D1";
+    let json = fetch_api_json(url).await?;
+    let resp: ApiResponse<ActiveTeamRecord> = serde_json::from_str(&json)?;
+    Ok(resp.data.into_iter().map(|r| r.tri_code).collect())
+}
+
+/// Fetch all player IDs on a team's current roster.
+async fn fetch_roster_player_ids(abbrev: &str) -> Result<Vec<i64>, AnyError> {
+    let url = format!("https://api-web.nhle.com/v1/roster/{}/current", abbrev);
+    let json = fetch_api_json(&url).await?;
+    let roster: RosterResponse = serde_json::from_str(&json)?;
+    let ids = roster.forwards.into_iter()
+        .chain(roster.defensemen)
+        .chain(roster.goalies)
+        .map(|p| p.id)
+        .collect();
+    Ok(ids)
+}
+
+/// Paginate a stats summary endpoint (skater or goalie) for a given game type
+/// and collect all player IDs.
+async fn fetch_stats_player_ids(entity: &str, game_type: u8) -> Result<HashSet<i64>, AnyError> {
+    let mut all_ids: HashSet<i64> = HashSet::new();
+    let base_url = format!(
+        "https://api.nhle.com/stats/rest/en/{}/summary?limit=100&start={{}}&sort=playerId&dir=asc&cayenneExp=gameTypeId%3D{}",
+        entity, game_type
+    );
+
+    let first_url = base_url.replace("{}", "0");
+    let first_json = fetch_api_json(&first_url).await?;
+    let first_resp: ApiResponse<PlayerIdRecord> = serde_json::from_str(&first_json)?;
+    let total = first_resp.total.unwrap_or(0) as usize;
+    for r in first_resp.data {
+        all_ids.insert(r.player_id);
     }
 
-    // Fallback: paginate skater + goalie summary endpoints
-    let mut all_ids: HashSet<i64> = HashSet::new();
-
-    for entity in ["skater", "goalie"] {
-        let base_url = format!(
-            "https://api.nhle.com/stats/rest/en/{}/summary?limit=100&start={{}}&sort=playerId&dir=asc&cayenneExp=gameTypeId%3D2",
-            entity
-        );
-
-        let first_url = base_url.replace("{}", "0");
-        let first_json = fetch_api_json(&first_url).await?;
-        let first_resp: ApiResponse<PlayerIdRecord> = serde_json::from_str(&first_json)?;
-        let total = first_resp.total.unwrap_or(0) as usize;
-
-        for r in first_resp.data {
+    let mut offset = 100usize;
+    while all_ids.len() < total && offset < total {
+        let page_url = base_url.replace("{}", &offset.to_string());
+        let page_json = fetch_api_json(&page_url).await?;
+        let page_resp: ApiResponse<PlayerIdRecord> = serde_json::from_str(&page_json)?;
+        if page_resp.data.is_empty() {
+            break;
+        }
+        for r in page_resp.data {
             all_ids.insert(r.player_id);
         }
+        offset += 100;
+    }
 
-        let mut offset = 100usize;
-        while all_ids.len() < total && offset < total {
-            let page_url = base_url.replace("{}", &offset.to_string());
-            let page_json = fetch_api_json(&page_url).await?;
-            let page_resp: ApiResponse<PlayerIdRecord> = serde_json::from_str(&page_json)?;
-            if page_resp.data.is_empty() {
-                break;
+    Ok(all_ids)
+}
+
+/// Fetch all player IDs from two complementary sources and deduplicate:
+///
+/// 1. Current team rosters — catches all active players, including those who
+///    haven't yet appeared in a game (injured, LTIR, rookies awaiting debut).
+/// 2. Stats summaries (skater + goalie, regular season + playoffs) — catches
+///    any player who has appeared in a game record but is no longer rostered.
+///
+/// The old single-shot `/stats/rest/en/players` endpoint was intentionally
+/// removed: it returned ~2,600 historical all-time players but silently omitted
+/// most active modern players (e.g. Connor McDavid, player_id 8478402).
+pub async fn enumerate_player_ids() -> Result<Vec<i64>, AnyError> {
+    let mut all_ids: HashSet<i64> = HashSet::new();
+
+    // Source 1: current team rosters
+    match fetch_active_team_abbrevs().await {
+        Ok(teams) => {
+            for abbrev in &teams {
+                match fetch_roster_player_ids(abbrev).await {
+                    Ok(ids) => { all_ids.extend(ids); }
+                    Err(e) => eprintln!("warn: roster fetch failed for {}: {}", abbrev, e),
+                }
             }
-            for r in page_resp.data {
-                all_ids.insert(r.player_id);
+        }
+        Err(e) => eprintln!("warn: active team fetch failed, skipping roster source: {}", e),
+    }
+
+    // Source 2: stats summaries (regular season + playoffs)
+    for entity in ["skater", "goalie"] {
+        for game_type in [2u8, 3u8] {
+            match fetch_stats_player_ids(entity, game_type).await {
+                Ok(ids) => { all_ids.extend(ids); }
+                Err(e) => eprintln!("warn: stats player ids failed for {} type {}: {}", entity, game_type, e),
             }
-            offset += 100;
         }
     }
 
