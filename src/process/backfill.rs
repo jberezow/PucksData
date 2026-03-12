@@ -40,24 +40,41 @@ pub async fn update_progress_status(
     Ok(())
 }
 
-/// Query all non-done games in scope (returns Vec<(game_id, season)>).
+/// Per-game metadata returned by query_pending_games.
+/// Carries game_date, home_abbrev, and away_abbrev for log line emission.
+pub struct PendingGame {
+    pub game_id: i64,
+    pub season: i32,
+    pub game_date: time::Date,
+    pub home_abbrev: String,
+    pub away_abbrev: String,
+}
+
+/// Query all non-done games in scope (returns Vec<PendingGame> with joined metadata).
 /// Used after seeding to build the work list for the current run.
 /// Includes both 'pending' and 'failed' games (failed games are retried).
 pub async fn query_pending_games(
     pool: &sqlx::PgPool,
     season_filter: Option<i32>,
-) -> Result<Vec<(i64, i32)>, sqlx::Error> {
-    let rows = sqlx::query!(
-        "SELECT game_id, season
-         FROM backfill_progress
-         WHERE ($1::integer IS NULL OR season = $1)
-           AND status != 'done'
-         ORDER BY season ASC, game_id ASC",
+) -> Result<Vec<PendingGame>, sqlx::Error> {
+    let rows = sqlx::query_as!(
+        PendingGame,
+        "SELECT bp.game_id, bp.season,
+                g.game_date,
+                ht.abbrev AS home_abbrev,
+                at_.abbrev AS away_abbrev
+         FROM backfill_progress bp
+         JOIN games g ON g.game_id = bp.game_id
+         JOIN teams ht ON ht.team_id = g.home_team_id
+         JOIN teams at_ ON at_.team_id = g.away_team_id
+         WHERE ($1::integer IS NULL OR bp.season = $1)
+           AND bp.status != 'done'
+         ORDER BY bp.season ASC, bp.game_id ASC",
         season_filter
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| (r.game_id, r.season)).collect())
+    Ok(rows)
 }
 
 /// Fetch, transform, and load all events for one game.
@@ -86,23 +103,40 @@ pub async fn run_backfill(
     season_filter: Option<i32>,
 ) -> Result<(), crate::AnyError> {
     use std::sync::Arc;
+    use std::time::Duration;
     use tokio::sync::Semaphore;
     use tokio::task::JoinSet;
     use indicatif::{ProgressBar, ProgressStyle};
 
     const MAX_CONCURRENT_GAMES: usize = 5;
 
+    // Init spinner — wraps Steps 1-3
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::with_template("{spinner} {msg}")
+            .unwrap()
+            .tick_strings(&["\u{29fe}", "\u{29fd}", "\u{29fb}", "\u{23bf}", "\u{23bf}", "\u{29df}", "\u{29af}", "\u{29b7}", ""])
+    );
+    spinner.enable_steady_tick(Duration::from_millis(80));
+
     // Step 1: Fetch team_id_map once — shared across all spawned tasks via Arc
+    spinner.set_message("Fetching entity data...");
     let team_id_map = Arc::new(
-        crate::fetchers::games::fetch_team_id_to_franchise_id_map().await?
+        crate::fetchers::games::fetch_team_id_to_franchise_id_map().await
+            .inspect_err(|_| spinner.finish_and_clear())?
     );
 
     // Step 2: Seed backfill_progress with all in-scope games (ON CONFLICT DO NOTHING)
-    seed_backfill_progress(pool, season_filter).await?;
+    spinner.set_message("Seeding backfill queue...");
+    seed_backfill_progress(pool, season_filter).await
+        .inspect_err(|_| spinner.finish_and_clear())?;
 
     // Step 3: Query pending games (status != 'done')
-    let pending_games = query_pending_games(pool, season_filter).await?;
+    spinner.set_message("Loading pending games...");
+    let pending_games = query_pending_games(pool, season_filter).await
+        .inspect_err(|_| spinner.finish_and_clear())?;
     let total = pending_games.len();
+    spinner.finish_and_clear();
 
     if total == 0 {
         println!("Backfill complete: 0 games pending (all already done)");
@@ -113,10 +147,10 @@ pub async fn run_backfill(
     let pb = ProgressBar::new(total as u64);
     pb.set_style(
         ProgressStyle::with_template(
-            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}"
+            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} \u{2022} {per_sec}/s \u{2022} ETA {eta}"
         )
         .unwrap()
-        .progress_chars("=>-"),
+        .progress_chars("\u{2588}\u{2589}\u{258a}\u{258b}\u{258c}\u{258d}\u{258e}\u{258f}  "),
     );
 
     // Step 5: Semaphore + JoinSet loop
@@ -128,10 +162,10 @@ pub async fn run_backfill(
     let mut season_failed: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
 
     // Spawn all tasks (acquire_owned blocks when all 5 permits held — natural backpressure)
-    for (i, (game_id, season)) in pending_games.iter().enumerate() {
+    for (i, pg) in pending_games.iter().enumerate() {
         let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
-        let game_id = *game_id;
-        let season = *season;
+        let game_id = pg.game_id;
+        let season = pg.season;
         let pool_clone = pool.clone();
         let map = team_id_map.clone();
         let n = i + 1;

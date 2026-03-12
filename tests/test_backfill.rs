@@ -75,7 +75,7 @@ async fn test_backfill_resume_skips_done() {
 
     // query_pending_games should return only games 4 and 5 (status != 'done')
     let pending = pucksdata::process::backfill::query_pending_games(pool, Some(99992)).await.unwrap();
-    let pending_ids: Vec<i64> = pending.iter().map(|(id, _)| *id).collect();
+    let pending_ids: Vec<i64> = pending.iter().map(|g| g.game_id).collect();
     assert!(!pending_ids.contains(&9990000003), "done game must be excluded");
     assert!(pending_ids.contains(&9990000004), "failed game must be included for retry");
     assert!(pending_ids.contains(&9990000005), "pending game must be included");
@@ -125,6 +125,56 @@ async fn test_backfill_status_transitions() {
     sqlx::query!("DELETE FROM backfill_progress WHERE season = 99993").execute(pool).await.unwrap();
     sqlx::query!("DELETE FROM games WHERE game_id = 9990000006").execute(pool).await.unwrap();
     sqlx::query!("DELETE FROM teams WHERE team_id IN (99905, 99906)").execute(pool).await.unwrap();
+}
+
+/// Verify query_pending_games returns enriched PendingGame structs with game_date,
+/// home_abbrev, and away_abbrev populated via JOIN to games and teams tables.
+#[tokio::test]
+async fn test_query_pending_games_enriched() {
+    if std::env::var("DATABASE_URL").is_err() { return; }
+    let pool = pucksdata::db::get_pool().await.unwrap();
+
+    // Use distinct synthetic IDs to avoid conflicts with other tests
+    sqlx::query!(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
+         VALUES (99910, 'Enrich Home', 'EnHome', 'Testville', 'ENH'),
+                (99911, 'Enrich Away', 'EnAway', 'Testville', 'ENA')
+         ON CONFLICT (team_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    sqlx::query!(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
+         VALUES (9990000020, 99998, '2099-03-01', 99910, 99911, 2),
+                (9990000021, 99998, '2099-03-02', 99910, 99911, 2)
+         ON CONFLICT (game_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    // Seed both as 'pending'
+    pucksdata::process::backfill::seed_backfill_progress(pool, Some(99998)).await.unwrap();
+
+    // Query enriched pending games
+    let pending = pucksdata::process::backfill::query_pending_games(pool, Some(99998)).await.unwrap();
+
+    assert_eq!(pending.len(), 2, "should return exactly 2 non-done games");
+
+    // Results are ordered by game_id ASC
+    let first = &pending[0];
+    assert_eq!(first.game_id, 9990000020);
+    assert_eq!(first.season, 99998);
+    assert_eq!(first.home_abbrev, "ENH", "home_abbrev must match inserted team");
+    assert_eq!(first.away_abbrev, "ENA", "away_abbrev must match inserted team");
+    assert!(first.game_date.year() > 0, "game_date year must be positive");
+    assert_eq!(first.game_date.year(), 2099, "game_date year must be 2099");
+
+    let second = &pending[1];
+    assert_eq!(second.game_id, 9990000021);
+    assert_eq!(second.home_abbrev, "ENH");
+    assert_eq!(second.away_abbrev, "ENA");
+
+    // Cleanup
+    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99998").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id IN (9990000020, 9990000021)").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99910, 99911)").execute(pool).await.unwrap();
 }
 
 /// Verify season filter: seeding with Some(season) only touches that season's games.
