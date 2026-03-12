@@ -71,18 +71,23 @@ async fn run_loop(
 
     loop {
         tokio::select! {
-            // Tick branch: run_sync() runs to completion inside the body so a
-            // sync is never interrupted mid-way (Pitfall 1).  After it returns,
-            // check the shutdown flag before waiting for the next tick.
             _ = interval.tick() => {
-                tick_sync(pool, interval_secs).await;
+                // Race the sync against the shutdown signal.  If SIGTERM arrives
+                // mid-sync, drop the sync future and exit immediately.  Syncs are
+                // idempotent so aborting mid-way is safe.
+                tokio::select! {
+                    _ = tick_sync(pool, interval_secs) => {}
+                    _ = shutdown_rx.changed() => {
+                        eprintln!("sync interrupted — shutting down");
+                        break;
+                    }
+                }
                 if *shutdown_rx.borrow() {
                     break;
                 }
             }
 
-            // Fired when a signal task sends true.  Only reachable between ticks
-            // (i.e. while idle); mid-sync signals are caught by the borrow check above.
+            // Fired when idle between ticks.
             _ = shutdown_rx.changed() => {
                 break;
             }
@@ -110,7 +115,13 @@ async fn run_loop(
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                tick_sync(pool, interval_secs).await;
+                tokio::select! {
+                    _ = tick_sync(pool, interval_secs) => {}
+                    _ = shutdown_rx.changed() => {
+                        eprintln!("sync interrupted — shutting down");
+                        break;
+                    }
+                }
                 if *shutdown_rx.borrow() {
                     break;
                 }
