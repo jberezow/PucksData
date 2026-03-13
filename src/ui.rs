@@ -1,0 +1,27 @@
+// src/ui.rs
+// Shared progress bar factory. Use make_progress_bar() to get a consistently-styled
+// indicatif ProgressBar. All fetch/sync commands that loop record-by-record should
+// use this helper rather than building their own style inline.
+
+use indicatif::{ProgressBar, ProgressStyle};
+
+/// Create a consistently-styled progress bar with the project-standard 8-block template.
+///
+/// - `total`: number of items (passed to ProgressBar::new)
+/// - `label`: short descriptor shown in the `{msg}` slot (e.g. "teams", "seasons")
+///
+/// Style matches the Phase 10 backfill bar exactly (40-char width, cyan/blue, 8-level
+/// block chars). Call `pb.finish_and_clear()` when done, or use the
+/// `inspect_err(|_| pb.finish_and_clear())` pattern on any fallible operation.
+pub fn make_progress_bar(total: u64, label: &str) -> ProgressBar {
+    let pb = ProgressBar::new(total);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg} \u{2022} {per_sec} \u{2022} ETA {eta}"
+        )
+        .unwrap()
+        .progress_chars("\u{2588}\u{2589}\u{258a}\u{258b}\u{258c}\u{258d}\u{258e}\u{258f}  "),
+    );
+    pb.set_message(label.to_string());
+    pb
+}
