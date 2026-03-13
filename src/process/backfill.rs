@@ -146,7 +146,7 @@ pub async fn run_backfill(
     let pb = ProgressBar::new(total as u64);
     pb.set_style(
         ProgressStyle::with_template(
-            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} \u{2022} {per_sec}/s \u{2022} ETA {eta}"
+            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} \u{2022} {per_sec} \u{2022} ETA {eta}"
         )
         .unwrap()
         .progress_chars("\u{2588}\u{2589}\u{258a}\u{258b}\u{258c}\u{258d}\u{258e}\u{258f}  "),
