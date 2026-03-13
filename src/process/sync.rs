@@ -10,6 +10,8 @@ pub struct SyncSummary {
     pub processed: usize,
     pub failed: usize,
     pub elapsed: std::time::Duration,
+    pub candidates: usize,
+    pub events_written: usize,
 }
 
 /// Returns true if this gameState value indicates the game is definitively finished.
@@ -96,6 +98,7 @@ pub async fn run_sync(
 
     // Step 3: Gap detection query (SYNC-02) — returns (game_id, game_state) pairs
     let candidates = query_sync_candidates(pool, from_date).await?;
+    let candidates_count = candidates.len(); // all gap-detected candidates, before game_state filter
 
     // Step 4: Filter by is_game_completed(), warn on unknown states (QUAL-SYNC-01)
     // Do NOT filter in SQL — must log unknown states explicitly
@@ -112,13 +115,13 @@ pub async fn run_sync(
     }
 
     let total = games_to_process.len();
-    let (processed, failed) = if total == 0 {
-        (0usize, 0usize)
+    let (processed, failed, events_written) = if total == 0 {
+        (0usize, 0usize, 0usize)
     } else {
         // Step 5: Semaphore + JoinSet concurrency (same as run_backfill — MAX_CONCURRENT_GAMES = 5)
         const MAX_CONCURRENT_GAMES: usize = 5;
         let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_GAMES));
-        let mut join_set: JoinSet<(i64, Result<(), crate::AnyError>)> = JoinSet::new();
+        let mut join_set: JoinSet<(i64, Result<usize, crate::AnyError>)> = JoinSet::new();
 
         for (n, game_id) in games_to_process.iter().enumerate() {
             let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
@@ -136,10 +139,14 @@ pub async fn run_sync(
 
         let mut processed = 0usize;
         let mut failed = 0usize;
+        let mut events_written = 0usize;
 
         while let Some(outcome) = join_set.join_next().await {
             match outcome {
-                Ok((_, Ok(()))) => processed += 1,
+                Ok((_, Ok(count))) => {
+                    events_written += count;
+                    processed += 1;
+                }
                 Ok((game_id, Err(e))) => {
                     eprintln!("warn: game {} failed: {}", game_id, e);
                     failed += 1;
@@ -150,14 +157,17 @@ pub async fn run_sync(
                 }
             }
         }
-        (processed, failed)
+        (processed, failed, events_written)
     };
 
     let elapsed = started_at.elapsed();
-    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
+    let duration_secs = elapsed.as_secs_f64();
     println!(
-        "[{}] sync complete: {} processed, {} failed, elapsed {}s",
-        ts, processed, failed, elapsed.as_secs()
+        "Sync complete:\n  candidates:  {}\n  fetched:     {}\n  events:    {}\n  duration:  {:.1}s",
+        candidates_count,
+        processed,
+        events_written,
+        duration_secs,
     );
 
     // Step 6: Upsert sync_state metadata (SCHEMA-15).
@@ -178,7 +188,7 @@ pub async fn run_sync(
     .execute(pool)
     .await?;
 
-    Ok(SyncSummary { processed, failed, elapsed })
+    Ok(SyncSummary { processed, failed, elapsed, candidates: candidates_count, events_written })
 }
 
 #[cfg(test)]
@@ -194,5 +204,20 @@ mod tests {
         assert!(!is_game_completed("PPD"));
         assert!(!is_game_completed("FUT"));
         assert!(!is_game_completed(""));
+    }
+
+    #[test]
+    fn test_sync_summary_fields() {
+        let s = SyncSummary {
+            processed: 3,
+            failed: 1,
+            elapsed: std::time::Duration::ZERO,
+            candidates: 5,
+            events_written: 120,
+        };
+        assert_eq!(s.candidates, 5);
+        assert_eq!(s.events_written, 120);
+        assert_eq!(s.processed, 3);
+        assert_eq!(s.failed, 1);
     }
 }

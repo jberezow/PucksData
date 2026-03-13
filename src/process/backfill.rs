@@ -79,21 +79,22 @@ pub async fn query_pending_games(
 
 /// Fetch, transform, and load all events for one game.
 /// Called inside a JoinSet task — errors are captured, not propagated.
+/// Returns the total event count (sum of all event type counts) on success.
 pub async fn load_one_game(
     pool: &sqlx::PgPool,
     game_id: i64,
     team_id_map: &std::collections::HashMap<i64, i64>,
-) -> Result<(), crate::AnyError> {
+) -> Result<usize, crate::AnyError> {
     let pbp = crate::fetchers::events::fetch_play_by_play(game_id).await?;
     let (events, goals, shots, hits, blocks, penalties, faceoffs, skip_warnings) =
         crate::fetchers::events::transform_events(&pbp, team_id_map);
     // skip_warnings are swallowed in batch mode (volume too high for per-game warnings)
     let _ = skip_warnings;
-    crate::loaders::events::upsert_game_events(
+    let (ec, gc, sc, hc, bc, pc, fc) = crate::loaders::events::upsert_game_events(
         pool, game_id,
         &events, &goals, &shots, &hits, &blocks, &penalties, &faceoffs,
     ).await?;
-    Ok(())
+    Ok(ec + gc + sc + hc + bc + pc + fc)
 }
 
 /// Run the full (or season-scoped) backfill.
@@ -153,7 +154,7 @@ pub async fn run_backfill(
     );
 
     // Step 5: Sliding window — pre-fill up to MAX_CONCURRENT_GAMES, then collect one + spawn one
-    let mut join_set: JoinSet<(i64, i32, time::Date, String, String, Result<(), crate::AnyError>)> = JoinSet::new();
+    let mut join_set: JoinSet<(i64, i32, time::Date, String, String, Result<usize, crate::AnyError>)> = JoinSet::new();
 
     // Track current season for per-season summaries
     let mut season_done: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
@@ -190,7 +191,7 @@ pub async fn run_backfill(
     // Sliding window: collect one result, spawn one more, repeat
     while let Some(outcome) = join_set.join_next().await {
         match outcome {
-            Ok((game_id, season, game_date, home_abbrev, away_abbrev, Ok(()))) => {
+            Ok((game_id, season, game_date, home_abbrev, away_abbrev, Ok(_count))) => {
                 pb.suspend(|| println!("{}  {}  {} vs {}", game_date, game_id, home_abbrev, away_abbrev));
                 update_progress_status(pool, game_id, "done").await
                     .unwrap_or_else(|e| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {}: {}", game_id, e)));
