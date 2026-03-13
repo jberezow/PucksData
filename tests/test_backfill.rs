@@ -293,6 +293,65 @@ async fn test_skipped_game_excluded_from_pending() {
     sqlx::query!("DELETE FROM teams WHERE team_id IN (99922, 99923)").execute(pool).await.unwrap();
 }
 
+/// RES-04: Verify checkpoint/resume guarantee after simulated kill + restart.
+/// Done and skipped games survive re-seed unchanged (ON CONFLICT DO NOTHING).
+/// Failed and pending games are included in the next run's work list.
+#[tokio::test]
+async fn test_checkpoint_kill_resume() {
+    if std::env::var("DATABASE_URL").is_err() { return; }
+    let pool = pucksdata::db::get_pool().await.unwrap();
+
+    // Synthetic teams
+    sqlx::query!(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
+         VALUES (99930, 'Kill Home', 'KHome', 'Testville', 'KLH'),
+                (99931, 'Kill Away', 'KAway', 'Testville', 'KLA')
+         ON CONFLICT (team_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    // 4 synthetic games in season 99999
+    sqlx::query!(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
+         VALUES (9990000040, 99999, '2099-06-01', 99930, 99931, 2),
+                (9990000041, 99999, '2099-06-02', 99930, 99931, 2),
+                (9990000042, 99999, '2099-06-03', 99930, 99931, 2),
+                (9990000043, 99999, '2099-06-04', 99930, 99931, 2)
+         ON CONFLICT (game_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    // Step 1: Initial seed — all 4 games enter as 'pending'
+    pucksdata::process::backfill::seed_backfill_progress(pool, Some(99999)).await.unwrap();
+
+    // Step 2: Simulate partial run completing before kill
+    pucksdata::process::backfill::update_progress_status(pool, 9990000040, "done").await.unwrap();
+    pucksdata::process::backfill::update_progress_status(pool, 9990000041, "skipped").await.unwrap();
+    pucksdata::process::backfill::update_progress_status(pool, 9990000042, "failed").await.unwrap();
+    // 9990000043 stays 'pending' (was in-flight when killed)
+
+    // Step 3: Simulate restart — re-seed (ON CONFLICT DO NOTHING preserves done/skipped)
+    pucksdata::process::backfill::seed_backfill_progress(pool, Some(99999)).await.unwrap();
+
+    // Step 4: Query work list for resumed run
+    let pending = pucksdata::process::backfill::query_pending_games(pool, Some(99999)).await.unwrap();
+    let pending_ids: Vec<i64> = pending.iter().map(|g| g.game_id).collect();
+
+    // Done game must not be re-queued
+    assert!(!pending_ids.contains(&9990000040), "done game must be excluded after restart");
+    // Skipped game (terminal) must not be re-queued
+    assert!(!pending_ids.contains(&9990000041), "skipped game must be excluded after restart");
+    // Failed game must be retried
+    assert!(pending_ids.contains(&9990000042), "failed game must be included for retry");
+    // Pending game (was in-flight) must be included
+    assert!(pending_ids.contains(&9990000043), "pending game must be included after restart");
+    // Only 2 games in work list
+    assert_eq!(pending_ids.len(), 2, "exactly 2 games should be pending after checkpoint resume");
+
+    // Cleanup
+    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99999").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id IN (9990000040, 9990000041, 9990000042, 9990000043)").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99930, 99931)").execute(pool).await.unwrap();
+}
+
 /// Verify season filter: seeding with Some(season) only touches that season's games.
 #[tokio::test]
 async fn test_backfill_season_scope() {
