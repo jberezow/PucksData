@@ -101,15 +101,19 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 let pool = db::get_pool().await?;
                 let records = fetchers::teams::fetch_teams().await?;
                 let count = records.len();
-                loaders::teams::upsert_teams(pool, &records).await?;
-                println!("Fetched {count} records, upserted {count}");
+                let pb = pucksdata::ui::make_progress_bar(count as u64, "teams");
+                loaders::teams::upsert_teams(pool, &records, &pb).await
+                    .inspect_err(|_| pb.finish_and_clear())?;
+                pb.finish_and_clear();
             }
             FetchEntity::Seasons => {
                 let pool = db::get_pool().await?;
                 let records = fetchers::seasons::fetch_seasons().await?;
                 let count = records.len();
-                loaders::seasons::upsert_seasons(pool, &records).await?;
-                println!("Fetched {count} records, upserted {count}");
+                let pb = pucksdata::ui::make_progress_bar(count as u64, "seasons");
+                loaders::seasons::upsert_seasons(pool, &records, &pb).await
+                    .inspect_err(|_| pb.finish_and_clear())?;
+                pb.finish_and_clear();
             }
             FetchEntity::Players => {
                 let pool = db::get_pool().await?;

@@ -1,6 +1,10 @@
 use crate::models::DbSeason;
 
-pub async fn upsert_seasons(pool: &sqlx::PgPool, records: &[DbSeason]) -> Result<usize, sqlx::Error> {
+pub async fn upsert_seasons(
+    pool: &sqlx::PgPool,
+    records: &[DbSeason],
+    pb: &indicatif::ProgressBar,
+) -> Result<usize, sqlx::Error> {
     for record in records {
         sqlx::query!(
             r#"
@@ -18,6 +22,8 @@ pub async fn upsert_seasons(pool: &sqlx::PgPool, records: &[DbSeason]) -> Result
         )
         .execute(pool)
         .await?;
+        pb.suspend(|| println!("{}", record.season_year));
+        pb.inc(1);
     }
     Ok(records.len())
 }

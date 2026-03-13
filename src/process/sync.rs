@@ -85,7 +85,7 @@ pub async fn run_sync(
     // Step 1: Entity refresh — teams then players (SYNC-03)
     // Must happen before team_id_map fetch to avoid stale map (Pitfall 3 from RESEARCH.md)
     let teams = crate::fetchers::teams::fetch_teams().await?;
-    crate::loaders::teams::upsert_teams(pool, &teams).await?;
+    crate::loaders::teams::upsert_teams(pool, &teams, &indicatif::ProgressBar::hidden()).await?;
     let players = crate::fetchers::players::fetch_players().await?;
     crate::loaders::players::upsert_players(pool, &players).await?;
 

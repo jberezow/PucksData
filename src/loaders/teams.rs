@@ -1,6 +1,10 @@
 use crate::models::DbTeam;
 
-pub async fn upsert_teams(pool: &sqlx::PgPool, records: &[DbTeam]) -> Result<usize, sqlx::Error> {
+pub async fn upsert_teams(
+    pool: &sqlx::PgPool,
+    records: &[DbTeam],
+    pb: &indicatif::ProgressBar,
+) -> Result<usize, sqlx::Error> {
     for record in records {
         sqlx::query!(
             r#"
@@ -20,6 +24,8 @@ pub async fn upsert_teams(pool: &sqlx::PgPool, records: &[DbTeam]) -> Result<usi
         )
         .execute(pool)
         .await?;
+        pb.suspend(|| println!("{}", record.abbrev));
+        pb.inc(1);
     }
     Ok(records.len())
 }
