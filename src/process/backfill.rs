@@ -64,7 +64,7 @@ pub async fn update_progress_with_error(
 /// Returns true if the error represents a known API gap (404 Not Found).
 /// These games are classified as 'skipped', not 'failed' — they will not be retried.
 /// Uses downcast_ref — type-safe, not string matching on error messages.
-pub(crate) fn is_api_gap_error(e: &crate::AnyError) -> bool {
+pub fn is_api_gap_error(e: &crate::AnyError) -> bool {
     e.downcast_ref::<crate::api::ApiError>()
         .map(|api_err| matches!(api_err, crate::api::ApiError::NotFound))
         .unwrap_or(false)

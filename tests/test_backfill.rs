@@ -177,6 +177,122 @@ async fn test_query_pending_games_enriched() {
     sqlx::query!("DELETE FROM teams WHERE team_id IN (99910, 99911)").execute(pool).await.unwrap();
 }
 
+/// RES-01: Verify that a failed game's error message is persisted in backfill_progress.
+/// update_progress_with_error stores status and error_message atomically.
+#[tokio::test]
+async fn test_failed_game_records_error_message() {
+    if std::env::var("DATABASE_URL").is_err() { return; }
+    let pool = pucksdata::db::get_pool().await.unwrap();
+
+    // Synthetic teams and game
+    sqlx::query!(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
+         VALUES (99920, 'Error Home', 'EHome', 'Testville', 'ERH'),
+                (99921, 'Error Away', 'EAway', 'Testville', 'ERA')
+         ON CONFLICT (team_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    sqlx::query!(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
+         VALUES (9990000030, 99996, '2099-04-01', 99920, 99921, 2)
+         ON CONFLICT (game_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    pucksdata::process::backfill::seed_backfill_progress(pool, Some(99996)).await.unwrap();
+
+    // Mark as failed with error message
+    pucksdata::process::backfill::update_progress_with_error(
+        pool, 9990000030, "failed", "HTTP error: 500"
+    ).await.unwrap();
+
+    // Verify error_message and status are persisted
+    let row = sqlx::query!(
+        "SELECT status, error_message FROM backfill_progress WHERE game_id = 9990000030"
+    ).fetch_one(pool).await.unwrap();
+
+    assert_eq!(row.status, "failed", "status must be 'failed'");
+    assert_eq!(
+        row.error_message.as_deref(),
+        Some("HTTP error: 500"),
+        "error_message must be 'HTTP error: 500'"
+    );
+
+    // Cleanup
+    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99996").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id = 9990000030").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99920, 99921)").execute(pool).await.unwrap();
+}
+
+/// RES-03 (unit): Verify is_api_gap_error classification — pure unit test, no DB needed.
+/// ApiError::NotFound → true; ApiError::Other(500) → false; io::Error → false.
+#[test]
+fn test_is_api_gap_error_unit() {
+    // ApiError::NotFound wrapped in AnyError → true
+    let not_found: pucksdata::AnyError = Box::new(pucksdata::api::ApiError::NotFound);
+    assert!(
+        pucksdata::process::backfill::is_api_gap_error(&not_found),
+        "ApiError::NotFound must classify as api gap error"
+    );
+
+    // ApiError::Other(500) wrapped in AnyError → false
+    let server_err: pucksdata::AnyError = Box::new(pucksdata::api::ApiError::Other(500));
+    assert!(
+        !pucksdata::process::backfill::is_api_gap_error(&server_err),
+        "ApiError::Other(500) must not classify as api gap error"
+    );
+
+    // Plain io::Error wrapped in AnyError → false
+    let io_err: pucksdata::AnyError = Box::new(
+        std::io::Error::new(std::io::ErrorKind::NotFound, "file not found")
+    );
+    assert!(
+        !pucksdata::process::backfill::is_api_gap_error(&io_err),
+        "io::Error must not classify as api gap error"
+    );
+}
+
+/// RES-03 (integration): Verify query_pending_games excludes 'skipped' games but includes 'failed'.
+/// Skipped games are terminal (not retried); failed games are still pending retry.
+#[tokio::test]
+async fn test_skipped_game_excluded_from_pending() {
+    if std::env::var("DATABASE_URL").is_err() { return; }
+    let pool = pucksdata::db::get_pool().await.unwrap();
+
+    // Synthetic teams and games
+    sqlx::query!(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
+         VALUES (99922, 'Skip Home', 'SHome', 'Testville', 'SKH'),
+                (99923, 'Skip Away', 'SAway', 'Testville', 'SKA')
+         ON CONFLICT (team_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    sqlx::query!(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
+         VALUES (9990000031, 99997, '2099-05-01', 99922, 99923, 2),
+                (9990000032, 99997, '2099-05-02', 99922, 99923, 2)
+         ON CONFLICT (game_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    pucksdata::process::backfill::seed_backfill_progress(pool, Some(99997)).await.unwrap();
+
+    // Mark game 31 as 'skipped' (terminal — not retried)
+    pucksdata::process::backfill::update_progress_status(pool, 9990000031, "skipped").await.unwrap();
+    // Mark game 32 as 'failed' (still retried)
+    pucksdata::process::backfill::update_progress_status(pool, 9990000032, "failed").await.unwrap();
+
+    let pending = pucksdata::process::backfill::query_pending_games(pool, Some(99997)).await.unwrap();
+    let pending_ids: Vec<i64> = pending.iter().map(|g| g.game_id).collect();
+
+    assert!(!pending_ids.contains(&9990000031), "skipped game must be excluded from pending");
+    assert!(pending_ids.contains(&9990000032), "failed game must be included for retry");
+    assert_eq!(pending_ids.len(), 1, "exactly 1 non-terminal game expected");
+
+    // Cleanup
+    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99997").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id IN (9990000031, 9990000032)").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99922, 99923)").execute(pool).await.unwrap();
+}
+
 /// Verify season filter: seeding with Some(season) only touches that season's games.
 #[tokio::test]
 async fn test_backfill_season_scope() {
