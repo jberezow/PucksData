@@ -40,6 +40,36 @@ pub async fn update_progress_status(
     Ok(())
 }
 
+/// Update game status and store error message.
+/// Use for 'failed' transitions. Keep update_progress_status for 'done'/'skipped'.
+pub async fn update_progress_with_error(
+    pool: &sqlx::PgPool,
+    game_id: i64,
+    status: &str,
+    error_message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE backfill_progress
+         SET status = $1, error_message = $2, updated_at = NOW()
+         WHERE game_id = $3",
+        status,
+        error_message,
+        game_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Returns true if the error represents a known API gap (404 Not Found).
+/// These games are classified as 'skipped', not 'failed' — they will not be retried.
+/// Uses downcast_ref — type-safe, not string matching on error messages.
+pub(crate) fn is_api_gap_error(e: &crate::AnyError) -> bool {
+    e.downcast_ref::<crate::api::ApiError>()
+        .map(|api_err| matches!(api_err, crate::api::ApiError::NotFound))
+        .unwrap_or(false)
+}
+
 /// Per-game metadata returned by query_pending_games.
 /// Carries game_date, home_abbrev, and away_abbrev for log line emission.
 pub struct PendingGame {
@@ -68,7 +98,7 @@ pub async fn query_pending_games(
          JOIN teams ht ON ht.team_id = g.home_team_id
          JOIN teams at_ ON at_.team_id = g.away_team_id
          WHERE ($1::integer IS NULL OR bp.season = $1)
-           AND bp.status != 'done'
+           AND bp.status NOT IN ('done', 'skipped')
          ORDER BY bp.season ASC, bp.game_id ASC",
         season_filter
     )
