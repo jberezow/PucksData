@@ -189,9 +189,13 @@ pub async fn run_backfill(
     // Track current season for per-season summaries
     let mut season_done: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
     let mut season_failed: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+    let mut season_skipped: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
 
     let mut total_done = 0usize;
     let mut total_failed = 0usize;
+    let mut total_skipped = 0usize;
+
+    let backfill_start = std::time::Instant::now();
 
     let mut games_iter = pending_games.into_iter();
 
@@ -229,12 +233,20 @@ pub async fn run_backfill(
                 total_done += 1;
             }
             Ok((game_id, season, game_date, home_abbrev, away_abbrev, Err(e))) => {
-                pb.suspend(|| println!("{}  {}  {} vs {}  [FAILED]", game_date, game_id, home_abbrev, away_abbrev));
-                pb.suspend(|| eprintln!("warn: game {} (season {}) failed: {}", game_id, season, e));
-                update_progress_status(pool, game_id, "failed").await
-                    .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {}: {}", game_id, e2)));
-                *season_failed.entry(season).or_insert(0) += 1;
-                total_failed += 1;
+                if is_api_gap_error(&e) {
+                    pb.suspend(|| println!("{}  {}  {} vs {}  [SKIPPED]", game_date, game_id, home_abbrev, away_abbrev));
+                    update_progress_status(pool, game_id, "skipped").await
+                        .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {}: {}", game_id, e2)));
+                    *season_skipped.entry(season).or_insert(0) += 1;
+                    total_skipped += 1;
+                } else {
+                    pb.suspend(|| println!("{}  {}  {} vs {}  [FAILED]", game_date, game_id, home_abbrev, away_abbrev));
+                    pb.suspend(|| eprintln!("warn: game {} (season {}) failed: {}", game_id, season, e));
+                    update_progress_with_error(pool, game_id, "failed", &e.to_string()).await
+                        .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {}: {}", game_id, e2)));
+                    *season_failed.entry(season).or_insert(0) += 1;
+                    total_failed += 1;
+                }
             }
             Err(join_err) => {
                 pb.suspend(|| eprintln!("warn: task join error: {}", join_err));
@@ -254,14 +266,25 @@ pub async fn run_backfill(
     let mut all_seasons: std::collections::BTreeSet<i32> = std::collections::BTreeSet::new();
     all_seasons.extend(season_done.keys());
     all_seasons.extend(season_failed.keys());
+    all_seasons.extend(season_skipped.keys());
     for season in &all_seasons {
         let done = season_done.get(season).copied().unwrap_or(0);
         let failed = season_failed.get(season).copied().unwrap_or(0);
-        println!("Season {}: {} done, {} failed", season, done, failed);
+        let skipped = season_skipped.get(season).copied().unwrap_or(0);
+        println!("Season {}: {} done, {} failed, {} skipped", season, done, failed, skipped);
     }
 
     // Final summary
-    println!("Backfill complete: {} games processed, {} failed", total_done + total_failed, total_failed);
+    let elapsed = backfill_start.elapsed();
+    let total_processed = total_done + total_failed + total_skipped;
+    println!(
+        "Backfill complete:\n  processed: {}\n  succeeded: {}\n  failed:    {}\n  skipped:   {}\n  duration:  {:.1}s",
+        total_processed,
+        total_done,
+        total_failed,
+        total_skipped,
+        elapsed.as_secs_f64()
+    );
 
     Ok(())
 }
