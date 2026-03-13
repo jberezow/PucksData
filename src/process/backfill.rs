@@ -155,26 +155,27 @@ pub async fn run_backfill(
 
     // Step 5: Semaphore + JoinSet loop
     let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_GAMES));
-    let mut join_set: JoinSet<(i64, i32, Result<(), crate::AnyError>)> = JoinSet::new();
+    let mut join_set: JoinSet<(i64, i32, time::Date, String, String, Result<(), crate::AnyError>)> = JoinSet::new();
 
     // Track current season for per-season summaries
     let mut season_done: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
     let mut season_failed: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
 
     // Spawn all tasks (acquire_owned blocks when all 5 permits held — natural backpressure)
-    for (i, pg) in pending_games.iter().enumerate() {
+    for game in &pending_games {
         let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
-        let game_id = pg.game_id;
-        let season = pg.season;
+        let game_id = game.game_id;
+        let season = game.season;
+        let game_date = game.game_date;
+        let home_abbrev = game.home_abbrev.clone();
+        let away_abbrev = game.away_abbrev.clone();
         let pool_clone = pool.clone();
         let map = team_id_map.clone();
-        let n = i + 1;
-        pb.println(format!("Processing game {} of {}, season {}", n, total, season));
 
         join_set.spawn(async move {
             let _permit = permit;
             let result = load_one_game(&pool_clone, game_id, &map).await;
-            (game_id, season, result)
+            (game_id, season, game_date, home_abbrev, away_abbrev, result)
         });
     }
 
@@ -184,16 +185,18 @@ pub async fn run_backfill(
 
     while let Some(outcome) = join_set.join_next().await {
         match outcome {
-            Ok((game_id, season, Ok(()))) => {
+            Ok((game_id, season, game_date, home_abbrev, away_abbrev, Ok(()))) => {
+                pb.suspend(|| println!("{}  {}  {} vs {}", game_date, game_id, home_abbrev, away_abbrev));
                 update_progress_status(pool, game_id, "done").await
                     .unwrap_or_else(|e| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {}: {}", game_id, e)));
                 *season_done.entry(season).or_insert(0) += 1;
                 total_done += 1;
             }
-            Ok((game_id, season, Err(e))) => {
+            Ok((game_id, season, game_date, home_abbrev, away_abbrev, Err(e))) => {
+                pb.suspend(|| println!("{}  {}  {} vs {}  [FAILED]", game_date, game_id, home_abbrev, away_abbrev));
+                pb.suspend(|| eprintln!("warn: game {} (season {}) failed: {}", game_id, season, e));
                 update_progress_status(pool, game_id, "failed").await
                     .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {}: {}", game_id, e2)));
-                pb.suspend(|| eprintln!("warn: game {} (season {}) failed: {}", game_id, season, e));
                 *season_failed.entry(season).or_insert(0) += 1;
                 total_failed += 1;
             }
