@@ -166,61 +166,49 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 ));
             }
             FetchEntity::Games(args) => {
-                use indicatif::{ProgressBar, ProgressStyle};
                 let pool = db::get_pool().await?;
 
                 if let Some(game_id) = args.scope.game {
-                    // --game <id>: single game fetch
+                    // --game <id>: single game fetch — hidden bar satisfies updated signature
                     let game = fetchers::games::fetch_single_game(game_id).await?;
-                    loaders::games::upsert_games(pool, &[game]).await?;
+                    loaders::games::upsert_games(pool, &[game], &indicatif::ProgressBar::hidden()).await?;
                     println!("Fetched 1 record, upserted 1");
 
                 } else if let Some(season) = args.scope.season {
-                    // --season <year>: all games for one season
-                    let pb = ProgressBar::new(0);
-                    pb.set_style(
-                        ProgressStyle::with_template(
-                            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}"
-                        )
-                        .unwrap()
-                        .progress_chars("=>-"),
-                    );
-                    let games = fetchers::games::fetch_games_for_season_enriched(season, &pb).await;
+                    // --season <year>: two-phase bars (fetch then upsert)
+                    let pb_fetch = pucksdata::ui::make_progress_bar(0, "games fetched");
+                    let games = fetchers::games::fetch_games_for_season_enriched(season, &pb_fetch).await;
                     let count = games.len();
-                    loaders::games::upsert_games(pool, &games).await?;
-                    pb.finish_with_message(format!("Fetched {count} records, upserted {count}"));
+                    pb_fetch.finish_and_clear();
+
+                    let pb_upsert = pucksdata::ui::make_progress_bar(count as u64, "games written");
+                    loaders::games::upsert_games(pool, &games, &pb_upsert).await
+                        .inspect_err(|_| pb_upsert.finish_and_clear())?;
+                    pb_upsert.finish_and_clear();
 
                 } else {
-                    // --all: iterate all seasons sequentially
+                    // --all: iterate all seasons, two-phase bars per season
                     let seasons = fetchers::games::fetch_seasons_list().await?;
                     let total_seasons = seasons.len();
                     let mut total_games = 0usize;
 
-                    let pb = ProgressBar::new(0);
-                    pb.set_style(
-                        ProgressStyle::with_template(
-                            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}"
-                        )
-                        .unwrap()
-                        .progress_chars("=>-"),
-                    );
-
                     for (i, season) in seasons.iter().enumerate() {
-                        pb.println(format!(
-                            "[{}/{}] Fetching season {}...",
-                            i + 1, total_seasons, season
-                        ));
-                        pb.set_position(0);
-                        let games = fetchers::games::fetch_games_for_season_enriched(*season, &pb).await;
+                        println!("[{}/{}] Fetching season {}...", i + 1, total_seasons, season);
+
+                        let pb_fetch = pucksdata::ui::make_progress_bar(0, "games fetched");
+                        let games = fetchers::games::fetch_games_for_season_enriched(*season, &pb_fetch).await;
                         let count = games.len();
+                        pb_fetch.finish_and_clear();
+
                         if count > 0 {
-                            loaders::games::upsert_games(pool, &games).await?;
+                            let pb_upsert = pucksdata::ui::make_progress_bar(count as u64, "games written");
+                            loaders::games::upsert_games(pool, &games, &pb_upsert).await
+                                .inspect_err(|_| pb_upsert.finish_and_clear())?;
+                            pb_upsert.finish_and_clear();
                         }
                         total_games += count;
                     }
-                    pb.finish_with_message(format!(
-                        "Fetched {total_games} total games across {total_seasons} seasons, upserted {total_games}"
-                    ));
+                    println!("Fetched {total_games} total games across {total_seasons} seasons, upserted {total_games}");
                 }
             }
         },

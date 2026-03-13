@@ -20,7 +20,14 @@ fn chrono_to_time(dt: chrono::DateTime<chrono::Utc>) -> time::OffsetDateTime {
 /// FK note: home_team_id and away_team_id reference teams(team_id).
 /// The caller is responsible for ensuring teams exist before loading games.
 /// FK violations surface as sqlx errors and propagate to the caller.
-pub async fn upsert_games(pool: &sqlx::PgPool, records: &[DbGame]) -> Result<usize, sqlx::Error> {
+///
+/// `pb` is the upsert-phase progress bar. Call `pb.finish_and_clear()` after this
+/// returns. Use `ProgressBar::hidden()` for callers that don't need a visible bar.
+pub async fn upsert_games(
+    pool: &sqlx::PgPool,
+    records: &[DbGame],
+    pb: &indicatif::ProgressBar,
+) -> Result<usize, sqlx::Error> {
     for g in records {
         // sqlx 0.8 `time` feature maps TIMESTAMPTZ -> time::OffsetDateTime.
         // The model stores chrono::DateTime<Utc>, so convert at bind time.
@@ -61,6 +68,8 @@ pub async fn upsert_games(pool: &sqlx::PgPool, records: &[DbGame]) -> Result<usi
         )
         .execute(pool)
         .await?;
+        pb.suspend(|| println!("{}  game {}", g.game_date, g.game_id));
+        pb.inc(1);
     }
     Ok(records.len())
 }
