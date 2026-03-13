@@ -116,11 +116,30 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 pb.finish_and_clear();
             }
             FetchEntity::Players => {
+                use std::time::Duration;
                 let pool = db::get_pool().await?;
+
+                // fetch_players() manages its own fetch-phase progress bar internally
                 let records = fetchers::players::fetch_players().await?;
                 let count = records.len();
-                loaders::players::upsert_players(pool, &records).await?;
-                println!("Fetched {count} records, upserted {count}");
+
+                // Upsert phase — single bulk unnest INSERT; use spinner since no per-record granularity
+                let spinner = {
+                    use indicatif::{ProgressBar, ProgressStyle};
+                    let s = ProgressBar::new_spinner();
+                    s.set_style(
+                        ProgressStyle::with_template("{spinner} {msg}")
+                            .unwrap()
+                            .tick_strings(&["\u{29fe}", "\u{29fd}", "\u{29fb}", "\u{23bf}", "\u{23bf}", "\u{29df}", "\u{29af}", "\u{29b7}", ""])
+                    );
+                    s.enable_steady_tick(Duration::from_millis(80));
+                    s.set_message(format!("Writing {} players to DB...", count));
+                    s
+                };
+                loaders::players::upsert_players(pool, &records).await
+                    .inspect_err(|_| spinner.finish_and_clear())?;
+                spinner.finish_and_clear();
+                println!("Wrote {} players", count);
             }
             FetchEntity::Events(args) => {
                 use indicatif::{ProgressBar, ProgressStyle};
