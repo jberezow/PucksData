@@ -94,7 +94,7 @@ async fn test_games_upsert_idempotent() {
     };
 
     // Insert once
-    pucksdata::loaders::games::upsert_games(pool, &[record]).await.unwrap();
+    pucksdata::loaders::games::upsert_games(pool, &[record], &indicatif::ProgressBar::hidden()).await.unwrap();
 
     // Insert again with updated venue — should produce exactly one row
     let record2 = pucksdata::models::DbGame {
@@ -111,7 +111,7 @@ async fn test_games_upsert_idempotent() {
         home_score: Some(3),
         away_score: Some(1),
     };
-    pucksdata::loaders::games::upsert_games(pool, &[record2]).await.unwrap();
+    pucksdata::loaders::games::upsert_games(pool, &[record2], &indicatif::ProgressBar::hidden()).await.unwrap();
 
     let count: i64 = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM games WHERE game_id = 9900000001"
@@ -150,7 +150,7 @@ async fn test_fetch_idempotency() {
     // First run
     let games_run1 = pucksdata::fetchers::games::fetch_games_for_season_enriched(test_season, &pb).await;
     assert!(!games_run1.is_empty(), "expected at least one game for season {test_season}");
-    pucksdata::loaders::games::upsert_games(pool, &games_run1).await.unwrap();
+    pucksdata::loaders::games::upsert_games(pool, &games_run1, &pb).await.unwrap();
 
     let count_after_run1: i64 = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM games WHERE season = $1", test_season
@@ -158,7 +158,7 @@ async fn test_fetch_idempotency() {
 
     // Second run — upsert semantics should produce identical row count
     let games_run2 = pucksdata::fetchers::games::fetch_games_for_season_enriched(test_season, &pb).await;
-    pucksdata::loaders::games::upsert_games(pool, &games_run2).await.unwrap();
+    pucksdata::loaders::games::upsert_games(pool, &games_run2, &pb).await.unwrap();
 
     let count_after_run2: i64 = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM games WHERE season = $1", test_season

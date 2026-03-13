@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM teams WHERE team_id IN (99001, 99002)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "5baf1fc38921c901a9097eb0541b579436cd28d2a6c32f804d48b94062638a54"
+}

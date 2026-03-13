@@ -10,14 +10,14 @@ async fn test_teams_upsert_idempotent() {
         abbrev: "TST".into(),
     };
     // Insert twice
-    pucksdata::loaders::teams::upsert_teams(pool, &[record]).await.unwrap();
+    pucksdata::loaders::teams::upsert_teams(pool, &[record], &indicatif::ProgressBar::hidden()).await.unwrap();
     pucksdata::loaders::teams::upsert_teams(pool, &[pucksdata::models::DbTeam {
         team_id: 999999,
         full_name: "Test Team Updated".into(),
         common_name: "Tests".into(),
         place_name: "Testville".into(),
         abbrev: "TST".into(),
-    }]).await.unwrap();
+    }], &indicatif::ProgressBar::hidden()).await.unwrap();
     // Verify exactly one row with team_id=999999
     let count: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM teams WHERE team_id = 999999")
         .fetch_one(pool).await.unwrap().unwrap_or(0);
