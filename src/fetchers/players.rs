@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -279,13 +279,7 @@ pub async fn fetch_players() -> Result<Vec<DbPlayer>, AnyError> {
     let player_ids = enumerate_player_ids().await?;
     let total = player_ids.len() as u64;
 
-    let pb = ProgressBar::new(total);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} players")
-            .unwrap()
-            .progress_chars("#>-"),
-    );
+    let pb = crate::ui::make_progress_bar(total, "players");
 
     let records = fetch_all_players(player_ids, &pb).await;
     pb.finish_with_message(format!("Fetched {} players", records.len()));
