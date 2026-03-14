@@ -150,7 +150,7 @@ pub async fn run_backfill(
     spinner.enable_steady_tick(Duration::from_millis(80));
 
     // Step 1: Fetch team_id_map once — shared across all spawned tasks via Arc
-    spinner.set_message("Fetching entity data...");
+    spinner.set_message("Fetching team ID map...");
     let team_id_map = Arc::new(
         crate::fetchers::games::fetch_team_id_to_franchise_id_map().await
             .inspect_err(|_| spinner.finish_and_clear())?
@@ -174,14 +174,7 @@ pub async fn run_backfill(
     }
 
     // Step 4: Set up progress bar
-    let pb = ProgressBar::new(total as u64);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} \u{2022} {per_sec} \u{2022} ETA {eta}"
-        )
-        .unwrap()
-        .progress_chars("\u{2588}\u{2589}\u{258a}\u{258b}\u{258c}\u{258d}\u{258e}\u{258f}  "),
-    );
+    let pb = crate::ui::make_progress_bar(total as u64, "games");
 
     // Step 5: Sliding window — pre-fill up to MAX_CONCURRENT_GAMES, then collect one + spawn one
     let mut join_set: JoinSet<(i64, i32, time::Date, String, String, Result<usize, crate::AnyError>)> = JoinSet::new();
