@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(*) FROM seasons WHERE season_year = 19001901",
+  "query": "SELECT COUNT(*) FROM goals g JOIN events e ON e.id = g.event_id WHERE e.game_id = 9900000002",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       null
     ]
   },
-  "hash": "087aeeccc61678d79683f76a1e5ab825248a1ecfcad0a83672b989c7a4e3218e"
+  "hash": "2609353b683a1cb4be349a5e6ca9b97e99004879b9ad78dd53b63449848f4237"
 }

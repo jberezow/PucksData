@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(*) FROM backfill_progress WHERE season = 99994",
+  "query": "SELECT COUNT(*) FROM events WHERE game_id = 9900000002",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       null
     ]
   },
-  "hash": "a7fe5f078ea67fed0ca76d135d5655aa076d075fb849e02a06ff68b40daf19db"
+  "hash": "6649609b405019a50b25e75b9c00bc71512c2343de357a1705210ac42787bda6"
 }

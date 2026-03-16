@@ -262,6 +262,16 @@ pub fn transform_events(
                             goalie_id: d.goalie_in_net_id,
                             shot_type: d.shot_type.clone(),
                         });
+                        // Goals are also shots on net — double-insert into shots vector.
+                        // Map: d.scoring_player_id → shooting_player_id (NHL API uses different key for goal events).
+                        // Do NOT use d.shooting_player_id here — it deserializes from "shootingPlayerId" which is
+                        // absent in goal events and will always be None.
+                        shots.push(DbShot {
+                            event_id_in_game: play.event_id,
+                            shooting_player_id: d.scoring_player_id,
+                            goalie_in_net_id: d.goalie_in_net_id,
+                            shot_type: d.shot_type.clone(),
+                        });
                     }
                 }
             }

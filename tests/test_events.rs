@@ -219,31 +219,109 @@ fn test_faceoff_details_deserialize() {
     assert_eq!(details.zone_code.as_deref(), Some("N"));
 }
 
-// ── Goal orphan warning (QUAL-03 / EVENT-07) ─────────────────────────────────
+// ── Goal double-insert (QUAL-02) ─────────────────────────────────────────────
 
-// TODO: find_goal_orphans was removed/renamed; test disabled until updated (deferred to post-v1.2)
-#[cfg(any())]
 #[test]
-fn test_goal_orphan_warning() {
-    use pucksdata::fetchers::events::find_goal_orphans;
-    use std::collections::HashSet;
+fn test_goal_produces_shot_entry() {
+    use pucksdata::fetchers::events::{
+        transform_events, PlayByPlay, PbpTeam, Play, PeriodDescriptor, EventDetails,
+    };
+    use std::collections::HashMap;
 
-    // goal with event_id_in_game=154 in game 2023020001 — event_id 154 not in shots
-    let goals: Vec<(i32, i64)> = vec![(154, 2023020001), (200, 2023020001)];
-    let mut shot_ids: HashSet<i32> = HashSet::new();
-    shot_ids.insert(200); // event_id 200 IS a shot → goal at 200 is NOT an orphan
+    let pbp = PlayByPlay {
+        id: 2023020001,
+        home_team: PbpTeam { id: 14 },
+        away_team: PbpTeam { id: 18 },
+        plays: vec![
+            Play {
+                event_id: 154,
+                period_descriptor: PeriodDescriptor {
+                    number: 1,
+                    period_type: "REG".to_string(),
+                },
+                time_in_period: "10:00".to_string(),
+                situation_code: Some("1551".to_string()),
+                type_desc_key: "goal".to_string(),
+                details: Some(EventDetails {
+                    x_coord: Some(-56),
+                    y_coord: Some(8),
+                    zone_code: Some("O".to_string()),
+                    event_owner_team_id: Some(14),
+                    scoring_player_id: Some(8480801),
+                    assist1_player_id: Some(8478476),
+                    assist2_player_id: None,
+                    goalie_in_net_id: Some(8480382),
+                    shot_type: Some("wrist".to_string()),
+                    shooting_player_id: None,
+                    hitting_player_id: None,
+                    hittee_player_id: None,
+                    blocking_player_id: None,
+                    type_code: None,
+                    desc_key: None,
+                    duration: None,
+                    committed_by_player_id: None,
+                    drawn_by_player_id: None,
+                    winning_player_id: None,
+                    losing_player_id: None,
+                }),
+            },
+            Play {
+                event_id: 200,
+                period_descriptor: PeriodDescriptor {
+                    number: 1,
+                    period_type: "REG".to_string(),
+                },
+                time_in_period: "15:00".to_string(),
+                situation_code: Some("1551".to_string()),
+                type_desc_key: "shot-on-goal".to_string(),
+                details: Some(EventDetails {
+                    x_coord: Some(65),
+                    y_coord: Some(-12),
+                    zone_code: Some("O".to_string()),
+                    event_owner_team_id: Some(18),
+                    scoring_player_id: None,
+                    assist1_player_id: None,
+                    assist2_player_id: None,
+                    goalie_in_net_id: Some(8480382),
+                    shot_type: Some("slap".to_string()),
+                    shooting_player_id: Some(8479318),
+                    hitting_player_id: None,
+                    hittee_player_id: None,
+                    blocking_player_id: None,
+                    type_code: None,
+                    desc_key: None,
+                    duration: None,
+                    committed_by_player_id: None,
+                    drawn_by_player_id: None,
+                    winning_player_id: None,
+                    losing_player_id: None,
+                }),
+            },
+        ],
+    };
 
-    let orphans = find_goal_orphans(&goals, &shot_ids);
-    // Only the goal at event_id 154 should appear as an orphan
-    assert_eq!(orphans.len(), 1, "expected exactly 1 orphan goal");
-    assert_eq!(orphans[0], (154, 2023020001), "orphan should be (154, 2023020001)");
+    let team_id_map = HashMap::new();
+    let (_events, goals, shots, _hits, _blocks, _penalties, _faceoffs, warnings) =
+        transform_events(&pbp, &team_id_map);
 
-    // When all goals match shots → empty result
-    let mut all_shot_ids: HashSet<i32> = HashSet::new();
-    all_shot_ids.insert(154);
-    all_shot_ids.insert(200);
-    let no_orphans = find_goal_orphans(&goals, &all_shot_ids);
-    assert!(no_orphans.is_empty(), "no orphans expected when all goals have matching shots");
+    assert!(warnings.is_empty(), "no skip warnings expected: {:?}", warnings);
+    assert_eq!(goals.len(), 1, "expected 1 goal");
+    assert_eq!(shots.len(), 2, "expected 2 shots (goal-derived + shot-on-goal)");
+
+    // Find the goal-derived shot (event_id_in_game == 154, same as the goal)
+    let goal_shot = shots.iter().find(|s| s.event_id_in_game == 154)
+        .expect("goal-derived shot must have event_id_in_game == 154");
+    assert_eq!(goal_shot.shooting_player_id, Some(8480801),
+        "goal scorer maps to shooting_player_id");
+    assert_eq!(goal_shot.goalie_in_net_id, Some(8480382),
+        "goalie_in_net_id carried through from goal event");
+    assert_eq!(goal_shot.shot_type.as_deref(), Some("wrist"),
+        "shot_type carried through from goal event");
+
+    // The regular shot-on-goal must also be present
+    let reg_shot = shots.iter().find(|s| s.event_id_in_game == 200)
+        .expect("regular shot-on-goal must be present");
+    assert_eq!(reg_shot.shooting_player_id, Some(8479318));
 }
 
 // ── Integration stubs (DB required) ──────────────────────────────────────────
