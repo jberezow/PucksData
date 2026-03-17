@@ -104,14 +104,25 @@ pub async fn run_status(
     let healthy = reports.iter().all(|r| r.games_with_events >= r.total_off_games);
 
     if fix {
-        // Collect seasons that need remediation
+        // Step A: backfill any goals missing a shots row (idempotent; safe to run every time).
+        // This covers goals loaded before migration 0007 ran or before the double-insert
+        // was added to transform_events.  Running it unconditionally is cheap — the WHERE
+        // NOT EXISTS guard means it only inserts when work is actually needed.
+        if goals_missing > 0 {
+            println!("--fix: backfilling {} goal(s) missing shots row...", goals_missing);
+            backfill_goals_into_shots(pool, season_filter).await?;
+        }
+
+        // Step B: re-backfill seasons where OFF games have no events at all.
         let seasons_to_fix: Vec<i32> = reports.iter()
             .filter(|r| r.games_with_events < r.total_off_games)
             .map(|r| r.season)
             .collect();
 
         if seasons_to_fix.is_empty() {
-            println!("--fix: all seasons already healthy, nothing to do.");
+            if goals_missing == 0 {
+                println!("--fix: all seasons already healthy, nothing to do.");
+            }
         } else {
             if season_filter.is_none() {
                 eprintln!(
@@ -128,6 +139,35 @@ pub async fn run_status(
     }
 
     Ok(healthy)
+}
+
+/// Insert a shots row for every goal that is missing one.
+///
+/// Mirrors migration 0007 exactly — safe to call repeatedly (ON CONFLICT DO NOTHING).
+/// season_filter: None = all seasons, Some(year) = restrict to one season.
+async fn backfill_goals_into_shots(
+    pool: &sqlx::PgPool,
+    season_filter: Option<i32>,
+) -> Result<(), crate::AnyError> {
+    let rows_inserted: u64 = sqlx::query!(
+        r#"
+        INSERT INTO shots (event_id, shooting_player_id, goalie_in_net_id, shot_type)
+        SELECT go.event_id, go.scorer_player_id, go.goalie_id, go.shot_type
+        FROM goals go
+        JOIN events e ON e.id = go.event_id
+        JOIN games g ON g.game_id = e.game_id
+        WHERE NOT EXISTS (SELECT 1 FROM shots s WHERE s.event_id = go.event_id)
+          AND ($1::integer IS NULL OR g.season = $1)
+        ON CONFLICT (event_id) DO NOTHING
+        "#,
+        season_filter
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    println!("--fix: inserted {} shots row(s) for previously orphaned goals.", rows_inserted);
+    Ok(())
 }
 
 /// Fetch game metadata and run backfill for a single season.

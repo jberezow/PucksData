@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO shots (event_id, shooting_player_id, goalie_in_net_id, shot_type)\n        SELECT go.event_id, go.scorer_player_id, go.goalie_id, go.shot_type\n        FROM goals go\n        JOIN events e ON e.id = go.event_id\n        JOIN games g ON g.game_id = e.game_id\n        WHERE NOT EXISTS (SELECT 1 FROM shots s WHERE s.event_id = go.event_id)\n          AND ($1::integer IS NULL OR g.season = $1)\n        ON CONFLICT (event_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "50c53e2a33afd3c85fffadc17a5811702ef01d542c8c804e5852db66e8d809d5"
+}
