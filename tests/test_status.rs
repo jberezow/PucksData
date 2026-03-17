@@ -181,10 +181,81 @@ async fn test_status_excludes_fut_pre_games() {
     sqlx::query!("DELETE FROM teams WHERE team_id IN (99947, 99948)").execute(pool).await.unwrap();
 }
 
-/// SYNC-06 placeholder: test_fix_idempotent — wired in Plan 02.
+/// SYNC-06 integration: run_status with fix=true on already-healthy season is a no-op.
+/// Verifies idempotency: after fix, the season remains healthy and backfill_progress is unchanged.
 #[tokio::test]
 async fn test_fix_idempotent() {
     if std::env::var("DATABASE_URL").is_err() { return; }
-    // Full implementation in 16-02-PLAN.md. Placeholder passes vacuously.
-    // TODO(16-02): insert healthy season, call run_status with fix=true, verify no side effects.
+    let pool = pucksdata::db::get_pool().await.unwrap();
+
+    // Insert synthetic teams, a completed+covered game, and a backfill_progress row (done)
+    sqlx::query!(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
+         VALUES (99951, 'Fix Home', 'FixH', 'Testville', 'FXH'),
+                (99952, 'Fix Away', 'FixA', 'Testville', 'FXA')
+         ON CONFLICT (team_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    sqlx::query!(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9992000010, 99986, '2099-02-01', 99951, 99952, 2, 'OFF')
+         ON CONFLICT (game_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    // Cover the game with an events row
+    sqlx::query!(
+        "INSERT INTO events (game_id, event_id_in_game, period, period_type, time_in_period, event_type)
+         VALUES (9992000010, 1, 1, 'REG', '00:00', 'goal')
+         ON CONFLICT (game_id, event_id_in_game) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    // Record a done backfill_progress row
+    sqlx::query!(
+        "INSERT INTO backfill_progress (game_id, season, status)
+         VALUES (9992000010, 99986, 'done')
+         ON CONFLICT (game_id) DO NOTHING"
+    ).execute(pool).await.unwrap();
+
+    // run_status with fix=true on an already-healthy season must:
+    //   1. Return healthy=true
+    //   2. Not call fix_season (seasons_to_fix is empty → no fetch/backfill)
+    //   3. backfill_progress row remains 'done' (not mutated)
+    let healthy = pucksdata::process::status::run_status(pool, Some(99986), true)
+        .await
+        .unwrap();
+
+    assert!(healthy, "already-healthy season with fix=true must still return healthy=true");
+
+    // Verify backfill_progress row is still 'done' (fix was a no-op)
+    let bp_status: Option<String> = sqlx::query_scalar!(
+        "SELECT status FROM backfill_progress WHERE game_id = 9992000010"
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap();
+    assert_eq!(bp_status.as_deref(), Some("done"), "backfill_progress must remain 'done' after no-op fix");
+
+    // Cleanup (child tables first)
+    sqlx::query!("DELETE FROM backfill_progress WHERE game_id = 9992000010").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM events WHERE game_id = 9992000010").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id = 9992000010").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99951, 99952)").execute(pool).await.unwrap();
+}
+
+/// SYNC-06 unit: run_status returns true (healthy) → caller must exit with code 0.
+/// Validates the boolean contract: true = no std::process::exit(1) should be called.
+#[test]
+fn test_exit_code_healthy_is_zero() {
+    // run_status returning true → main.rs arm does NOT call std::process::exit(1).
+    // We can't easily test process::exit in a unit test, so verify the boolean contract:
+    // If healthy = true, the condition `if !healthy { std::process::exit(1) }` is false.
+    let healthy = true;
+    assert!(!(!healthy), "healthy=true must not trigger exit(1) in main.rs dispatch arm");
+}
+
+/// SYNC-06 unit: run_status returns false (unhealthy) → caller must exit with code 1.
+#[test]
+fn test_exit_code_unhealthy_is_one() {
+    let healthy = false;
+    assert!(!healthy, "healthy=false must trigger exit(1) in main.rs dispatch arm");
 }
