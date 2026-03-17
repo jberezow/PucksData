@@ -146,7 +146,27 @@ async fn fix_season(pool: &sqlx::PgPool, season: i32) -> Result<(), crate::AnyEr
         .inspect_err(|_| pb_upsert.finish_and_clear())?;
     pb_upsert.finish_and_clear();
 
-    // Step 3: Backfill events for this season (seed + process pending)
+    // Step 3: Reset any games that are marked done/skipped but have no events.
+    // seed_backfill_progress uses ON CONFLICT DO NOTHING, so stale 'done' rows
+    // are never re-queued — force them back to 'pending' before backfill.
+    sqlx::query!(
+        "UPDATE backfill_progress
+         SET status = 'pending', updated_at = NOW(), error_message = NULL
+         WHERE season = $1
+           AND status IN ('done', 'skipped')
+           AND game_id IN (
+               SELECT g.game_id
+               FROM games g
+               WHERE g.season = $1
+                 AND g.game_state NOT IN ('FUT', 'PRE')
+                 AND NOT EXISTS (SELECT 1 FROM events e WHERE e.game_id = g.game_id)
+           )",
+        season
+    )
+    .execute(pool)
+    .await?;
+
+    // Step 4: Backfill events for this season (seed + process pending)
     crate::process::backfill::run_backfill(pool, Some(season)).await
 }
 
