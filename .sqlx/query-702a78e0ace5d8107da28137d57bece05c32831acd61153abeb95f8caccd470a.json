@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO events (game_id, event_id_in_game, period, period_type, time_in_period, event_type)\n         VALUES (9992000005, 1, 1, 'REG', '00:00', 'goal')\n         ON CONFLICT (game_id, event_id_in_game) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "702a78e0ace5d8107da28137d57bece05c32831acd61153abeb95f8caccd470a"
+}

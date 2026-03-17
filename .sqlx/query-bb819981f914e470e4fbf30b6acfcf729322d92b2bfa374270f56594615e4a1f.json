@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM backfill_progress WHERE season = 99999",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "bb819981f914e470e4fbf30b6acfcf729322d92b2bfa374270f56594615e4a1f"
+}

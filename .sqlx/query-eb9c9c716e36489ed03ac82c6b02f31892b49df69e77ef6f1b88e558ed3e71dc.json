@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM games WHERE game_id IN (9992000003, 9992000004)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "eb9c9c716e36489ed03ac82c6b02f31892b49df69e77ef6f1b88e558ed3e71dc"
+}

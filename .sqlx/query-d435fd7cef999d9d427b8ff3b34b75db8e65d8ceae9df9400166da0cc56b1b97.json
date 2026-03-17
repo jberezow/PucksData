@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)\n         VALUES (9991000004, 99994, '2020-01-01', 99915, 99916, 2)\n         ON CONFLICT (game_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d435fd7cef999d9d427b8ff3b34b75db8e65d8ceae9df9400166da0cc56b1b97"
+}

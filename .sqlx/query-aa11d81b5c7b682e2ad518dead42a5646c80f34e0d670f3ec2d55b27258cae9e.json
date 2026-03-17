@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM sync_state WHERE key = 'singleton'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "aa11d81b5c7b682e2ad518dead42a5646c80f34e0d670f3ec2d55b27258cae9e"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)                                                     AS \"count!: i64\"\n        FROM goals go\n        JOIN events e ON e.id = go.event_id\n        JOIN games g ON g.game_id = e.game_id\n        WHERE NOT EXISTS (SELECT 1 FROM shots s WHERE s.event_id = go.event_id)\n          AND ($1::integer IS NULL OR g.season = $1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f2f5bdd1485b8ca66eb1aaa7fe43588cd5471ae9e8e747d6234ac1d5a4d8e72a"
+}

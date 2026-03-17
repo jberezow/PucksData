@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            season                                                          AS \"season!: i32\",\n            COUNT(*) FILTER (WHERE status = 'done')                        AS \"bp_done!: i64\",\n            COUNT(*) FILTER (WHERE status = 'failed')                      AS \"bp_failed!: i64\",\n            COUNT(*) FILTER (WHERE status = 'skipped')                     AS \"bp_skipped!: i64\",\n            COUNT(*) FILTER (WHERE status = 'pending')                     AS \"bp_pending!: i64\"\n        FROM backfill_progress\n        WHERE ($1::integer IS NULL OR season = $1)\n        GROUP BY season\n        ORDER BY season\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "season!: i32",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "bp_done!: i64",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "bp_failed!: i64",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "bp_skipped!: i64",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "bp_pending!: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "634775772c97482fff0abf5850cbb38eee6d6e17fef852e9dfb40626b5830204"
+}
