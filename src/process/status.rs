@@ -104,12 +104,50 @@ pub async fn run_status(
     let healthy = reports.iter().all(|r| r.games_with_events >= r.total_off_games);
 
     if fix {
-        // fix=true orchestration is wired in Plan 02 (16-02-PLAN.md)
-        // Placeholder: warn if called with fix=true before Plan 02 is merged
-        eprintln!("warn: --fix path not yet implemented (Plan 02)");
+        // Collect seasons that need remediation
+        let seasons_to_fix: Vec<i32> = reports.iter()
+            .filter(|r| r.games_with_events < r.total_off_games)
+            .map(|r| r.season)
+            .collect();
+
+        if seasons_to_fix.is_empty() {
+            println!("--fix: all seasons already healthy, nothing to do.");
+        } else {
+            if season_filter.is_none() {
+                eprintln!(
+                    "warn: --fix without --season will remediate {} season(s) with gaps: {:?}",
+                    seasons_to_fix.len(),
+                    seasons_to_fix
+                );
+            }
+            for season in &seasons_to_fix {
+                println!("Fixing season {}...", season);
+                fix_season(pool, *season).await?;
+            }
+        }
     }
 
     Ok(healthy)
+}
+
+/// Fetch game metadata and run backfill for a single season.
+/// Delegates entirely to existing functions — no new fetch/load logic.
+/// Called from run_status() when fix=true and the season has coverage gaps.
+async fn fix_season(pool: &sqlx::PgPool, season: i32) -> Result<(), crate::AnyError> {
+    // Step 1: Refresh game metadata for this season
+    let pb_fetch = crate::ui::make_progress_bar(0, "games fetched");
+    let games = crate::fetchers::games::fetch_games_for_season_enriched(season, &pb_fetch).await;
+    let count = games.len();
+    pb_fetch.finish_and_clear();
+
+    // Step 2: Upsert the fetched games (ON CONFLICT — idempotent)
+    let pb_upsert = crate::ui::make_progress_bar(count as u64, "games written");
+    crate::loaders::games::upsert_games(pool, &games, &pb_upsert).await
+        .inspect_err(|_| pb_upsert.finish_and_clear())?;
+    pb_upsert.finish_and_clear();
+
+    // Step 3: Backfill events for this season (seed + process pending)
+    crate::process::backfill::run_backfill(pool, Some(season)).await
 }
 
 /// Print the per-season health table to stdout.
