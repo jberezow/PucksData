@@ -21,6 +21,8 @@ enum Commands {
     Sync(SyncArgs),
     /// Run as a long-lived daemon, calling sync on a configurable interval
     Daemon(DaemonArgs),
+    /// Check DB health per season: game counts, event coverage %, goals-in-shots, backfill status
+    Status(StatusArgs),
 }
 
 #[derive(Subcommand)]
@@ -74,6 +76,17 @@ struct DaemonArgs {
     /// Run a full backfill before entering the sync loop.
     #[arg(long)]
     backfill_on_start: bool,
+}
+
+#[derive(Args)]
+struct StatusArgs {
+    /// Restrict status output to a single season (e.g. 20252026)
+    #[arg(long)]
+    season: Option<i32>,
+
+    /// Fetch game metadata and run backfill to remediate coverage gaps
+    #[arg(long)]
+    fix: bool,
 }
 
 #[derive(Args)]
@@ -250,6 +263,17 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                     .and_then(|s| s.parse().ok()))
                 .unwrap_or(21600); // 6 hours default
             pucksdata::process::daemon::run_daemon(&pool, interval_secs, args.backfill_on_start).await?;
+        }
+        Commands::Status(args) => {
+            let pool = db::get_pool().await?;
+            let healthy = pucksdata::process::status::run_status(
+                &pool,
+                args.season,
+                args.fix,
+            ).await?;
+            if !healthy {
+                std::process::exit(1);
+            }
         }
     }
 
