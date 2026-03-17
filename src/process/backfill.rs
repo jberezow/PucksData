@@ -13,6 +13,7 @@ pub async fn seed_backfill_progress(
          SELECT game_id, season, 'pending'
          FROM games
          WHERE ($1::integer IS NULL OR season = $1)
+           AND game_state NOT IN ('FUT', 'PRE')
          ON CONFLICT (game_id) DO NOTHING",
         season_filter
     )
@@ -99,6 +100,7 @@ pub async fn query_pending_games(
          JOIN teams at_ ON at_.team_id = g.away_team_id
          WHERE ($1::integer IS NULL OR bp.season = $1)
            AND bp.status NOT IN ('done', 'skipped')
+           AND g.game_state NOT IN ('FUT', 'PRE')
          ORDER BY bp.season ASC, bp.game_id ASC",
         season_filter
     )

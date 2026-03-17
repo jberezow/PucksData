@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO backfill_progress (game_id, season, status)\n         SELECT game_id, season, 'pending'\n         FROM games\n         WHERE ($1::integer IS NULL OR season = $1)\n           AND game_state NOT IN ('FUT', 'PRE')\n         ON CONFLICT (game_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fd594fe3ffdddc2ab6c0625c121013196da689c5cb58a89732d2edf7e6fff4dc"
+}
