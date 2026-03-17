@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE backfill_progress\n         SET status = 'pending', updated_at = NOW(), error_message = NULL\n         WHERE season = $1\n           AND status IN ('done', 'skipped')\n           AND game_id IN (\n               SELECT g.game_id\n               FROM games g\n               WHERE g.season = $1\n                 AND g.game_state NOT IN ('FUT', 'PRE')\n                 AND NOT EXISTS (SELECT 1 FROM events e WHERE e.game_id = g.game_id)\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5d7ee5d60fdeb9e69c2c42ab4c88a747eaa648666d6fa956eb27815814ef9d1"
+}
