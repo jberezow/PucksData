@@ -137,14 +137,25 @@ async fn run_loop(
 
 /// Execute one sync tick.
 ///
-/// Logs start time, calls run_sync(), logs next-sync time on success or logs
-/// the error and continues on failure.  Error is NEVER accumulated
-/// (QUAL-SYNC-03 / Pitfall 6).
+/// Logs start time, refreshes current-season game metadata (SYNC-07), then calls
+/// run_sync(). Metadata refresh failure is non-fatal: logs a warning and continues.
+/// Sync errors are NEVER accumulated (QUAL-SYNC-03 / Pitfall 6).
 async fn tick_sync(pool: &sqlx::PgPool, interval_secs: u64) {
     eprintln!(
         "[{}] starting sync",
         chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ")
     );
+
+    // Step 0: Refresh current-season game metadata (SYNC-07).
+    // Discovers newly scheduled games so the gap-fill query below can find them.
+    // Failure is non-fatal — log warning and continue to sync.
+    let season = crate::process::sync::current_season();
+    eprintln!("[sync 0/5] refreshing game metadata for season {}...", season);
+    match refresh_season_metadata(pool, season).await {
+        Ok(count) => eprintln!("[sync 0/5] {} games upserted for season {}", count, season),
+        Err(e) => eprintln!("warn: metadata refresh failed (non-fatal): {}", e),
+    }
+
     match crate::process::sync::run_sync(pool, None).await {
         Ok(_summary) => {
             let next = chrono::Utc::now()
@@ -156,4 +167,17 @@ async fn tick_sync(pool: &sqlx::PgPool, interval_secs: u64) {
             eprintln!("sync failed, continuing: {}", e);
         }
     }
+}
+
+/// Fetch and upsert game metadata for a single season.
+/// Returns the number of games upserted. Uses a hidden progress bar (daemon has no TTY).
+async fn refresh_season_metadata(
+    pool: &sqlx::PgPool,
+    season: i32,
+) -> Result<usize, crate::AnyError> {
+    let pb = indicatif::ProgressBar::hidden();
+    let games = crate::fetchers::games::fetch_games_for_season_enriched(season, &pb).await;
+    let count = games.len();
+    crate::loaders::games::upsert_games(pool, &games, &pb).await?;
+    Ok(count)
 }
