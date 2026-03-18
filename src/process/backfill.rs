@@ -281,5 +281,14 @@ pub async fn run_backfill(
         elapsed.as_secs_f64()
     );
 
+    // Gap repair: fetch any player IDs present in event tables but absent from players.
+    // Catches retired/AHL players that slipped through enumerate_player_ids, including
+    // historical players like Sergei Kostitsyn (20072008-20122013) already written to goals.
+    match crate::fetchers::players::repair_missing_players(pool).await {
+        Ok(0) => {}
+        Ok(n) => println!("repair: inserted {} previously-missing players", n),
+        Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {}", e),
+    }
+
     Ok(())
 }

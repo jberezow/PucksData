@@ -133,7 +133,7 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 let pool = db::get_pool().await?;
 
                 // fetch_players() manages its own fetch-phase progress bar internally
-                let records = fetchers::players::fetch_players().await?;
+                let records = fetchers::players::fetch_players(pool).await?;
                 let count = records.len();
 
                 // Upsert phase — single bulk unnest INSERT; use spinner since no per-record granularity

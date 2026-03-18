@@ -88,7 +88,7 @@ pub async fn run_sync(
     // Must happen before team_id_map fetch to avoid stale map (Pitfall 3 from RESEARCH.md)
     let teams = crate::fetchers::teams::fetch_teams().await?;
     crate::loaders::teams::upsert_teams(pool, &teams, &indicatif::ProgressBar::hidden()).await?;
-    let players = crate::fetchers::players::fetch_players().await?;
+    let players = crate::fetchers::players::fetch_players(pool).await?;
     crate::loaders::players::upsert_players(pool, &players).await?;
 
     // Step 2: Fetch team_id_map once — shared across all spawned tasks via Arc
@@ -170,7 +170,17 @@ pub async fn run_sync(
         duration_secs,
     );
 
-    // Step 6: Upsert sync_state metadata (SCHEMA-15).
+    // Step 6: Gap repair — fetch any player IDs present in event tables but absent from players.
+    // Catches players that slipped through enumerate_player_ids (edge cases, future regressions,
+    // or pre-existing gaps in historical data). Runs after event writes so all new event rows
+    // are visible to the repair query.
+    match crate::fetchers::players::repair_missing_players(pool).await {
+        Ok(0) => {}
+        Ok(n) => println!("repair: inserted {} previously-missing players", n),
+        Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {}", e),
+    }
+
+    // Step 7: Upsert sync_state metadata (SCHEMA-15).
     // Runs on BOTH zero-candidate and non-zero paths — single return point prevents Pitfall 3.
     // Informational only — failure here does not invalidate the sync; but we propagate Err
     // so the operator knows the metadata write failed.
