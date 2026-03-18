@@ -58,6 +58,7 @@ pub async fn query_sync_candidates(
            FROM games g
            WHERE g.game_date < CURRENT_DATE
              AND ($1::date IS NULL OR g.game_date >= $1)
+             AND g.game_type != 1
              AND NOT EXISTS (
                SELECT 1 FROM events e WHERE e.game_id = g.game_id
              )
@@ -86,10 +87,15 @@ pub async fn run_sync(
 
     // Step 1: Entity refresh — teams then players (SYNC-03)
     // Must happen before team_id_map fetch to avoid stale map (Pitfall 3 from RESEARCH.md)
+    println!("[sync 1/5] refreshing teams...");
     let teams = crate::fetchers::teams::fetch_teams().await?;
     crate::loaders::teams::upsert_teams(pool, &teams, &indicatif::ProgressBar::hidden()).await?;
+    println!("[sync 1/5] {} teams upserted", teams.len());
+
+    println!("[sync 2/5] enumerating and refreshing players (rosters + stats pages — this takes ~30s)...");
     let players = crate::fetchers::players::fetch_players(pool).await?;
     crate::loaders::players::upsert_players(pool, &players).await?;
+    println!("[sync 2/5] {} players upserted", players.len());
 
     // Step 2: Fetch team_id_map once — shared across all spawned tasks via Arc
     let team_id_map = Arc::new(
@@ -97,8 +103,10 @@ pub async fn run_sync(
     );
 
     // Step 3: Gap detection query (SYNC-02) — returns (game_id, game_state) pairs
+    println!("[sync 3/5] detecting games with missing events...");
     let candidates = query_sync_candidates(pool, from_date).await?;
     let candidates_count = candidates.len(); // all gap-detected candidates, before game_state filter
+    println!("[sync 3/5] {} candidate games found (regular season + playoffs, no events yet)", candidates_count);
 
     // Step 4: Filter by is_game_completed(), warn on unknown states (QUAL-SYNC-01)
     // Do NOT filter in SQL — must log unknown states explicitly
@@ -115,7 +123,10 @@ pub async fn run_sync(
     }
 
     let total = games_to_process.len();
+    println!("[sync 4/5] {} games ready to process (game_state OFF/OVER/FINAL)", total);
+
     let (processed, failed, events_written) = if total == 0 {
+        println!("[sync 4/5] nothing to do");
         (0usize, 0usize, 0usize)
     } else {
         // Step 5: Semaphore + JoinSet concurrency (same as run_backfill — MAX_CONCURRENT_GAMES = 5)
@@ -123,12 +134,13 @@ pub async fn run_sync(
         let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_GAMES));
         let mut join_set: JoinSet<(i64, Result<usize, crate::AnyError>)> = JoinSet::new();
 
-        for (n, game_id) in games_to_process.iter().enumerate() {
+        let pb = crate::ui::make_progress_bar(total as u64, "games");
+
+        for game_id in games_to_process.iter() {
             let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
             let game_id = *game_id;
             let pool_clone = pool.clone();
             let map = team_id_map.clone();
-            println!("Processing game {} of {} (id={})", n + 1, total, game_id);
 
             join_set.spawn(async move {
                 let _permit = permit; // released on drop
@@ -148,24 +160,27 @@ pub async fn run_sync(
                     processed += 1;
                 }
                 Ok((game_id, Err(e))) => {
-                    eprintln!("warn: game {} failed: {}", game_id, e);
+                    pb.suspend(|| eprintln!("warn: game {} failed: {}", game_id, e));
                     failed += 1;
                 }
                 Err(join_err) => {
-                    eprintln!("warn: task join error: {}", join_err);
+                    pb.suspend(|| eprintln!("warn: task join error: {}", join_err));
                     failed += 1;
                 }
             }
+            pb.inc(1);
         }
+        pb.finish_and_clear();
         (processed, failed, events_written)
     };
 
     let elapsed = started_at.elapsed();
     let duration_secs = elapsed.as_secs_f64();
     println!(
-        "Sync complete:\n  candidates:  {}\n  fetched:     {}\n  events:    {}\n  duration:  {:.1}s",
+        "[sync 5/5] complete:\n  candidates:  {}\n  processed:   {}\n  failed:      {}\n  events:      {}\n  duration:    {:.1}s",
         candidates_count,
         processed,
+        failed,
         events_written,
         duration_secs,
     );

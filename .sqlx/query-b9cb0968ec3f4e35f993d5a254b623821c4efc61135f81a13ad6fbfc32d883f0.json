@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT venue FROM games WHERE game_id = 9900000001",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "venue",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "b9cb0968ec3f4e35f993d5a254b623821c4efc61135f81a13ad6fbfc32d883f0"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM events WHERE game_id = 9992000003",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d0b207775c1d6c29430427618d03c8c46e2bb8d505b5671b2f3a88ef48913635"
+}

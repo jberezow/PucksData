@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)\n         VALUES (99945, 'Status Home C', 'StatHC', 'Testville', 'SHC'),\n                (99946, 'Status Away C', 'StatAC', 'Testville', 'SAC')\n         ON CONFLICT (team_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4da56c478d04ac49decb7abde03362620b06c432f83d17a7eaa2be985eec7cbc"
+}

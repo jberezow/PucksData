@@ -198,12 +198,18 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
     // Source 1: current team rosters
     match fetch_active_team_abbrevs().await {
         Ok(teams) => {
-            for abbrev in &teams {
+            let team_count = teams.len();
+            println!("  enumerating players: fetching rosters for {} active teams...", team_count);
+            for (i, abbrev) in teams.iter().enumerate() {
+                if i > 0 && i % 8 == 0 {
+                    println!("  enumerating players: rosters {}/{}", i, team_count);
+                }
                 match fetch_roster_player_ids(abbrev).await {
                     Ok(ids) => { all_ids.extend(ids); }
                     Err(e) => eprintln!("warn: roster fetch failed for {}: {}", abbrev, e),
                 }
             }
+            println!("  enumerating players: rosters done ({} unique IDs so far)", all_ids.len());
         }
         Err(e) => eprintln!("warn: active team fetch failed, skipping roster source: {}", e),
     }
@@ -211,15 +217,25 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
     // Source 2: stats summaries for all seasons that have game data (regular season + playoffs).
     // Querying every season in the DB ensures players from historical seasons (e.g. 2007-2012)
     // are enumerated, not just players from the most recent few seasons.
-    for &season_id in seasons {
-        for entity in ["skater", "goalie"] {
-            for game_type in [2u8, 3u8] {
-                match fetch_stats_player_ids(entity, game_type, season_id).await {
-                    Ok(ids) => { all_ids.extend(ids); }
-                    Err(e) => eprintln!(
-                        "warn: stats player ids failed for {} type {} season {}: {}",
-                        entity, game_type, season_id, e
-                    ),
+    if !seasons.is_empty() {
+        // 2 entity types × 2 game types × N seasons
+        let stats_total = seasons.len() * 4;
+        println!("  enumerating players: fetching stats pages for {} seasons ({} requests)...", seasons.len(), stats_total);
+        let mut stats_done = 0usize;
+        for &season_id in seasons {
+            for entity in ["skater", "goalie"] {
+                for game_type in [2u8, 3u8] {
+                    match fetch_stats_player_ids(entity, game_type, season_id).await {
+                        Ok(ids) => { all_ids.extend(ids); }
+                        Err(e) => eprintln!(
+                            "warn: stats player ids failed for {} type {} season {}: {}",
+                            entity, game_type, season_id, e
+                        ),
+                    }
+                    stats_done += 1;
+                    if stats_done % 8 == 0 || stats_done == stats_total {
+                        println!("  enumerating players: stats pages {}/{} ({} unique IDs)", stats_done, stats_total, all_ids.len());
+                    }
                 }
             }
         }
