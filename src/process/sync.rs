@@ -2,6 +2,7 @@
 // Sync orchestration: gap detection (completed games with no events) and the run_sync() orchestrator.
 // Implements SYNC-01, SYNC-02, SYNC-03, QUAL-SYNC-01, QUAL-SYNC-02, DAEMON-04, SCHEMA-15.
 
+use chrono::Datelike;
 use sqlx::postgres::PgAdvisoryLock;
 use sqlx::Either;
 
@@ -19,6 +20,34 @@ pub struct SyncSummary {
 /// Any other value is unknown — caller should log a warning and skip.
 pub fn is_game_completed(state: &str) -> bool {
     matches!(state, "OFF" | "OVER" | "FINAL")
+}
+
+/// Derive the 8-digit NHL season ID for a given calendar month and year.
+///
+/// NHL seasons span two calendar years (e.g. 2025-2026 season ID = 20252026).
+/// A new season starts in October. Months before October (1–9) belong to the
+/// season that started the previous October.
+///
+/// Examples:
+///   season_for_date(10, 2025) == 20252026  (Oct 2025 → start of 2025-26 season)
+///   season_for_date(3,  2026) == 20252026  (Mar 2026 → mid 2025-26 season)
+///   season_for_date(9,  2025) == 20242025  (Sep 2025 → offseason, 2024-25 was last)
+pub fn season_for_date(month: u32, year: i32) -> i32 {
+    if month >= 10 {
+        // October onwards: new season starting this year
+        year * 10_000 + (year + 1)
+    } else {
+        // January–September: season started last October
+        (year - 1) * 10_000 + year
+    }
+}
+
+/// Return the 8-digit NHL season ID for the current UTC date.
+///
+/// Calls `season_for_date` with the current UTC month and year.
+pub fn current_season() -> i32 {
+    let now = chrono::Utc::now();
+    season_for_date(now.month(), now.year())
 }
 
 /// Acquire the pucksdata daemon advisory lock for single-instance enforcement (QUAL-SYNC-02).

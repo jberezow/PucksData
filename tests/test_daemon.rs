@@ -145,3 +145,37 @@ async fn test_daemon_exported() {
     // (compile-time check — if this test file compiles, the export is correct)
     let _ = pucksdata::process::daemon::run_daemon as fn(_, _, _) -> _;
 }
+
+// ---------------------------------------------------------------------------
+// SYNC-07: current_season() / season_for_date() — season ID derivation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_current_season_october_start() {
+    // October 2025 = start of 2025-2026 season
+    assert_eq!(pucksdata::process::sync::season_for_date(10, 2025), 20252026);
+}
+
+#[test]
+fn test_current_season_mid_season() {
+    // March 2026 = mid 2025-2026 season
+    assert_eq!(pucksdata::process::sync::season_for_date(3, 2026), 20252026);
+}
+
+#[test]
+fn test_current_season_june() {
+    // June 2026 = playoffs, still 2025-2026 season
+    assert_eq!(pucksdata::process::sync::season_for_date(6, 2026), 20252026);
+}
+
+#[test]
+fn test_current_season_september() {
+    // September 2025 = offseason, previous season 2024-2025
+    assert_eq!(pucksdata::process::sync::season_for_date(9, 2025), 20242025);
+}
+
+#[test]
+fn test_current_season_next_season() {
+    // October 2026 = start of 2026-2027 season
+    assert_eq!(pucksdata::process::sync::season_for_date(10, 2026), 20262027);
+}
