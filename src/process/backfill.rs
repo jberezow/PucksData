@@ -129,6 +129,10 @@ pub async fn load_one_game(
     Ok(ec + gc + sc + hc + bc + pc + fc)
 }
 
+/// Result type for a single backfill game task spawned in the JoinSet.
+/// Carries (game_id, season, game_date, home_abbrev, away_abbrev, fetch_result).
+type BackfillTaskResult = (i64, i32, time::Date, String, String, Result<usize, crate::AnyError>);
+
 /// Run the full (or season-scoped) backfill.
 /// season_filter: None = all seasons, Some(year) = one 8-digit season ID (e.g. 20232024)
 pub async fn run_backfill(
@@ -179,7 +183,7 @@ pub async fn run_backfill(
     let pb = crate::ui::make_progress_bar(total as u64, "games");
 
     // Step 5: Sliding window — pre-fill up to MAX_CONCURRENT_GAMES, then collect one + spawn one
-    let mut join_set: JoinSet<(i64, i32, time::Date, String, String, Result<usize, crate::AnyError>)> = JoinSet::new();
+    let mut join_set: JoinSet<BackfillTaskResult> = JoinSet::new();
 
     // Track current season for per-season summaries
     let mut season_done: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
@@ -221,30 +225,30 @@ pub async fn run_backfill(
     while let Some(outcome) = join_set.join_next().await {
         match outcome {
             Ok((game_id, season, game_date, home_abbrev, away_abbrev, Ok(_count))) => {
-                pb.suspend(|| println!("{}  {}  {} vs {}", game_date, game_id, home_abbrev, away_abbrev));
+                pb.suspend(|| println!("{game_date}  {game_id}  {home_abbrev} vs {away_abbrev}"));
                 update_progress_status(pool, game_id, "done").await
-                    .unwrap_or_else(|e| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {}: {}", game_id, e)));
+                    .unwrap_or_else(|e| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {game_id}: {e}")));
                 *season_done.entry(season).or_insert(0) += 1;
                 total_done += 1;
             }
             Ok((game_id, season, game_date, home_abbrev, away_abbrev, Err(e))) => {
                 if is_api_gap_error(&e) {
-                    pb.suspend(|| println!("{}  {}  {} vs {}  [SKIPPED]", game_date, game_id, home_abbrev, away_abbrev));
+                    pb.suspend(|| println!("{game_date}  {game_id}  {home_abbrev} vs {away_abbrev}  [SKIPPED]"));
                     update_progress_status(pool, game_id, "skipped").await
-                        .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {}: {}", game_id, e2)));
+                        .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {game_id}: {e2}")));
                     *season_skipped.entry(season).or_insert(0) += 1;
                     total_skipped += 1;
                 } else {
-                    pb.suspend(|| println!("{}  {}  {} vs {}  [FAILED]", game_date, game_id, home_abbrev, away_abbrev));
-                    pb.suspend(|| eprintln!("warn: game {} (season {}) failed: {}", game_id, season, e));
+                    pb.suspend(|| println!("{game_date}  {game_id}  {home_abbrev} vs {away_abbrev}  [FAILED]"));
+                    pb.suspend(|| eprintln!("warn: game {game_id} (season {season}) failed: {e}"));
                     update_progress_with_error(pool, game_id, "failed", &e.to_string()).await
-                        .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {}: {}", game_id, e2)));
+                        .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {game_id}: {e2}")));
                     *season_failed.entry(season).or_insert(0) += 1;
                     total_failed += 1;
                 }
             }
             Err(join_err) => {
-                pb.suspend(|| eprintln!("warn: task join error: {}", join_err));
+                pb.suspend(|| eprintln!("warn: task join error: {join_err}"));
                 total_failed += 1;
             }
         }
@@ -266,7 +270,7 @@ pub async fn run_backfill(
         let done = season_done.get(season).copied().unwrap_or(0);
         let failed = season_failed.get(season).copied().unwrap_or(0);
         let skipped = season_skipped.get(season).copied().unwrap_or(0);
-        println!("Season {}: {} done, {} failed, {} skipped", season, done, failed, skipped);
+        println!("Season {season}: {done} done, {failed} failed, {skipped} skipped");
     }
 
     // Final summary
@@ -286,8 +290,8 @@ pub async fn run_backfill(
     // historical players like Sergei Kostitsyn (20072008-20122013) already written to goals.
     match crate::fetchers::players::repair_missing_players(pool).await {
         Ok(0) => {}
-        Ok(n) => println!("repair: inserted {} previously-missing players", n),
-        Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {}", e),
+        Ok(n) => println!("repair: inserted {n} previously-missing players"),
+        Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {e}"),
     }
 
     Ok(())

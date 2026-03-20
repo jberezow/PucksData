@@ -91,7 +91,7 @@ pub async fn fetch_teams() -> Result<Vec<DbTeam>, AnyError> {
     }
 
     let count = teams.len();
-    pb.finish_with_message(format!("Fetched {} teams", count));
+    pb.finish_with_message(format!("Fetched {count} teams"));
 
     Ok(teams)
 }

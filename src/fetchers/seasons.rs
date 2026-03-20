@@ -80,7 +80,7 @@ pub async fn fetch_seasons() -> Result<Vec<DbSeason>, AnyError> {
     }
 
     let count = seasons.len();
-    pb.finish_with_message(format!("Fetched {} seasons", count));
+    pb.finish_with_message(format!("Fetched {count} seasons"));
 
     Ok(seasons)
 }

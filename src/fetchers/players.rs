@@ -122,7 +122,7 @@ async fn fetch_active_team_abbrevs() -> Result<Vec<String>, AnyError> {
 
 /// Fetch all player IDs on a team's current roster.
 async fn fetch_roster_player_ids(abbrev: &str) -> Result<Vec<i64>, AnyError> {
-    let url = format!("https://api-web.nhle.com/v1/roster/{}/current", abbrev);
+    let url = format!("https://api-web.nhle.com/v1/roster/{abbrev}/current");
     let json = fetch_api_json(&url).await?;
     let roster: RosterResponse = serde_json::from_str(&json)?;
     let ids = roster.forwards.into_iter()
@@ -142,8 +142,7 @@ async fn fetch_roster_player_ids(abbrev: &str) -> Result<Vec<i64>, AnyError> {
 async fn fetch_stats_player_ids(entity: &str, game_type: u8, season_id: i32) -> Result<HashSet<i64>, AnyError> {
     let mut all_ids: HashSet<i64> = HashSet::new();
     let base_url = format!(
-        "https://api.nhle.com/stats/rest/en/{}/summary?limit=100&start={{}}&sort=playerId&dir=asc&cayenneExp=gameTypeId%3D{}%20and%20seasonId%3D{}",
-        entity, game_type, season_id
+        "https://api.nhle.com/stats/rest/en/{entity}/summary?limit=100&start={{}}&sort=playerId&dir=asc&cayenneExp=gameTypeId%3D{game_type}%20and%20seasonId%3D{season_id}"
     );
 
     let first_url = base_url.replace("{}", "0");
@@ -199,19 +198,19 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
     match fetch_active_team_abbrevs().await {
         Ok(teams) => {
             let team_count = teams.len();
-            println!("  enumerating players: fetching rosters for {} active teams...", team_count);
+            println!("  enumerating players: fetching rosters for {team_count} active teams...");
             for (i, abbrev) in teams.iter().enumerate() {
                 if i > 0 && i % 8 == 0 {
-                    println!("  enumerating players: rosters {}/{}", i, team_count);
+                    println!("  enumerating players: rosters {i}/{team_count}");
                 }
                 match fetch_roster_player_ids(abbrev).await {
                     Ok(ids) => { all_ids.extend(ids); }
-                    Err(e) => eprintln!("warn: roster fetch failed for {}: {}", abbrev, e),
+                    Err(e) => eprintln!("warn: roster fetch failed for {abbrev}: {e}"),
                 }
             }
             println!("  enumerating players: rosters done ({} unique IDs so far)", all_ids.len());
         }
-        Err(e) => eprintln!("warn: active team fetch failed, skipping roster source: {}", e),
+        Err(e) => eprintln!("warn: active team fetch failed, skipping roster source: {e}"),
     }
 
     // Source 2: stats summaries for all seasons that have game data (regular season + playoffs).
@@ -228,8 +227,7 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
                     match fetch_stats_player_ids(entity, game_type, season_id).await {
                         Ok(ids) => { all_ids.extend(ids); }
                         Err(e) => eprintln!(
-                            "warn: stats player ids failed for {} type {} season {}: {}",
-                            entity, game_type, season_id, e
+                            "warn: stats player ids failed for {entity} type {game_type} season {season_id}: {e}"
                         ),
                     }
                     stats_done += 1;
@@ -249,7 +247,7 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
 // ── Landing page fetch ───────────────────────────────────────────────────────
 
 async fn fetch_player_landing(id: i64) -> Result<PlayerLanding, ApiError> {
-    let url = format!("https://api-web.nhle.com/v1/player/{}/landing", id);
+    let url = format!("https://api-web.nhle.com/v1/player/{id}/landing");
     let json = fetch_api_json(&url).await?;
     let landing: PlayerLanding = serde_json::from_str(&json)
         .map_err(|_e| ApiError::Other(500))?;
@@ -262,7 +260,7 @@ fn landing_to_db(landing: PlayerLanding) -> DbPlayer {
         match time::Date::parse(s, &fmt) {
             Ok(d) => Some(d),
             Err(e) => {
-                eprintln!("warn: could not parse birth_date '{}': {}", s, e);
+                eprintln!("warn: could not parse birth_date '{s}': {e}");
                 None
             }
         }
@@ -304,11 +302,11 @@ pub async fn fetch_all_players(player_ids: Vec<i64>, pb: &ProgressBar) -> Vec<Db
             match fetch_player_landing(id).await {
                 Ok(landing) => Some(landing_to_db(landing)),
                 Err(ApiError::NotFound) => {
-                    eprintln!("warn: player {} not found, skipping", id);
+                    eprintln!("warn: player {id} not found, skipping");
                     None
                 }
                 Err(e) => {
-                    eprintln!("warn: player {} error: {}, skipping", id, e);
+                    eprintln!("warn: player {id} error: {e}, skipping");
                     None
                 }
             }
@@ -414,7 +412,7 @@ pub async fn repair_missing_players(pool: &sqlx::PgPool) -> Result<usize, AnyErr
 
     let missing_ids: Vec<i64> = rows.into_iter().map(|r| r.pid).collect();
     let count = missing_ids.len();
-    eprintln!("repair: found {} player IDs in event tables with no players row — fetching", count);
+    eprintln!("repair: found {count} player IDs in event tables with no players row — fetching");
 
     let pb = crate::ui::make_progress_bar(count as u64, "missing players");
     let records = fetch_all_players(missing_ids, &pb).await;
@@ -434,7 +432,7 @@ pub async fn fetch_players(pool: &sqlx::PgPool) -> Result<Vec<DbPlayer>, AnyErro
     let seasons = match query_seasons_in_db(pool).await {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("warn: could not query seasons from DB, player enumeration will use roster-only source: {}", e);
+            eprintln!("warn: could not query seasons from DB, player enumeration will use roster-only source: {e}");
             vec![]
         }
     };

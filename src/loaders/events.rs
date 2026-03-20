@@ -15,6 +15,7 @@ use crate::models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbSho
 ///
 /// Returns (events_inserted, goals_inserted, shots_inserted, hits_inserted,
 ///          blocks_inserted, penalties_inserted, faceoffs_inserted).
+#[allow(clippy::too_many_arguments)]
 pub async fn upsert_game_events(
     pool: &sqlx::PgPool,
     _game_id: i64,

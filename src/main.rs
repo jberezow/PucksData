@@ -146,13 +146,13 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                             .tick_strings(&["\u{29fe}", "\u{29fd}", "\u{29fb}", "\u{23bf}", "\u{23bf}", "\u{29df}", "\u{29af}", "\u{29b7}", ""])
                     );
                     s.enable_steady_tick(Duration::from_millis(80));
-                    s.set_message(format!("Writing {} players to DB...", count));
+                    s.set_message(format!("Writing {count} players to DB..."));
                     s
                 };
                 loaders::players::upsert_players(pool, &records).await
                     .inspect_err(|_| spinner.finish_and_clear())?;
                 spinner.finish_and_clear();
-                println!("Wrote {} players", count);
+                println!("Wrote {count} players");
             }
             FetchEntity::Events(args) => {
                 use indicatif::{ProgressBar, ProgressStyle};
@@ -246,15 +246,15 @@ async fn main() -> Result<(), pucksdata::AnyError> {
         },
         Commands::Backfill(args) => {
             let pool = db::get_pool().await?;
-            pucksdata::process::backfill::run_backfill(&pool, args.season).await?;
+            pucksdata::process::backfill::run_backfill(pool, args.season).await?;
         }
         Commands::Sync(args) => {
             let pool = db::get_pool().await?;
             let from_date = args.from.as_deref().map(|s| {
                 time::Date::parse(s, &time::macros::format_description!("[year]-[month]-[day]"))
-                    .map_err(|e| format!("invalid --from date '{}': {}", s, e))
+                    .map_err(|e| format!("invalid --from date '{s}': {e}"))
             }).transpose()?;
-            pucksdata::process::sync::run_sync(&pool, from_date).await?;
+            pucksdata::process::sync::run_sync(pool, from_date).await?;
         }
         Commands::Daemon(args) => {
             let pool = db::get_pool().await?;
@@ -262,12 +262,12 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 .or_else(|| std::env::var("SYNC_INTERVAL_SECS").ok()
                     .and_then(|s| s.parse().ok()))
                 .unwrap_or(21600); // 6 hours default
-            pucksdata::process::daemon::run_daemon(&pool, interval_secs, args.backfill_on_start).await?;
+            pucksdata::process::daemon::run_daemon(pool, interval_secs, args.backfill_on_start).await?;
         }
         Commands::Status(args) => {
             let pool = db::get_pool().await?;
             let healthy = pucksdata::process::status::run_status(
-                &pool,
+                pool,
                 args.season,
                 args.fix,
             ).await?;

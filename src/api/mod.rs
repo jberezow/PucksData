@@ -22,8 +22,8 @@ impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ApiError::NotFound => write!(f, "Resource not found (404)"),
-            ApiError::NetworkError(e) => write!(f, "Network error: {}", e),
-            ApiError::Other(code) => write!(f, "HTTP error: {}", code),
+            ApiError::NetworkError(e) => write!(f, "Network error: {e}"),
+            ApiError::Other(code) => write!(f, "HTTP error: {code}"),
         }
     }
 }

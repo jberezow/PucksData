@@ -135,7 +135,7 @@ pub async fn run_sync(
     println!("[sync 3/5] detecting games with missing events...");
     let candidates = query_sync_candidates(pool, from_date).await?;
     let candidates_count = candidates.len(); // all gap-detected candidates, before game_state filter
-    println!("[sync 3/5] {} candidate games found (regular season + playoffs, no events yet)", candidates_count);
+    println!("[sync 3/5] {candidates_count} candidate games found (regular season + playoffs, no events yet)");
 
     // Step 4: Filter by is_game_completed(), warn on unknown states (QUAL-SYNC-01)
     // Do NOT filter in SQL — must log unknown states explicitly
@@ -144,15 +144,14 @@ pub async fn run_sync(
         match state.as_deref() {
             Some(s) if is_game_completed(s) => games_to_process.push(*game_id),
             Some(s) => eprintln!(
-                "warn: unknown gameState {:?} for game {} — skipping",
-                s, game_id
+                "warn: unknown gameState {s:?} for game {game_id} — skipping"
             ),
             None => {} // NULL game_state — not completed, skip silently
         }
     }
 
     let total = games_to_process.len();
-    println!("[sync 4/5] {} games ready to process (game_state OFF/OVER/FINAL)", total);
+    println!("[sync 4/5] {total} games ready to process (game_state OFF/OVER/FINAL)");
 
     let (processed, failed, events_written) = if total == 0 {
         println!("[sync 4/5] nothing to do");
@@ -189,11 +188,11 @@ pub async fn run_sync(
                     processed += 1;
                 }
                 Ok((game_id, Err(e))) => {
-                    pb.suspend(|| eprintln!("warn: game {} failed: {}", game_id, e));
+                    pb.suspend(|| eprintln!("warn: game {game_id} failed: {e}"));
                     failed += 1;
                 }
                 Err(join_err) => {
-                    pb.suspend(|| eprintln!("warn: task join error: {}", join_err));
+                    pb.suspend(|| eprintln!("warn: task join error: {join_err}"));
                     failed += 1;
                 }
             }
@@ -206,12 +205,7 @@ pub async fn run_sync(
     let elapsed = started_at.elapsed();
     let duration_secs = elapsed.as_secs_f64();
     println!(
-        "[sync 5/5] complete:\n  candidates:  {}\n  processed:   {}\n  failed:      {}\n  events:      {}\n  duration:    {:.1}s",
-        candidates_count,
-        processed,
-        failed,
-        events_written,
-        duration_secs,
+        "[sync 5/5] complete:\n  candidates:  {candidates_count}\n  processed:   {processed}\n  failed:      {failed}\n  events:      {events_written}\n  duration:    {duration_secs:.1}s",
     );
 
     // Step 6: Gap repair — fetch any player IDs present in event tables but absent from players.
@@ -220,8 +214,8 @@ pub async fn run_sync(
     // are visible to the repair query.
     match crate::fetchers::players::repair_missing_players(pool).await {
         Ok(0) => {}
-        Ok(n) => println!("repair: inserted {} previously-missing players", n),
-        Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {}", e),
+        Ok(n) => println!("repair: inserted {n} previously-missing players"),
+        Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {e}"),
     }
 
     // Step 7: Upsert sync_state metadata (SCHEMA-15).

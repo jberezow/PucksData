@@ -113,7 +113,7 @@ pub async fn run_status(
         // was added to transform_events.  Running it unconditionally is cheap — the WHERE
         // NOT EXISTS guard means it only inserts when work is actually needed.
         if goals_missing > 0 {
-            println!("--fix: backfilling {} goal(s) missing shots row...", goals_missing);
+            println!("--fix: backfilling {goals_missing} goal(s) missing shots row...");
             backfill_goals_into_shots(pool, season_filter).await?;
         }
 
@@ -136,7 +136,7 @@ pub async fn run_status(
                 );
             }
             for season in &seasons_to_fix {
-                println!("Fixing season {}...", season);
+                println!("Fixing season {season}...");
                 fix_season(pool, *season).await?;
             }
         }
@@ -170,7 +170,7 @@ async fn backfill_goals_into_shots(
     .await?
     .rows_affected();
 
-    println!("--fix: inserted {} shots row(s) for previously orphaned goals.", rows_inserted);
+    println!("--fix: inserted {rows_inserted} shots row(s) for previously orphaned goals.");
     Ok(())
 }
 
@@ -221,7 +221,7 @@ async fn fix_season(pool: &sqlx::PgPool, season: i32) -> Result<(), crate::AnyEr
 fn print_status(reports: &[SeasonReport], goals_missing_shot: i64, season_filter: Option<i32>) {
     if reports.is_empty() {
         if let Some(s) = season_filter {
-            println!("No completed (OFF/OVER/FINAL) games found for season {}.", s);
+            println!("No completed (OFF/OVER/FINAL) games found for season {s}.");
         } else {
             println!("No completed (OFF/OVER/FINAL) games found in any season.");
         }
@@ -261,9 +261,8 @@ fn print_status(reports: &[SeasonReport], goals_missing_shot: i64, season_filter
     println!("{}", "-".repeat(110));
     if goals_missing_shot > 0 {
         println!(
-            "WARNING: {} goal(s) have no corresponding shots row. \
-             Run `sqlx migrate run` if migration 0007 has not been applied.",
-            goals_missing_shot
+            "WARNING: {goals_missing_shot} goal(s) have no corresponding shots row. \
+             Run `sqlx migrate run` if migration 0007 has not been applied."
         );
     } else {
         println!("Goals-in-shots: OK (0 goals missing shots row)");
