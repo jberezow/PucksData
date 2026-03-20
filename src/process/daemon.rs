@@ -11,7 +11,7 @@
 /// - Optionally runs a full backfill before entering the loop (--backfill-on-start).
 /// - Calls run_sync() on each interval tick (DAEMON-01).
 /// - Uses MissedTickBehavior::Skip so a slow sync never causes burst catch-up (DAEMON-02).
-/// - Handles SIGTERM and Ctrl-C with a clean log message before exiting (DAEMON-03).
+/// - Handles SIGTERM and Ctrl-C by aborting in-progress sync and exiting 0 (DAEMON-03).
 /// - Never accumulates errors across ticks — each error is logged and dropped (QUAL-SYNC-03).
 pub async fn run_daemon(
     pool: &sqlx::PgPool,
@@ -33,9 +33,9 @@ pub async fn run_daemon(
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_secs));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    // CancellationToken as extension point for future alert hooks (v1.3).
-    let _shutdown_token = tokio_util::sync::CancellationToken::new();
-    // TODO(v1.3-alerts): pass shutdown_token.child_token() into alert hooks here
+    // Alert hooks were considered for v1.3 but deferred indefinitely — the daemon's
+    // SIGTERM/Ctrl-C shutdown is sufficient for operational use. If alerting is ever
+    // needed, add a CancellationToken here and pass child tokens to hook tasks.
 
     run_loop(pool, interval_secs, &mut interval).await
 }
@@ -150,10 +150,10 @@ async fn tick_sync(pool: &sqlx::PgPool, interval_secs: u64) {
     // Discovers newly scheduled games so the gap-fill query below can find them.
     // Failure is non-fatal — log warning and continue to sync.
     let season = crate::process::sync::current_season();
-    eprintln!("[sync 0/5] refreshing game metadata for season {}...", season);
+    eprintln!("[sync 0/5] refreshing game metadata for season {season}...");
     match refresh_season_metadata(pool, season).await {
-        Ok(count) => eprintln!("[sync 0/5] {} games upserted for season {}", count, season),
-        Err(e) => eprintln!("warn: metadata refresh failed (non-fatal): {}", e),
+        Ok(count) => eprintln!("[sync 0/5] {count} games upserted for season {season}"),
+        Err(e) => eprintln!("warn: metadata refresh failed (non-fatal): {e}"),
     }
 
     match crate::process::sync::run_sync(pool, None).await {
@@ -164,7 +164,7 @@ async fn tick_sync(pool: &sqlx::PgPool, interval_secs: u64) {
         }
         Err(e) => {
             // Log and continue — do NOT accumulate errors (QUAL-SYNC-03 / Pitfall 6).
-            eprintln!("sync failed, continuing: {}", e);
+            eprintln!("sync failed, continuing: {e}");
         }
     }
 }

@@ -2,7 +2,7 @@
 //
 // This file defines the behavioral contract for the pucksdata daemon loop.
 // Tests cover DAEMON-01 (interval scheduling), DAEMON-02 (--interval-secs / --backfill-on-start
-// argument parsing), DAEMON-03 (graceful SIGTERM/Ctrl-C shutdown — verified by human checkpoint),
+// argument parsing), DAEMON-03 (SIGTERM/Ctrl-C aborts in-progress sync, exits 0 — verified by human checkpoint),
 // and QUAL-SYNC-03 (no unbounded error accumulation across ticks).
 //
 // Plans:
