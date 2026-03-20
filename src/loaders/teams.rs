@@ -1,3 +1,4 @@
+//! Upserts team records to the `teams` table.
 use crate::models::DbTeam;
 
 pub async fn upsert_teams(

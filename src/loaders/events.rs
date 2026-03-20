@@ -1,6 +1,4 @@
-// src/loaders/events.rs
-// Transactional loader for game events and all six child event types.
-
+//! Atomically inserts all event types for a game in a single transaction.
 use std::collections::HashMap;
 
 use sqlx::Row;

@@ -1,3 +1,4 @@
+//! Upserts season records to the `seasons` table.
 use crate::models::DbSeason;
 
 pub async fn upsert_seasons(

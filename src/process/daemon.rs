@@ -1,9 +1,4 @@
-// src/process/daemon.rs
-// Implements the pucksdata daemon: an interval-based sync loop with graceful
-// SIGTERM/Ctrl-C shutdown and single-instance enforcement via an advisory lock.
-//
-// Requirements: DAEMON-01 (interval loop), DAEMON-02 (MissedTickBehavior::Skip),
-//               DAEMON-03 (SIGTERM/Ctrl-C graceful exit), QUAL-SYNC-03 (stateless loop body).
+//! Long-lived daemon — interval-based sync loop with SIGTERM/Ctrl-C graceful shutdown.
 
 /// Run the pucksdata daemon.
 ///

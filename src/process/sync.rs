@@ -1,7 +1,4 @@
-// src/process/sync.rs
-// Sync orchestration: gap detection (completed games with no events) and the run_sync() orchestrator.
-// Implements SYNC-01, SYNC-02, SYNC-03, QUAL-SYNC-01, QUAL-SYNC-02, DAEMON-04, SCHEMA-15.
-
+//! Incremental sync orchestrator — gap detection and event ingestion for completed games.
 use chrono::Datelike;
 use sqlx::postgres::PgAdvisoryLock;
 use sqlx::Either;
@@ -58,7 +55,7 @@ pub fn current_season() -> i32 {
 /// PITFALL 1: Do NOT drop the guard early. Hold it in a `let _lock = acquire_daemon_lock(...).await?`
 ///            binding at the top of the daemon arm in main.rs (Phase 8 task). Underscore prefix
 ///            keeps the binding alive without an "unused variable" warning.
-/// PITFALL 2: try_acquire takes PoolConnection<Postgres>, not &PgPool. pool.acquire() is called first.
+/// PITFALL 2: try_acquire takes `PoolConnection<Postgres>`, not `&PgPool`. pool.acquire() is called first.
 /// PITFALL 3: PgAdvisoryLockGuard<'lock, C> borrows from PgAdvisoryLock — Box::leak gives 'static lifetime
 ///            so the guard can be returned from this function without lifetime errors.
 pub async fn acquire_daemon_lock(

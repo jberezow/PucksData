@@ -1,4 +1,4 @@
-// src/lib.rs
+//! Crate root — re-exports all public modules and the [`AnyError`] type alias.
 pub mod api;
 pub mod db;
 pub mod models;

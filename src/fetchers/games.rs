@@ -1,3 +1,4 @@
+//! Fetches game metadata (stats + boxscore) and builds the team-ID-to-franchise-ID map.
 use std::collections::HashMap;
 use serde::Deserialize;
 

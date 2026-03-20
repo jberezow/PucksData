@@ -1,3 +1,4 @@
+//! Fetches the list of all season IDs from the NHL stats API.
 use crate::{api::fetch_api_json, models::DbSeason, AnyError};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashMap;

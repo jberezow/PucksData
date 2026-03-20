@@ -1,3 +1,4 @@
+//! Upserts game records to the `games` table.
 use crate::models::DbGame;
 
 /// Convert a chrono::DateTime<Utc> to time::OffsetDateTime.

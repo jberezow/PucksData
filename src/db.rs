@@ -1,4 +1,4 @@
-// src/db.rs
+//! PostgreSQL connection pool initialization via [`get_pool`].
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::time::Duration;
 use tokio::sync::OnceCell;

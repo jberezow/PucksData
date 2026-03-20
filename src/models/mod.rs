@@ -1,3 +1,4 @@
+//! Plain-Rust DB model structs that map 1-to-1 to database table columns.
 use time::Date;
 use chrono::DateTime;
 use chrono::Utc;

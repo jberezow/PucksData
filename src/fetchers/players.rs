@@ -1,3 +1,4 @@
+//! Enumerates and fetches player landing pages across all seasons and rosters.
 use std::collections::HashSet;
 use std::sync::Arc;
 

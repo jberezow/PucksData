@@ -1,6 +1,4 @@
-// src/fetchers/events.rs
-// Play-by-play event fetcher, situationCode decoder, and transform logic.
-
+//! Fetches and transforms play-by-play JSON into typed DB event structs.
 use std::collections::HashMap;
 use serde::Deserialize;
 
@@ -119,7 +117,7 @@ pub struct EventDetails {
 
 /// Decode a 4-character situationCode into game-state components.
 ///
-/// Format: [home_goalie][home_skaters][away_skaters][away_goalie]
+/// Format: `[home_goalie][home_skaters][away_skaters][away_goalie]`
 /// - home_goalie: '1' = goalie present, '0' = pulled
 /// - home_skaters: digit (3-6)
 /// - away_skaters: digit (3-6)
@@ -153,7 +151,7 @@ pub fn decode_situation_code(code: &str) -> (bool, i16, i16, bool, String) {
 
 /// Fetch play-by-play JSON for a single game and deserialize it.
 ///
-/// URL: https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play
+/// URL: `https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play`
 pub async fn fetch_play_by_play(game_id: i64) -> Result<PlayByPlay, AnyError> {
     let url = format!("https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play");
     let json = fetch_api_json(&url).await?;

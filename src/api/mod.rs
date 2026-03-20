@@ -1,3 +1,4 @@
+//! Shared HTTP client and [`ApiError`] type for all NHL API requests.
 use std::sync::LazyLock;
 use reqwest;
 use std::fmt;

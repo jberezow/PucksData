@@ -1,3 +1,4 @@
+//! CLI entry point — parses [`clap`] commands and dispatches to library functions.
 use clap::{Args, Parser, Subcommand};
 use pucksdata::{db, fetchers, loaders};
 

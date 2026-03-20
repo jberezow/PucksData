@@ -1,6 +1,4 @@
-// src/process/status.rs
-// Operator diagnostic: per-season health summary.
-// run_status() returns true = healthy (no unprocessed OFF games), false = gaps exist.
+//! Diagnostic operator command — per-season health summary and optional gap repair.
 
 /// Per-season health summary produced by the diagnostic queries.
 pub struct SeasonReport {

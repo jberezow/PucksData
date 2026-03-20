@@ -1,3 +1,4 @@
+//! Fetches franchise records and abbreviations from the NHL stats API.
 use std::collections::HashMap;
 use crate::{api::fetch_api_json, models::DbTeam, AnyError};
 use indicatif::{ProgressBar, ProgressStyle};
