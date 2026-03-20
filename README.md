@@ -1,71 +1,133 @@
 # PucksData
 
-NHL Stats Engine CLI - A tool for fetching and caching NHL data.
+NHL Data ETL Engine — fetches play-by-play from the NHL Stats API, normalizes it into PostgreSQL, and keeps it current via daemon or one-shot sync.
 
-## Overview
+## What It Does
 
-PucksData is a command-line tool for fetching, caching, and processing NHL data. It supports various data types including games, players, teams, and seasons. All data is cached locally in the data/raw directory for offline access.
+PucksData fetches NHL game data (teams, seasons, players, games, and play-by-play events) from the public NHL Stats API, transforms the nested JSON into a clean relational schema, and loads it into PostgreSQL. It supports historical backfill across all seasons, incremental daily sync, and a long-running daemon mode. A health-check command provides per-season coverage reporting and automated remediation.
 
-## Usage
+## Who It's For
+
+Developers building hockey analytics applications on top of a clean, complete relational database of NHL play-by-play data.
+
+## Prerequisites
+
+- **Rust** (stable toolchain) — `rustup` recommended
+- **PostgreSQL** — any instance (local, Docker, Neon, etc.)
+- **sqlx-cli** — for running migrations: `cargo install sqlx-cli --no-default-features --features postgres`
+
+## Setup
+
+1. Clone the repo:
+   ```bash
+   git clone https://github.com/your-org/pucksdata.git
+   cd pucksdata
+   ```
+
+2. Create a `.env` file with your database connection string:
+   ```
+   DATABASE_URL=postgresql://user:pass@host/dbname
+   ```
+
+3. Run migrations:
+   ```bash
+   sqlx migrate run
+   ```
+
+4. Seed entity tables (order matters):
+   ```bash
+   pucksdata fetch teams
+   pucksdata fetch seasons
+   pucksdata fetch players
+   pucksdata fetch games --all
+   ```
+
+5. Run your first sync:
+   ```bash
+   pucksdata sync
+   ```
+
+## Commands
+
+### `fetch`
+
+Fetch and upsert NHL entity metadata.
+
+| Subcommand | Flags | Description |
+|------------|-------|-------------|
+| `fetch teams` | (none) | Fetch all NHL franchise records |
+| `fetch seasons` | (none) | Fetch all NHL season records |
+| `fetch players` | (none) | Enumerate and fetch player landing pages for all seasons |
+| `fetch games` | `--game <ID>`, `--season <YEAR>`, `--all` (mutually exclusive, one required) | Fetch game metadata |
+| `fetch events` | `<GAME_ID>` (positional) | Fetch play-by-play events for a single game |
 
 ```bash
-# Get game story for a specific game
-pucksdata game story 2023020001
-
-# Get player summary
-pucksdata player summary 8478402
-
-# Get team statistics
-pucksdata team current-stats EDM
-
-# Get current standings
-pucksdata team standings-now
-
-# Get full help
-pucksdata --help
+pucksdata fetch games --season 20242025
+pucksdata fetch events 2024020001
 ```
 
-## Testing
+### `backfill`
 
-PucksData includes a comprehensive test suite to ensure API connectivity and functionality. To run the tests:
+Run full historical event ingestion via the checkpoint table. Processes all games that have metadata but no events.
+
+| Flag | Description |
+|------|-------------|
+| `--season <YEAR>` | Restrict to a single season (e.g., 20232024) |
 
 ```bash
-# Run all tests
-cargo test
-
-# Run only the API tests
-cargo test --test api_tests
-
-# Run tests with output
-cargo test -- --nocapture
-
-# Run all endpoint tests (hits real APIs)
-cargo test --test endpoint_tests
+pucksdata backfill
+pucksdata backfill --season 20232024
 ```
 
-### Test Categories
+### `sync`
 
-1. **API Tests** - Tests basic API functionality and error handling
-2. **Cache Tests** - Tests file caching mechanisms
-3. **Endpoint Tests** - Tests connectivity to all supported NHL API endpoints
-4. **CLI Tests** - Tests command-line interface functionality
-5. **Mock API Tests** - Placeholder for future mock-based testing
+Incremental sync: finds completed games with no events and loads play-by-play.
 
-### Testing Notes
+| Flag | Description |
+|------|-------------|
+| `--from <YYYY-MM-DD>` | Override gap detection: re-process all completed games on or after this date |
 
-- Endpoint tests will hit the real NHL API and are designed to track which endpoints return 404s vs. other errors
-- Some endpoints may fail with 404 Not Found if they're season-specific or not currently active
-- The test summary provides a breakdown of successful vs. failed endpoints
+```bash
+pucksdata sync
+pucksdata sync --from 2025-01-15
+```
+
+### `daemon`
+
+Long-lived process that runs sync on a configurable interval. Handles SIGTERM/Ctrl-C for graceful shutdown.
+
+| Flag | Description |
+|------|-------------|
+| `--interval-secs <N>` | Sync interval in seconds (default: 21600 = 6 hours). Also reads `SYNC_INTERVAL_SECS` env var. |
+| `--backfill-on-start` | Run a full backfill before entering the sync loop |
+
+```bash
+pucksdata daemon --interval-secs 3600 --backfill-on-start
+```
+
+### `status`
+
+Per-season health check: game counts, event coverage percentage, goals-in-shots consistency, backfill status. Exits with code 1 if any season is unhealthy.
+
+| Flag | Description |
+|------|-------------|
+| `--season <YEAR>` | Restrict to a single season |
+| `--fix` | Fetch game metadata and run backfill to remediate coverage gaps |
+
+```bash
+pucksdata status
+pucksdata status --season 20242025 --fix
+```
+
+## Docker
+
+A Dockerfile is included for containerized deployment:
+
+```bash
+docker build -t pucksdata .
+docker run --rm -e DATABASE_URL="$DATABASE_URL" pucksdata sync
+```
 
 ## License
 
 MIT
-
-### Hasura Setup
-
-Hasura migrations and metadata are stored in the `/hasura` directory using CLI config v3. Use `.env` to configure the endpoint and secret.
-
-Helpful commands:
-- `npm run hasura:console` – open local Hasura console
-- `npm run hasura:pull` – pull updated schema + metadata from server
-- `npm run hasura:apply` – apply schema + metadata to any environment
