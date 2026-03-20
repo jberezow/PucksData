@@ -1,6 +1,7 @@
 //! Upserts season records to the `seasons` table.
 use crate::models::DbSeason;
 
+/// Upsert a batch of season records into the `seasons` table.
 pub async fn upsert_seasons(
     pool: &sqlx::PgPool,
     records: &[DbSeason],

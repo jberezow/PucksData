@@ -23,6 +23,7 @@ fn parse_date(s: &str) -> Option<time::Date> {
     time::Date::parse(s, fmt).ok()
 }
 
+/// Fetch all NHL season IDs from the stats API.
 pub async fn fetch_seasons() -> Result<Vec<DbSeason>, AnyError> {
     let pb = ProgressBar::new_spinner();
     pb.set_style(

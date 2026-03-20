@@ -10,6 +10,7 @@ static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("failed to build reqwest client")
 });
 
+/// Errors returned by NHL API fetch operations.
 #[derive(Debug)]
 pub enum ApiError {
     NotFound,
@@ -35,6 +36,7 @@ impl From<reqwest::Error> for ApiError {
     }
 }
 
+/// Fetch a URL via the shared HTTP client and deserialize the JSON response.
 pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
     let response = CLIENT.get(url).send().await?;
 

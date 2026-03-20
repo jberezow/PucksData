@@ -27,6 +27,7 @@ struct ApiResponse<T> {
     data: Vec<T>,
 }
 
+/// Fetch all NHL franchise records from the stats API.
 pub async fn fetch_teams() -> Result<Vec<DbTeam>, AnyError> {
     let pb = ProgressBar::new_spinner();
     pb.set_style(

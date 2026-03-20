@@ -5,6 +5,7 @@ use tokio::sync::OnceCell;
 
 static POOL: OnceCell<PgPool> = OnceCell::const_new();
 
+/// Create (or return the cached) PostgreSQL connection pool from `DATABASE_URL`.
 pub async fn get_pool() -> Result<&'static PgPool, sqlx::Error> {
     POOL.get_or_try_init(|| async {
         dotenvy::dotenv().ok();

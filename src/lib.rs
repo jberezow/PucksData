@@ -7,4 +7,5 @@ pub mod loaders;
 pub mod process;
 pub mod ui;
 
+/// Convenience alias for a heap-allocated thread-safe error type.
 pub type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;

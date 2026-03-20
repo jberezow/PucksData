@@ -3,6 +3,7 @@ use time::Date;
 use chrono::DateTime;
 use chrono::Utc;
 
+/// A team record mapping to the `teams` table.
 pub struct DbTeam {
     pub team_id: i64,
     pub full_name: String,
@@ -11,6 +12,7 @@ pub struct DbTeam {
     pub abbrev: String,
 }
 
+/// A season record mapping to the `seasons` table.
 pub struct DbSeason {
     pub season_year: i32,
     pub start_date: Option<Date>,
@@ -18,6 +20,7 @@ pub struct DbSeason {
     pub regular_season_end_date: Option<Date>,
 }
 
+/// A player record mapping to the `players` table.
 pub struct DbPlayer {
     pub player_id: i64,
     pub first_name: String,
@@ -35,6 +38,7 @@ pub struct DbPlayer {
     pub draft_overall_pick: Option<i16>,
 }
 
+/// A game record mapping to the `games` table.
 pub struct DbGame {
     pub game_id: i64,
     pub season: i32,

@@ -1,6 +1,7 @@
 //! Upserts team records to the `teams` table.
 use crate::models::DbTeam;
 
+/// Upsert a batch of team records into the `teams` table.
 pub async fn upsert_teams(
     pool: &sqlx::PgPool,
     records: &[DbTeam],

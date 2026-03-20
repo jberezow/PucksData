@@ -1,6 +1,7 @@
 //! Bulk-upserts player records to the `players` table via `UNNEST`.
 use crate::models::DbPlayer;
 
+/// Bulk-upsert player records into the `players` table using `UNNEST` arrays.
 pub async fn upsert_players(pool: &sqlx::PgPool, records: &[DbPlayer]) -> Result<usize, sqlx::Error> {
     if records.is_empty() {
         return Ok(0);
