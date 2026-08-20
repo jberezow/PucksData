@@ -1,7 +1,9 @@
-use time::Date;
+//! Plain-Rust DB model structs that map 1-to-1 to database table columns.
 use chrono::DateTime;
 use chrono::Utc;
+use time::Date;
 
+/// A team record mapping to the `teams` table.
 pub struct DbTeam {
     pub team_id: i64,
     pub full_name: String,
@@ -10,6 +12,7 @@ pub struct DbTeam {
     pub abbrev: String,
 }
 
+/// A season record mapping to the `seasons` table.
 pub struct DbSeason {
     pub season_year: i32,
     pub start_date: Option<Date>,
@@ -17,6 +20,7 @@ pub struct DbSeason {
     pub regular_season_end_date: Option<Date>,
 }
 
+/// A player record mapping to the `players` table.
 pub struct DbPlayer {
     pub player_id: i64,
     pub first_name: String,
@@ -34,6 +38,7 @@ pub struct DbPlayer {
     pub draft_overall_pick: Option<i16>,
 }
 
+/// A game record mapping to the `games` table.
 pub struct DbGame {
     pub game_id: i64,
     pub season: i32,
@@ -62,7 +67,7 @@ pub struct DbEvent {
     pub x_coord: Option<i16>,
     pub y_coord: Option<i16>,
     pub zone_code: Option<String>,
-    pub event_owner_team_id: Option<i64>,  // franchise ID after translation
+    pub event_owner_team_id: Option<i64>, // franchise ID after translation
     pub home_goalie_present: bool,
     pub home_skater_count: i16,
     pub away_skater_count: i16,
@@ -72,7 +77,7 @@ pub struct DbEvent {
 
 /// Goal child row — maps to the `goals` table.
 pub struct DbGoal {
-    pub event_id_in_game: i32,  // used to look up events(id) after base insert
+    pub event_id_in_game: i32, // used to look up events(id) after base insert
     pub scorer_player_id: Option<i64>,
     pub assist1_player_id: Option<i64>,
     pub assist2_player_id: Option<i64>,

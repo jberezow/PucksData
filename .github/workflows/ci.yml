@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [prime]
+  pull_request:
+    branches: [prime]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pucksdata
+
+jobs:
+  quality:
+    name: Rust quality gate
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pucksdata
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pucksdata"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install PostgreSQL client and native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client pkg-config libssl-dev
+
+      - name: Apply database migrations
+        run: |
+          for migration in migrations/*.sql; do
+            psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file "$migration"
+          done
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check all targets
+        run: cargo check --all-targets
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps
+
+      - name: Run unit and integration tests
+        run: cargo test --all-targets

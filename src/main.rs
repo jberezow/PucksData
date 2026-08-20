@@ -1,3 +1,4 @@
+//! CLI entry point — parses [`clap`] commands and dispatches to library functions.
 use clap::{Args, Parser, Subcommand};
 use pucksdata::{db, fetchers, loaders};
 
@@ -115,7 +116,8 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 let records = fetchers::teams::fetch_teams().await?;
                 let count = records.len();
                 let pb = pucksdata::ui::make_progress_bar(count as u64, "teams");
-                loaders::teams::upsert_teams(pool, &records, &pb).await
+                loaders::teams::upsert_teams(pool, &records, &pb)
+                    .await
                     .inspect_err(|_| pb.finish_and_clear())?;
                 pb.finish_and_clear();
             }
@@ -124,7 +126,8 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 let records = fetchers::seasons::fetch_seasons().await?;
                 let count = records.len();
                 let pb = pucksdata::ui::make_progress_bar(count as u64, "seasons");
-                loaders::seasons::upsert_seasons(pool, &records, &pb).await
+                loaders::seasons::upsert_seasons(pool, &records, &pb)
+                    .await
                     .inspect_err(|_| pb.finish_and_clear())?;
                 pb.finish_and_clear();
             }
@@ -143,13 +146,17 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                     s.set_style(
                         ProgressStyle::with_template("{spinner} {msg}")
                             .unwrap()
-                            .tick_strings(&["\u{29fe}", "\u{29fd}", "\u{29fb}", "\u{23bf}", "\u{23bf}", "\u{29df}", "\u{29af}", "\u{29b7}", ""])
+                            .tick_strings(&[
+                                "\u{29fe}", "\u{29fd}", "\u{29fb}", "\u{23bf}", "\u{23bf}",
+                                "\u{29df}", "\u{29af}", "\u{29b7}", "",
+                            ]),
                     );
                     s.enable_steady_tick(Duration::from_millis(80));
                     s.set_message(format!("Writing {count} players to DB..."));
                     s
                 };
-                loaders::players::upsert_players(pool, &records).await
+                loaders::players::upsert_players(pool, &records)
+                    .await
                     .inspect_err(|_| spinner.finish_and_clear())?;
                 spinner.finish_and_clear();
                 println!("Wrote {count} players");
@@ -160,7 +167,7 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 let pb = ProgressBar::new(3);
                 pb.set_style(
                     ProgressStyle::with_template(
-                        "[{elapsed_precise}] [{bar:20.cyan/blue}] {pos}/{len} {msg}"
+                        "[{elapsed_precise}] [{bar:20.cyan/blue}] {pos}/{len} {msg}",
                     )
                     .unwrap()
                     .progress_chars("=>-"),
@@ -170,7 +177,10 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 let team_id_map = fetchers::games::fetch_team_id_to_franchise_id_map().await?;
                 pb.inc(1);
 
-                pb.set_message(format!("fetching play-by-play for game {}...", args.game_id));
+                pb.set_message(format!(
+                    "fetching play-by-play for game {}...",
+                    args.game_id
+                ));
                 let pbp = fetchers::events::fetch_play_by_play(args.game_id).await?;
                 pb.inc(1);
 
@@ -190,7 +200,8 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                     &blocks,
                     &penalties,
                     &faceoffs,
-                ).await?;
+                )
+                .await?;
                 pb.inc(1);
                 pb.finish_with_message(format!(
                     "game {}: {} events, {} goals, {} shots, {} hits, {} blocks, {} penalties, {} faceoffs",
@@ -203,21 +214,22 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 if let Some(game_id) = args.scope.game {
                     // --game <id>: single game fetch — hidden bar satisfies updated signature
                     let game = fetchers::games::fetch_single_game(game_id).await?;
-                    loaders::games::upsert_games(pool, &[game], &indicatif::ProgressBar::hidden()).await?;
+                    loaders::games::upsert_games(pool, &[game], &indicatif::ProgressBar::hidden())
+                        .await?;
                     println!("Fetched 1 record, upserted 1");
-
                 } else if let Some(season) = args.scope.season {
                     // --season <year>: two-phase bars (fetch then upsert)
                     let pb_fetch = pucksdata::ui::make_progress_bar(0, "games fetched");
-                    let games = fetchers::games::fetch_games_for_season_enriched(season, &pb_fetch).await;
+                    let games =
+                        fetchers::games::fetch_games_for_season_enriched(season, &pb_fetch).await;
                     let count = games.len();
                     pb_fetch.finish_and_clear();
 
                     let pb_upsert = pucksdata::ui::make_progress_bar(count as u64, "games written");
-                    loaders::games::upsert_games(pool, &games, &pb_upsert).await
+                    loaders::games::upsert_games(pool, &games, &pb_upsert)
+                        .await
                         .inspect_err(|_| pb_upsert.finish_and_clear())?;
                     pb_upsert.finish_and_clear();
-
                 } else {
                     // --all: iterate all seasons, two-phase bars per season
                     let seasons = fetchers::games::fetch_seasons_list().await?;
@@ -225,16 +237,25 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                     let mut total_games = 0usize;
 
                     for (i, season) in seasons.iter().enumerate() {
-                        println!("[{}/{}] Fetching season {}...", i + 1, total_seasons, season);
+                        println!(
+                            "[{}/{}] Fetching season {}...",
+                            i + 1,
+                            total_seasons,
+                            season
+                        );
 
                         let pb_fetch = pucksdata::ui::make_progress_bar(0, "games fetched");
-                        let games = fetchers::games::fetch_games_for_season_enriched(*season, &pb_fetch).await;
+                        let games =
+                            fetchers::games::fetch_games_for_season_enriched(*season, &pb_fetch)
+                                .await;
                         let count = games.len();
                         pb_fetch.finish_and_clear();
 
                         if count > 0 {
-                            let pb_upsert = pucksdata::ui::make_progress_bar(count as u64, "games written");
-                            loaders::games::upsert_games(pool, &games, &pb_upsert).await
+                            let pb_upsert =
+                                pucksdata::ui::make_progress_bar(count as u64, "games written");
+                            loaders::games::upsert_games(pool, &games, &pb_upsert)
+                                .await
                                 .inspect_err(|_| pb_upsert.finish_and_clear())?;
                             pb_upsert.finish_and_clear();
                         }
@@ -250,27 +271,36 @@ async fn main() -> Result<(), pucksdata::AnyError> {
         }
         Commands::Sync(args) => {
             let pool = db::get_pool().await?;
-            let from_date = args.from.as_deref().map(|s| {
-                time::Date::parse(s, &time::macros::format_description!("[year]-[month]-[day]"))
+            let from_date = args
+                .from
+                .as_deref()
+                .map(|s| {
+                    time::Date::parse(
+                        s,
+                        &time::macros::format_description!("[year]-[month]-[day]"),
+                    )
                     .map_err(|e| format!("invalid --from date '{s}': {e}"))
-            }).transpose()?;
+                })
+                .transpose()?;
             pucksdata::process::sync::run_sync(pool, from_date).await?;
         }
         Commands::Daemon(args) => {
             let pool = db::get_pool().await?;
-            let interval_secs = args.interval_secs
-                .or_else(|| std::env::var("SYNC_INTERVAL_SECS").ok()
-                    .and_then(|s| s.parse().ok()))
+            let interval_secs = args
+                .interval_secs
+                .or_else(|| {
+                    std::env::var("SYNC_INTERVAL_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                })
                 .unwrap_or(21600); // 6 hours default
-            pucksdata::process::daemon::run_daemon(pool, interval_secs, args.backfill_on_start).await?;
+            pucksdata::process::daemon::run_daemon(pool, interval_secs, args.backfill_on_start)
+                .await?;
         }
         Commands::Status(args) => {
             let pool = db::get_pool().await?;
-            let healthy = pucksdata::process::status::run_status(
-                pool,
-                args.season,
-                args.fix,
-            ).await?;
+            let healthy =
+                pucksdata::process::status::run_status(pool, args.season, args.fix).await?;
             if !healthy {
                 std::process::exit(1);
             }

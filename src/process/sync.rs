@@ -1,7 +1,4 @@
-// src/process/sync.rs
-// Sync orchestration: gap detection (completed games with no events) and the run_sync() orchestrator.
-// Implements SYNC-01, SYNC-02, SYNC-03, QUAL-SYNC-01, QUAL-SYNC-02, DAEMON-04, SCHEMA-15.
-
+//! Incremental sync orchestrator — gap detection and event ingestion for completed games.
 use chrono::Datelike;
 use sqlx::postgres::PgAdvisoryLock;
 use sqlx::Either;
@@ -63,15 +60,19 @@ pub fn current_season() -> i32 {
 ///            so the guard can be returned from this function without lifetime errors.
 pub async fn acquire_daemon_lock(
     pool: &sqlx::PgPool,
-) -> Result<sqlx::postgres::PgAdvisoryLockGuard<'static, sqlx::pool::PoolConnection<sqlx::Postgres>>, crate::AnyError> {
+) -> Result<
+    sqlx::postgres::PgAdvisoryLockGuard<'static, sqlx::pool::PoolConnection<sqlx::Postgres>>,
+    crate::AnyError,
+> {
     // Box::leak gives the lock a 'static lifetime — valid for a daemon that holds the guard until exit.
-    let lock: &'static PgAdvisoryLock = Box::leak(Box::new(PgAdvisoryLock::new("pucksdata_daemon")));
+    let lock: &'static PgAdvisoryLock =
+        Box::leak(Box::new(PgAdvisoryLock::new("pucksdata_daemon")));
     let conn = pool.acquire().await?;
     match lock.try_acquire(conn).await? {
         Either::Left(guard) => Ok(guard),
-        Either::Right(_conn) => {
-            Err("pucksdata daemon is already running (advisory lock held by another instance)".into())
-        }
+        Either::Right(_conn) => Err(
+            "pucksdata daemon is already running (advisory lock held by another instance)".into(),
+        ),
     }
 }
 
@@ -96,7 +97,10 @@ pub async fn query_sync_candidates(
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| (r.game_id, r.game_state)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.game_id, r.game_state))
+        .collect())
 }
 
 /// Run the sync process: entity refresh → gap detection → event ingestion via load_one_game.
@@ -127,9 +131,7 @@ pub async fn run_sync(
     println!("[sync 2/5] {} players upserted", players.len());
 
     // Step 2: Fetch team_id_map once — shared across all spawned tasks via Arc
-    let team_id_map = Arc::new(
-        crate::fetchers::games::fetch_team_id_to_franchise_id_map().await?
-    );
+    let team_id_map = Arc::new(crate::fetchers::games::fetch_team_id_to_franchise_id_map().await?);
 
     // Step 3: Gap detection query (SYNC-02) — returns (game_id, game_state) pairs
     println!("[sync 3/5] detecting games with missing events...");
@@ -143,9 +145,7 @@ pub async fn run_sync(
     for (game_id, state) in &candidates {
         match state.as_deref() {
             Some(s) if is_game_completed(s) => games_to_process.push(*game_id),
-            Some(s) => eprintln!(
-                "warn: unknown gameState {s:?} for game {game_id} — skipping"
-            ),
+            Some(s) => eprintln!("warn: unknown gameState {s:?} for game {game_id} — skipping"),
             None => {} // NULL game_state — not completed, skip silently
         }
     }
@@ -172,7 +172,8 @@ pub async fn run_sync(
 
             join_set.spawn(async move {
                 let _permit = permit; // released on drop
-                let result = crate::process::backfill::load_one_game(&pool_clone, game_id, &map).await;
+                let result =
+                    crate::process::backfill::load_one_game(&pool_clone, game_id, &map).await;
                 (game_id, result)
             });
         }
@@ -236,7 +237,13 @@ pub async fn run_sync(
     .execute(pool)
     .await?;
 
-    Ok(SyncSummary { processed, failed, elapsed, candidates: candidates_count, events_written })
+    Ok(SyncSummary {
+        processed,
+        failed,
+        elapsed,
+        candidates: candidates_count,
+        events_written,
+    })
 }
 
 #[cfg(test)]

@@ -1,5 +1,4 @@
-// src/process/backfill.rs
-// Backfill orchestration: checkpoint helpers and main orchestrator (Plan 02 adds run_backfill).
+//! Historical backfill orchestrator — seeds, checkpoints, and processes all pending games.
 
 /// Seed backfill_progress for all games in scope.
 /// INSERT ... ON CONFLICT DO NOTHING so existing rows (done/failed) survive unchanged.
@@ -123,15 +122,22 @@ pub async fn load_one_game(
     // skip_warnings are swallowed in batch mode (volume too high for per-game warnings)
     let _ = skip_warnings;
     let (ec, gc, sc, hc, bc, pc, fc) = crate::loaders::events::upsert_game_events(
-        pool, game_id,
-        &events, &goals, &shots, &hits, &blocks, &penalties, &faceoffs,
-    ).await?;
+        pool, game_id, &events, &goals, &shots, &hits, &blocks, &penalties, &faceoffs,
+    )
+    .await?;
     Ok(ec + gc + sc + hc + bc + pc + fc)
 }
 
 /// Result type for a single backfill game task spawned in the JoinSet.
 /// Carries (game_id, season, game_date, home_abbrev, away_abbrev, fetch_result).
-type BackfillTaskResult = (i64, i32, time::Date, String, String, Result<usize, crate::AnyError>);
+type BackfillTaskResult = (
+    i64,
+    i32,
+    time::Date,
+    String,
+    String,
+    Result<usize, crate::AnyError>,
+);
 
 /// Run the full (or season-scoped) backfill.
 /// season_filter: None = all seasons, Some(year) = one 8-digit season ID (e.g. 20232024)
@@ -139,10 +145,10 @@ pub async fn run_backfill(
     pool: &sqlx::PgPool,
     season_filter: Option<i32>,
 ) -> Result<(), crate::AnyError> {
+    use indicatif::{ProgressBar, ProgressStyle};
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::task::JoinSet;
-    use indicatif::{ProgressBar, ProgressStyle};
 
     const MAX_CONCURRENT_GAMES: usize = 5;
 
@@ -151,25 +157,31 @@ pub async fn run_backfill(
     spinner.set_style(
         ProgressStyle::with_template("{spinner} {msg}")
             .unwrap()
-            .tick_strings(&["\u{29fe}", "\u{29fd}", "\u{29fb}", "\u{23bf}", "\u{23bf}", "\u{29df}", "\u{29af}", "\u{29b7}", ""])
+            .tick_strings(&[
+                "\u{29fe}", "\u{29fd}", "\u{29fb}", "\u{23bf}", "\u{23bf}", "\u{29df}", "\u{29af}",
+                "\u{29b7}", "",
+            ]),
     );
     spinner.enable_steady_tick(Duration::from_millis(80));
 
     // Step 1: Fetch team_id_map once — shared across all spawned tasks via Arc
     spinner.set_message("Fetching team ID map...");
     let team_id_map = Arc::new(
-        crate::fetchers::games::fetch_team_id_to_franchise_id_map().await
-            .inspect_err(|_| spinner.finish_and_clear())?
+        crate::fetchers::games::fetch_team_id_to_franchise_id_map()
+            .await
+            .inspect_err(|_| spinner.finish_and_clear())?,
     );
 
     // Step 2: Seed backfill_progress with all in-scope games (ON CONFLICT DO NOTHING)
     spinner.set_message("Seeding backfill queue...");
-    seed_backfill_progress(pool, season_filter).await
+    seed_backfill_progress(pool, season_filter)
+        .await
         .inspect_err(|_| spinner.finish_and_clear())?;
 
     // Step 3: Query pending games (status != 'done')
     spinner.set_message("Loading pending games...");
-    let pending_games = query_pending_games(pool, season_filter).await
+    let pending_games = query_pending_games(pool, season_filter)
+        .await
         .inspect_err(|_| spinner.finish_and_clear())?;
     let total = pending_games.len();
     spinner.finish_and_clear();
@@ -188,7 +200,8 @@ pub async fn run_backfill(
     // Track current season for per-season summaries
     let mut season_done: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
     let mut season_failed: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
-    let mut season_skipped: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+    let mut season_skipped: std::collections::HashMap<i32, usize> =
+        std::collections::HashMap::new();
 
     let mut total_done = 0usize;
     let mut total_failed = 0usize;
@@ -226,23 +239,44 @@ pub async fn run_backfill(
         match outcome {
             Ok((game_id, season, game_date, home_abbrev, away_abbrev, Ok(_count))) => {
                 pb.suspend(|| println!("{game_date}  {game_id}  {home_abbrev} vs {away_abbrev}"));
-                update_progress_status(pool, game_id, "done").await
-                    .unwrap_or_else(|e| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {game_id}: {e}")));
+                update_progress_status(pool, game_id, "done")
+                    .await
+                    .unwrap_or_else(|e| {
+                        pb.suspend(|| {
+                            eprintln!("warn: checkpoint update failed for game {game_id}: {e}")
+                        })
+                    });
                 *season_done.entry(season).or_insert(0) += 1;
                 total_done += 1;
             }
             Ok((game_id, season, game_date, home_abbrev, away_abbrev, Err(e))) => {
                 if is_api_gap_error(&e) {
-                    pb.suspend(|| println!("{game_date}  {game_id}  {home_abbrev} vs {away_abbrev}  [SKIPPED]"));
-                    update_progress_status(pool, game_id, "skipped").await
-                        .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {game_id}: {e2}")));
+                    pb.suspend(|| {
+                        println!(
+                            "{game_date}  {game_id}  {home_abbrev} vs {away_abbrev}  [SKIPPED]"
+                        )
+                    });
+                    update_progress_status(pool, game_id, "skipped")
+                        .await
+                        .unwrap_or_else(|e2| {
+                            pb.suspend(|| {
+                                eprintln!("warn: checkpoint update failed for game {game_id}: {e2}")
+                            })
+                        });
                     *season_skipped.entry(season).or_insert(0) += 1;
                     total_skipped += 1;
                 } else {
-                    pb.suspend(|| println!("{game_date}  {game_id}  {home_abbrev} vs {away_abbrev}  [FAILED]"));
+                    pb.suspend(|| {
+                        println!("{game_date}  {game_id}  {home_abbrev} vs {away_abbrev}  [FAILED]")
+                    });
                     pb.suspend(|| eprintln!("warn: game {game_id} (season {season}) failed: {e}"));
-                    update_progress_with_error(pool, game_id, "failed", &e.to_string()).await
-                        .unwrap_or_else(|e2| pb.suspend(|| eprintln!("warn: checkpoint update failed for game {game_id}: {e2}")));
+                    update_progress_with_error(pool, game_id, "failed", &e.to_string())
+                        .await
+                        .unwrap_or_else(|e2| {
+                            pb.suspend(|| {
+                                eprintln!("warn: checkpoint update failed for game {game_id}: {e2}")
+                            })
+                        });
                     *season_failed.entry(season).or_insert(0) += 1;
                     total_failed += 1;
                 }

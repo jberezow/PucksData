@@ -1,6 +1,13 @@
 /data/
 /target
 
+# Local agent and project-planning tooling
+/.agents/
+/.claude/
+/.codex/
+/.planning/
+/skills-lock.json
+
 # Secrets
 .env
 .env.*

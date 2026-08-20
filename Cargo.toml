@@ -1,7 +1,14 @@
 [package]
 name = "pucksdata"
-version = "0.1.0"
+version = "1.5.0"
 edition = "2021"
+authors = ["Jon Berezowski"]
+description = "A production-oriented NHL play-by-play ETL engine for PostgreSQL"
+license = "MIT"
+repository = "https://github.com/jberezow/pucksdata"
+readme = "README.md"
+keywords = ["nhl", "hockey", "etl", "postgresql", "analytics"]
+categories = ["command-line-utilities", "database"]
 
 [dependencies]
 # HTTP

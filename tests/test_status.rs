@@ -19,7 +19,10 @@ fn test_coverage_calculation_unit() {
     } else {
         100.0
     };
-    assert!((pct - 100.0).abs() < 0.01, "100% coverage expected when games_with_events == total_off_games");
+    assert!(
+        (pct - 100.0).abs() < 0.01,
+        "100% coverage expected when games_with_events == total_off_games"
+    );
 
     // 4 out of 5 → 80%
     let covered_games = 4_i64;
@@ -38,13 +41,18 @@ fn test_coverage_calculation_unit() {
     } else {
         100.0
     };
-    assert!((pct3 - 100.0).abs() < 0.01, "0 off games should report 100% (trivially healthy)");
+    assert!(
+        (pct3 - 100.0).abs() < 0.01,
+        "0 off games should report 100% (trivially healthy)"
+    );
 }
 
 /// SYNC-05 integration: run_status() returns Ok(true) when a season has all OFF games covered.
 #[tokio::test]
 async fn test_status_query_healthy_season() {
-    if std::env::var("DATABASE_URL").is_err() { return; }
+    if std::env::var("DATABASE_URL").is_err() {
+        return;
+    }
     let pool = pucksdata::db::get_pool().await.unwrap();
 
     // Insert synthetic teams and a completed game with events
@@ -53,7 +61,10 @@ async fn test_status_query_healthy_season() {
          VALUES (99941, 'Status Home A', 'StatHA', 'Testville', 'SHA'),
                 (99942, 'Status Away A', 'StatAA', 'Testville', 'SAA')
          ON CONFLICT (team_id) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     sqlx::query!(
         "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
@@ -72,18 +83,32 @@ async fn test_status_query_healthy_season() {
         .await
         .unwrap();
 
-    assert!(healthy, "season with all OFF games covered must return healthy=true");
+    assert!(
+        healthy,
+        "season with all OFF games covered must return healthy=true"
+    );
 
     // Cleanup (child tables first)
-    sqlx::query!("DELETE FROM events WHERE game_id = 9992000001").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM games WHERE game_id = 9992000001").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM teams WHERE team_id IN (99941, 99942)").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM events WHERE game_id = 9992000001")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id = 9992000001")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99941, 99942)")
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 /// SYNC-05 integration: run_status() returns Ok(false) when OFF game has no events.
 #[tokio::test]
 async fn test_status_query_unhealthy_season() {
-    if std::env::var("DATABASE_URL").is_err() { return; }
+    if std::env::var("DATABASE_URL").is_err() {
+        return;
+    }
     let pool = pucksdata::db::get_pool().await.unwrap();
 
     sqlx::query!(
@@ -91,7 +116,10 @@ async fn test_status_query_unhealthy_season() {
          VALUES (99943, 'Status Home B', 'StatHB', 'Testville', 'SHB'),
                 (99944, 'Status Away B', 'StatAB', 'Testville', 'SAB')
          ON CONFLICT (team_id) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     // OFF game with NO events → unhealthy
     sqlx::query!(
@@ -104,17 +132,28 @@ async fn test_status_query_unhealthy_season() {
         .await
         .unwrap();
 
-    assert!(!healthy, "season with uncovered OFF game must return healthy=false");
+    assert!(
+        !healthy,
+        "season with uncovered OFF game must return healthy=false"
+    );
 
     // Cleanup
-    sqlx::query!("DELETE FROM games WHERE game_id = 9992000002").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM teams WHERE team_id IN (99943, 99944)").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id = 9992000002")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99943, 99944)")
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 /// SYNC-05 integration: --season filter scopes output to the specified season only.
 #[tokio::test]
 async fn test_status_season_filter() {
-    if std::env::var("DATABASE_URL").is_err() { return; }
+    if std::env::var("DATABASE_URL").is_err() {
+        return;
+    }
     let pool = pucksdata::db::get_pool().await.unwrap();
 
     sqlx::query!(
@@ -122,7 +161,10 @@ async fn test_status_season_filter() {
          VALUES (99945, 'Status Home C', 'StatHC', 'Testville', 'SHC'),
                 (99946, 'Status Away C', 'StatAC', 'Testville', 'SAC')
          ON CONFLICT (team_id) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     // Season 99983: 1 OFF game, covered (healthy)
     // Season 99984: 1 OFF game, NOT covered (unhealthy)
@@ -144,24 +186,41 @@ async fn test_status_season_filter() {
     let healthy_scoped = pucksdata::process::status::run_status(pool, Some(99983), false)
         .await
         .unwrap();
-    assert!(healthy_scoped, "season-scoped query must only see season 99983, which is healthy");
+    assert!(
+        healthy_scoped,
+        "season-scoped query must only see season 99983, which is healthy"
+    );
 
     // Filter to season 99984 → must return unhealthy
     let unhealthy_scoped = pucksdata::process::status::run_status(pool, Some(99984), false)
         .await
         .unwrap();
-    assert!(!unhealthy_scoped, "season-scoped query for 99984 must return unhealthy (game has no events)");
+    assert!(
+        !unhealthy_scoped,
+        "season-scoped query for 99984 must return unhealthy (game has no events)"
+    );
 
     // Cleanup
-    sqlx::query!("DELETE FROM events WHERE game_id = 9992000003").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM games WHERE game_id IN (9992000003, 9992000004)").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM teams WHERE team_id IN (99945, 99946)").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM events WHERE game_id = 9992000003")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id IN (9992000003, 9992000004)")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99945, 99946)")
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 /// SYNC-05 integration: FUT/PRE games are excluded from total_off_games count.
 #[tokio::test]
 async fn test_status_excludes_fut_pre_games() {
-    if std::env::var("DATABASE_URL").is_err() { return; }
+    if std::env::var("DATABASE_URL").is_err() {
+        return;
+    }
     let pool = pucksdata::db::get_pool().await.unwrap();
 
     sqlx::query!(
@@ -169,7 +228,10 @@ async fn test_status_excludes_fut_pre_games() {
          VALUES (99947, 'Status Home D', 'StatHD', 'Testville', 'SHD'),
                 (99948, 'Status Away D', 'StatAD', 'Testville', 'SAD')
          ON CONFLICT (team_id) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     // Season 99985: 1 OFF covered game + 1 FUT game (FUT must not count toward total_off_games)
     sqlx::query!(
@@ -190,19 +252,33 @@ async fn test_status_excludes_fut_pre_games() {
     let healthy = pucksdata::process::status::run_status(pool, Some(99985), false)
         .await
         .unwrap();
-    assert!(healthy, "FUT/PRE games must not count toward total_off_games (season should be healthy)");
+    assert!(
+        healthy,
+        "FUT/PRE games must not count toward total_off_games (season should be healthy)"
+    );
 
     // Cleanup
-    sqlx::query!("DELETE FROM events WHERE game_id = 9992000005").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM games WHERE game_id IN (9992000005, 9992000006)").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM teams WHERE team_id IN (99947, 99948)").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM events WHERE game_id = 9992000005")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id IN (9992000005, 9992000006)")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99947, 99948)")
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 /// SYNC-06 integration: run_status with fix=true on already-healthy season is a no-op.
 /// Verifies idempotency: after fix, the season remains healthy and backfill_progress is unchanged.
 #[tokio::test]
 async fn test_fix_idempotent() {
-    if std::env::var("DATABASE_URL").is_err() { return; }
+    if std::env::var("DATABASE_URL").is_err() {
+        return;
+    }
     let pool = pucksdata::db::get_pool().await.unwrap();
 
     // Insert synthetic teams, a completed+covered game, and a backfill_progress row (done)
@@ -211,7 +287,10 @@ async fn test_fix_idempotent() {
          VALUES (99951, 'Fix Home', 'FixH', 'Testville', 'FXH'),
                 (99952, 'Fix Away', 'FixA', 'Testville', 'FXA')
          ON CONFLICT (team_id) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     sqlx::query!(
         "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
@@ -231,7 +310,10 @@ async fn test_fix_idempotent() {
         "INSERT INTO backfill_progress (game_id, season, status)
          VALUES (9992000010, 99986, 'done')
          ON CONFLICT (game_id) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     // run_status with fix=true on an already-healthy season must:
     //   1. Return healthy=true
@@ -241,22 +323,40 @@ async fn test_fix_idempotent() {
         .await
         .unwrap();
 
-    assert!(healthy, "already-healthy season with fix=true must still return healthy=true");
+    assert!(
+        healthy,
+        "already-healthy season with fix=true must still return healthy=true"
+    );
 
     // Verify backfill_progress row is still 'done' (fix was a no-op)
-    let bp_status: Option<String> = sqlx::query_scalar!(
-        "SELECT status FROM backfill_progress WHERE game_id = 9992000010"
-    )
-    .fetch_optional(pool)
-    .await
-    .unwrap();
-    assert_eq!(bp_status.as_deref(), Some("done"), "backfill_progress must remain 'done' after no-op fix");
+    let bp_status: Option<String> =
+        sqlx::query_scalar!("SELECT status FROM backfill_progress WHERE game_id = 9992000010")
+            .fetch_optional(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        bp_status.as_deref(),
+        Some("done"),
+        "backfill_progress must remain 'done' after no-op fix"
+    );
 
     // Cleanup (child tables first)
-    sqlx::query!("DELETE FROM backfill_progress WHERE game_id = 9992000010").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM events WHERE game_id = 9992000010").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM games WHERE game_id = 9992000010").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM teams WHERE team_id IN (99951, 99952)").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM backfill_progress WHERE game_id = 9992000010")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM events WHERE game_id = 9992000010")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id = 9992000010")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99951, 99952)")
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 /// SYNC-06 unit: run_status returns true (healthy) → caller must exit with code 0.
@@ -267,12 +367,18 @@ fn test_exit_code_healthy_is_zero() {
     // We can't easily test process::exit in a unit test, so verify the boolean contract:
     // If healthy = true, the condition `if !healthy { std::process::exit(1) }` is false.
     let healthy = true;
-    assert!(!(!healthy), "healthy=true must not trigger exit(1) in main.rs dispatch arm");
+    assert!(
+        !(!healthy),
+        "healthy=true must not trigger exit(1) in main.rs dispatch arm"
+    );
 }
 
 /// SYNC-06 unit: run_status returns false (unhealthy) → caller must exit with code 1.
 #[test]
 fn test_exit_code_unhealthy_is_one() {
     let healthy = false;
-    assert!(!healthy, "healthy=false must trigger exit(1) in main.rs dispatch arm");
+    assert!(
+        !healthy,
+        "healthy=false must trigger exit(1) in main.rs dispatch arm"
+    );
 }

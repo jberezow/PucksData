@@ -97,7 +97,10 @@ fn test_goal_details_deserialize() {
         "eventOwnerTeamId": 14
     }"#;
     let d3: EventDetails = serde_json::from_str(json_en).unwrap();
-    assert_eq!(d3.goalie_in_net_id, None, "null goalieInNetId should deserialize to None");
+    assert_eq!(
+        d3.goalie_in_net_id, None,
+        "null goalieInNetId should deserialize to None"
+    );
 }
 
 #[test]
@@ -180,8 +183,16 @@ fn test_penalty_details_deserialize() {
         "eventOwnerTeamId": 18
     }"#;
     let details: EventDetails = serde_json::from_str(json).unwrap();
-    assert_eq!(details.duration, Some(2_i16), "duration should be 2 (integer minutes)");
-    assert_eq!(details.desc_key.as_deref(), Some("high-sticking"), "descKey → desc_key");
+    assert_eq!(
+        details.duration,
+        Some(2_i16),
+        "duration should be 2 (integer minutes)"
+    );
+    assert_eq!(
+        details.desc_key.as_deref(),
+        Some("high-sticking"),
+        "descKey → desc_key"
+    );
     assert_eq!(details.type_code.as_deref(), Some("MIN"));
     assert_eq!(details.committed_by_player_id, Some(8479318_i64));
     assert_eq!(details.drawn_by_player_id, Some(8480801_i64));
@@ -195,8 +206,14 @@ fn test_penalty_details_deserialize() {
         "eventOwnerTeamId": 18
     }"#;
     let d2: EventDetails = serde_json::from_str(json_bench).unwrap();
-    assert_eq!(d2.drawn_by_player_id, None, "bench minor: drawnByPlayerId should be None");
-    assert_eq!(d2.committed_by_player_id, None, "bench minor: committedByPlayerId null → None");
+    assert_eq!(
+        d2.drawn_by_player_id, None,
+        "bench minor: drawnByPlayerId should be None"
+    );
+    assert_eq!(
+        d2.committed_by_player_id, None,
+        "bench minor: committedByPlayerId null → None"
+    );
 }
 
 #[test]
@@ -224,7 +241,7 @@ fn test_faceoff_details_deserialize() {
 #[test]
 fn test_goal_produces_shot_entry() {
     use pucksdata::fetchers::events::{
-        transform_events, PlayByPlay, PbpTeam, Play, PeriodDescriptor, EventDetails,
+        transform_events, EventDetails, PbpTeam, PeriodDescriptor, Play, PlayByPlay,
     };
     use std::collections::HashMap;
 
@@ -304,22 +321,43 @@ fn test_goal_produces_shot_entry() {
     let (_events, goals, shots, _hits, _blocks, _penalties, _faceoffs, warnings) =
         transform_events(&pbp, &team_id_map);
 
-    assert!(warnings.is_empty(), "no skip warnings expected: {:?}", warnings);
+    assert!(
+        warnings.is_empty(),
+        "no skip warnings expected: {:?}",
+        warnings
+    );
     assert_eq!(goals.len(), 1, "expected 1 goal");
-    assert_eq!(shots.len(), 2, "expected 2 shots (goal-derived + shot-on-goal)");
+    assert_eq!(
+        shots.len(),
+        2,
+        "expected 2 shots (goal-derived + shot-on-goal)"
+    );
 
     // Find the goal-derived shot (event_id_in_game == 154, same as the goal)
-    let goal_shot = shots.iter().find(|s| s.event_id_in_game == 154)
+    let goal_shot = shots
+        .iter()
+        .find(|s| s.event_id_in_game == 154)
         .expect("goal-derived shot must have event_id_in_game == 154");
-    assert_eq!(goal_shot.shooting_player_id, Some(8480801),
-        "goal scorer maps to shooting_player_id");
-    assert_eq!(goal_shot.goalie_in_net_id, Some(8480382),
-        "goalie_in_net_id carried through from goal event");
-    assert_eq!(goal_shot.shot_type.as_deref(), Some("wrist"),
-        "shot_type carried through from goal event");
+    assert_eq!(
+        goal_shot.shooting_player_id,
+        Some(8480801),
+        "goal scorer maps to shooting_player_id"
+    );
+    assert_eq!(
+        goal_shot.goalie_in_net_id,
+        Some(8480382),
+        "goalie_in_net_id carried through from goal event"
+    );
+    assert_eq!(
+        goal_shot.shot_type.as_deref(),
+        Some("wrist"),
+        "shot_type carried through from goal event"
+    );
 
     // The regular shot-on-goal must also be present
-    let reg_shot = shots.iter().find(|s| s.event_id_in_game == 200)
+    let reg_shot = shots
+        .iter()
+        .find(|s| s.event_id_in_game == 200)
         .expect("regular shot-on-goal must be present");
     assert_eq!(reg_shot.shooting_player_id, Some(8479318));
 }
@@ -328,7 +366,9 @@ fn test_goal_produces_shot_entry() {
 
 #[tokio::test]
 async fn test_events_upsert_idempotent() {
-    if std::env::var("DATABASE_URL").is_err() { return; }
+    if std::env::var("DATABASE_URL").is_err() {
+        return;
+    }
     let pool = pucksdata::db::get_pool().await.unwrap();
 
     // Insert prerequisite test team and game rows
@@ -337,13 +377,19 @@ async fn test_events_upsert_idempotent() {
          VALUES (99001, 'Test Home', 'Home', 'Testville', 'HME'),
                 (99002, 'Test Away', 'Away', 'Testville', 'AWY')
          ON CONFLICT (team_id) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     sqlx::query!(
         "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
          VALUES (9900000002, 20232024, '2024-01-01', 99001, 99002, 2)
          ON CONFLICT (game_id) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     // Build a minimal DbEvent + DbGoal for game 9900000002
     let event = pucksdata::models::DbEvent {
@@ -374,32 +420,67 @@ async fn test_events_upsert_idempotent() {
 
     // First upsert
     pucksdata::loaders::events::upsert_game_events(
-        pool, 9900000002, &[event], &[goal], &[], &[], &[], &[], &[]
-    ).await.unwrap();
+        pool,
+        9900000002,
+        &[event],
+        &[goal],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .await
+    .unwrap();
 
     // Rebuild event + goal (can't reuse moved values)
     let event2 = pucksdata::models::DbEvent {
-        game_id: 9900000002, event_id_in_game: 1, period: 1,
-        period_type: "REG".into(), time_in_period: "05:00".into(),
-        event_type: "goal".into(), x_coord: None, y_coord: None,
-        zone_code: None, event_owner_team_id: None,
-        home_goalie_present: true, home_skater_count: 5,
-        away_skater_count: 5, away_goalie_present: true, strength: "ev".into(),
+        game_id: 9900000002,
+        event_id_in_game: 1,
+        period: 1,
+        period_type: "REG".into(),
+        time_in_period: "05:00".into(),
+        event_type: "goal".into(),
+        x_coord: None,
+        y_coord: None,
+        zone_code: None,
+        event_owner_team_id: None,
+        home_goalie_present: true,
+        home_skater_count: 5,
+        away_skater_count: 5,
+        away_goalie_present: true,
+        strength: "ev".into(),
     };
     let goal2 = pucksdata::models::DbGoal {
-        event_id_in_game: 1, scorer_player_id: None,
-        assist1_player_id: None, assist2_player_id: None,
-        goalie_id: None, shot_type: None,
+        event_id_in_game: 1,
+        scorer_player_id: None,
+        assist1_player_id: None,
+        assist2_player_id: None,
+        goalie_id: None,
+        shot_type: None,
     };
 
     // Second upsert — must produce same row count
     pucksdata::loaders::events::upsert_game_events(
-        pool, 9900000002, &[event2], &[goal2], &[], &[], &[], &[], &[]
-    ).await.unwrap();
+        pool,
+        9900000002,
+        &[event2],
+        &[goal2],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .await
+    .unwrap();
 
-    let event_count: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM events WHERE game_id = 9900000002"
-    ).fetch_one(pool).await.unwrap().unwrap_or(0);
+    let event_count: i64 =
+        sqlx::query_scalar!("SELECT COUNT(*) FROM events WHERE game_id = 9900000002")
+            .fetch_one(pool)
+            .await
+            .unwrap()
+            .unwrap_or(0);
     assert_eq!(event_count, 1, "upsert produced more than one event row");
 
     let goal_count: i64 = sqlx::query_scalar!(
@@ -408,8 +489,22 @@ async fn test_events_upsert_idempotent() {
     assert_eq!(goal_count, 1, "upsert produced more than one goal row");
 
     // Cleanup (child rows cascade on events delete if FK is deferred, otherwise delete in order)
-    sqlx::query!("DELETE FROM goals WHERE event_id IN (SELECT id FROM events WHERE game_id = 9900000002)").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM events WHERE game_id = 9900000002").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM games WHERE game_id = 9900000002").execute(pool).await.unwrap();
-    sqlx::query!("DELETE FROM teams WHERE team_id IN (99001, 99002)").execute(pool).await.unwrap();
+    sqlx::query!(
+        "DELETE FROM goals WHERE event_id IN (SELECT id FROM events WHERE game_id = 9900000002)"
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query!("DELETE FROM events WHERE game_id = 9900000002")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM games WHERE game_id = 9900000002")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id IN (99001, 99002)")
+        .execute(pool)
+        .await
+        .unwrap();
 }

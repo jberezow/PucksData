@@ -37,16 +37,30 @@ async fn test_daemon_args_defaults() {
     // Default interval: None flag + no env var = 21600 seconds
     let interval_secs_flag: Option<u64> = None;
     let interval_secs = interval_secs_flag
-        .or_else(|| std::env::var("SYNC_INTERVAL_SECS").ok().and_then(|s| s.parse().ok()))
+        .or_else(|| {
+            std::env::var("SYNC_INTERVAL_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
         .unwrap_or(21600);
-    assert_eq!(interval_secs, 21600, "default interval should be 21600 seconds (6 hours)");
+    assert_eq!(
+        interval_secs, 21600,
+        "default interval should be 21600 seconds (6 hours)"
+    );
 
     // With env var override
     std::env::set_var("SYNC_INTERVAL_SECS", "3600");
     let interval_secs_env = interval_secs_flag
-        .or_else(|| std::env::var("SYNC_INTERVAL_SECS").ok().and_then(|s| s.parse().ok()))
+        .or_else(|| {
+            std::env::var("SYNC_INTERVAL_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
         .unwrap_or(21600);
-    assert_eq!(interval_secs_env, 3600, "SYNC_INTERVAL_SECS env var should override default");
+    assert_eq!(
+        interval_secs_env, 3600,
+        "SYNC_INTERVAL_SECS env var should override default"
+    );
     std::env::remove_var("SYNC_INTERVAL_SECS");
 }
 
@@ -114,8 +128,8 @@ async fn test_daemon_no_error_accumulation() {
         if let Err(e) = result {
             // eprintln! stands in for tracing::error! here
             let _ = format!("sync failed, continuing: {e}"); // consumed inline
-            // WRONG (must not appear in production code):
-            //   errors.push(e);  <- this would violate QUAL-SYNC-03
+                                                             // WRONG (must not appear in production code):
+                                                             //   errors.push(e);  <- this would violate QUAL-SYNC-03
         }
         // `e` is dropped here — no cross-tick accumulation
     }
@@ -153,7 +167,10 @@ async fn test_daemon_exported() {
 #[test]
 fn test_current_season_october_start() {
     // October 2025 = start of 2025-2026 season
-    assert_eq!(pucksdata::process::sync::season_for_date(10, 2025), 20252026);
+    assert_eq!(
+        pucksdata::process::sync::season_for_date(10, 2025),
+        20252026
+    );
 }
 
 #[test]
@@ -177,7 +194,10 @@ fn test_current_season_september() {
 #[test]
 fn test_current_season_next_season() {
     // October 2026 = start of 2026-2027 season
-    assert_eq!(pucksdata::process::sync::season_for_date(10, 2026), 20262027);
+    assert_eq!(
+        pucksdata::process::sync::season_for_date(10, 2026),
+        20262027
+    );
 }
 
 // ---------------------------------------------------------------------------

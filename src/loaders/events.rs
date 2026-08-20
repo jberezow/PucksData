@@ -1,6 +1,4 @@
-// src/loaders/events.rs
-// Transactional loader for game events and all six child event types.
-
+//! Atomically inserts all event types for a game in a single transaction.
 use std::collections::HashMap;
 
 use sqlx::Row;
@@ -34,21 +32,21 @@ pub async fn upsert_game_events(
 
     // ── Bulk insert base events ───────────────────────────────────────────────
     if !events.is_empty() {
-        let game_ids:     Vec<i64>          = events.iter().map(|e| e.game_id).collect();
-        let event_ids:    Vec<i32>          = events.iter().map(|e| e.event_id_in_game).collect();
-        let periods:      Vec<i16>          = events.iter().map(|e| e.period).collect();
-        let period_types: Vec<&str>         = events.iter().map(|e| e.period_type.as_str()).collect();
-        let times:        Vec<&str>         = events.iter().map(|e| e.time_in_period.as_str()).collect();
-        let event_types:  Vec<&str>         = events.iter().map(|e| e.event_type.as_str()).collect();
-        let x_coords:     Vec<Option<i16>>  = events.iter().map(|e| e.x_coord).collect();
-        let y_coords:     Vec<Option<i16>>  = events.iter().map(|e| e.y_coord).collect();
-        let zone_codes:   Vec<Option<&str>> = events.iter().map(|e| e.zone_code.as_deref()).collect();
-        let owner_ids:    Vec<Option<i64>>  = events.iter().map(|e| e.event_owner_team_id).collect();
-        let home_goalies: Vec<bool>         = events.iter().map(|e| e.home_goalie_present).collect();
-        let home_sks:     Vec<i16>          = events.iter().map(|e| e.home_skater_count).collect();
-        let away_sks:     Vec<i16>          = events.iter().map(|e| e.away_skater_count).collect();
-        let away_goalies: Vec<bool>         = events.iter().map(|e| e.away_goalie_present).collect();
-        let strengths:    Vec<&str>         = events.iter().map(|e| e.strength.as_str()).collect();
+        let game_ids: Vec<i64> = events.iter().map(|e| e.game_id).collect();
+        let event_ids: Vec<i32> = events.iter().map(|e| e.event_id_in_game).collect();
+        let periods: Vec<i16> = events.iter().map(|e| e.period).collect();
+        let period_types: Vec<&str> = events.iter().map(|e| e.period_type.as_str()).collect();
+        let times: Vec<&str> = events.iter().map(|e| e.time_in_period.as_str()).collect();
+        let event_types: Vec<&str> = events.iter().map(|e| e.event_type.as_str()).collect();
+        let x_coords: Vec<Option<i16>> = events.iter().map(|e| e.x_coord).collect();
+        let y_coords: Vec<Option<i16>> = events.iter().map(|e| e.y_coord).collect();
+        let zone_codes: Vec<Option<&str>> = events.iter().map(|e| e.zone_code.as_deref()).collect();
+        let owner_ids: Vec<Option<i64>> = events.iter().map(|e| e.event_owner_team_id).collect();
+        let home_goalies: Vec<bool> = events.iter().map(|e| e.home_goalie_present).collect();
+        let home_sks: Vec<i16> = events.iter().map(|e| e.home_skater_count).collect();
+        let away_sks: Vec<i16> = events.iter().map(|e| e.away_skater_count).collect();
+        let away_goalies: Vec<bool> = events.iter().map(|e| e.away_goalie_present).collect();
+        let strengths: Vec<&str> = events.iter().map(|e| e.strength.as_str()).collect();
 
         let rows = sqlx::query(
             r#"
@@ -116,12 +114,24 @@ pub async fn upsert_game_events(
         .collect();
 
     if !goals_matched.is_empty() {
-        let eids:    Vec<i64>          = goals_matched.iter().map(|(id, _)| *id).collect();
-        let scorers: Vec<Option<i64>>  = goals_matched.iter().map(|(_, g)| g.scorer_player_id).collect();
-        let a1:      Vec<Option<i64>>  = goals_matched.iter().map(|(_, g)| g.assist1_player_id).collect();
-        let a2:      Vec<Option<i64>>  = goals_matched.iter().map(|(_, g)| g.assist2_player_id).collect();
-        let goalies: Vec<Option<i64>>  = goals_matched.iter().map(|(_, g)| g.goalie_id).collect();
-        let stypes:  Vec<Option<&str>> = goals_matched.iter().map(|(_, g)| g.shot_type.as_deref()).collect();
+        let eids: Vec<i64> = goals_matched.iter().map(|(id, _)| *id).collect();
+        let scorers: Vec<Option<i64>> = goals_matched
+            .iter()
+            .map(|(_, g)| g.scorer_player_id)
+            .collect();
+        let a1: Vec<Option<i64>> = goals_matched
+            .iter()
+            .map(|(_, g)| g.assist1_player_id)
+            .collect();
+        let a2: Vec<Option<i64>> = goals_matched
+            .iter()
+            .map(|(_, g)| g.assist2_player_id)
+            .collect();
+        let goalies: Vec<Option<i64>> = goals_matched.iter().map(|(_, g)| g.goalie_id).collect();
+        let stypes: Vec<Option<&str>> = goals_matched
+            .iter()
+            .map(|(_, g)| g.shot_type.as_deref())
+            .collect();
 
         sqlx::query(
             r#"
@@ -158,10 +168,19 @@ pub async fn upsert_game_events(
         .collect();
 
     if !shots_matched.is_empty() {
-        let eids:     Vec<i64>          = shots_matched.iter().map(|(id, _)| *id).collect();
-        let shooters: Vec<Option<i64>>  = shots_matched.iter().map(|(_, s)| s.shooting_player_id).collect();
-        let goalies:  Vec<Option<i64>>  = shots_matched.iter().map(|(_, s)| s.goalie_in_net_id).collect();
-        let stypes:   Vec<Option<&str>> = shots_matched.iter().map(|(_, s)| s.shot_type.as_deref()).collect();
+        let eids: Vec<i64> = shots_matched.iter().map(|(id, _)| *id).collect();
+        let shooters: Vec<Option<i64>> = shots_matched
+            .iter()
+            .map(|(_, s)| s.shooting_player_id)
+            .collect();
+        let goalies: Vec<Option<i64>> = shots_matched
+            .iter()
+            .map(|(_, s)| s.goalie_in_net_id)
+            .collect();
+        let stypes: Vec<Option<&str>> = shots_matched
+            .iter()
+            .map(|(_, s)| s.shot_type.as_deref())
+            .collect();
 
         sqlx::query(
             r#"
@@ -191,9 +210,15 @@ pub async fn upsert_game_events(
         .collect();
 
     if !hits_matched.is_empty() {
-        let eids:    Vec<i64>         = hits_matched.iter().map(|(id, _)| *id).collect();
-        let hitters: Vec<Option<i64>> = hits_matched.iter().map(|(_, h)| h.hitting_player_id).collect();
-        let hittees: Vec<Option<i64>> = hits_matched.iter().map(|(_, h)| h.hittee_player_id).collect();
+        let eids: Vec<i64> = hits_matched.iter().map(|(id, _)| *id).collect();
+        let hitters: Vec<Option<i64>> = hits_matched
+            .iter()
+            .map(|(_, h)| h.hitting_player_id)
+            .collect();
+        let hittees: Vec<Option<i64>> = hits_matched
+            .iter()
+            .map(|(_, h)| h.hittee_player_id)
+            .collect();
 
         sqlx::query(
             r#"
@@ -221,9 +246,15 @@ pub async fn upsert_game_events(
         .collect();
 
     if !blocks_matched.is_empty() {
-        let eids:     Vec<i64>         = blocks_matched.iter().map(|(id, _)| *id).collect();
-        let blockers: Vec<Option<i64>> = blocks_matched.iter().map(|(_, b)| b.blocking_player_id).collect();
-        let shooters: Vec<Option<i64>> = blocks_matched.iter().map(|(_, b)| b.shooting_player_id).collect();
+        let eids: Vec<i64> = blocks_matched.iter().map(|(id, _)| *id).collect();
+        let blockers: Vec<Option<i64>> = blocks_matched
+            .iter()
+            .map(|(_, b)| b.blocking_player_id)
+            .collect();
+        let shooters: Vec<Option<i64>> = blocks_matched
+            .iter()
+            .map(|(_, b)| b.shooting_player_id)
+            .collect();
 
         sqlx::query(
             r#"
@@ -251,11 +282,23 @@ pub async fn upsert_game_events(
         .collect();
 
     if !penalties_matched.is_empty() {
-        let eids:     Vec<i64>          = penalties_matched.iter().map(|(id, _)| *id).collect();
-        let cbys:     Vec<Option<i64>>  = penalties_matched.iter().map(|(_, p)| p.committed_by_player_id).collect();
-        let dbys:     Vec<Option<i64>>  = penalties_matched.iter().map(|(_, p)| p.drawn_by_player_id).collect();
-        let infracts: Vec<Option<&str>> = penalties_matched.iter().map(|(_, p)| p.infraction_type.as_deref()).collect();
-        let durs:     Vec<Option<i16>>  = penalties_matched.iter().map(|(_, p)| p.duration_minutes).collect();
+        let eids: Vec<i64> = penalties_matched.iter().map(|(id, _)| *id).collect();
+        let cbys: Vec<Option<i64>> = penalties_matched
+            .iter()
+            .map(|(_, p)| p.committed_by_player_id)
+            .collect();
+        let dbys: Vec<Option<i64>> = penalties_matched
+            .iter()
+            .map(|(_, p)| p.drawn_by_player_id)
+            .collect();
+        let infracts: Vec<Option<&str>> = penalties_matched
+            .iter()
+            .map(|(_, p)| p.infraction_type.as_deref())
+            .collect();
+        let durs: Vec<Option<i16>> = penalties_matched
+            .iter()
+            .map(|(_, p)| p.duration_minutes)
+            .collect();
 
         sqlx::query(
             r#"
@@ -289,9 +332,15 @@ pub async fn upsert_game_events(
         .collect();
 
     if !faceoffs_matched.is_empty() {
-        let eids:    Vec<i64>         = faceoffs_matched.iter().map(|(id, _)| *id).collect();
-        let winners: Vec<Option<i64>> = faceoffs_matched.iter().map(|(_, f)| f.winning_player_id).collect();
-        let losers:  Vec<Option<i64>> = faceoffs_matched.iter().map(|(_, f)| f.losing_player_id).collect();
+        let eids: Vec<i64> = faceoffs_matched.iter().map(|(id, _)| *id).collect();
+        let winners: Vec<Option<i64>> = faceoffs_matched
+            .iter()
+            .map(|(_, f)| f.winning_player_id)
+            .collect();
+        let losers: Vec<Option<i64>> = faceoffs_matched
+            .iter()
+            .map(|(_, f)| f.losing_player_id)
+            .collect();
 
         sqlx::query(
             r#"

@@ -1,7 +1,4 @@
-// src/ui.rs
-// Shared progress bar factory. Use make_progress_bar() to get a consistently-styled
-// indicatif ProgressBar. All fetch/sync commands that loop record-by-record should
-// use this helper rather than building their own style inline.
+//! Progress bar factory — [`make_progress_bar`] wraps `indicatif` with a consistent style.
 
 use indicatif::{ProgressBar, ProgressStyle};
 
