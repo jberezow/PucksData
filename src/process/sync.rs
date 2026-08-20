@@ -58,7 +58,7 @@ pub fn current_season() -> i32 {
 /// PITFALL 1: Do NOT drop the guard early. Hold it in a `let _lock = acquire_daemon_lock(...).await?`
 ///            binding at the top of the daemon arm in main.rs (Phase 8 task). Underscore prefix
 ///            keeps the binding alive without an "unused variable" warning.
-/// PITFALL 2: try_acquire takes PoolConnection<Postgres>, not &PgPool. pool.acquire() is called first.
+/// PITFALL 2: try_acquire takes `PoolConnection<Postgres>`, not `&PgPool`. `pool.acquire()` is called first.
 /// PITFALL 3: PgAdvisoryLockGuard<'lock, C> borrows from PgAdvisoryLock — Box::leak gives 'static lifetime
 ///            so the guard can be returned from this function without lifetime errors.
 pub async fn acquire_daemon_lock(

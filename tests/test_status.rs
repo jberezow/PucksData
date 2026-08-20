@@ -12,15 +12,32 @@
 #[test]
 fn test_coverage_calculation_unit() {
     // 5 off games, 5 with events → 100%
-    let pct = if 5i64 > 0 { (5i64 as f64 / 5i64 as f64) * 100.0 } else { 100.0 };
+    let total_games = 5_i64;
+    let covered_games = 5_i64;
+    let pct = if total_games > 0 {
+        (covered_games as f64 / total_games as f64) * 100.0
+    } else {
+        100.0
+    };
     assert!((pct - 100.0).abs() < 0.01, "100% coverage expected when games_with_events == total_off_games");
 
     // 4 out of 5 → 80%
-    let pct2 = if 5i64 > 0 { (4i64 as f64 / 5i64 as f64) * 100.0 } else { 100.0 };
+    let covered_games = 4_i64;
+    let pct2 = if total_games > 0 {
+        (covered_games as f64 / total_games as f64) * 100.0
+    } else {
+        100.0
+    };
     assert!((pct2 - 80.0).abs() < 0.01, "80% coverage expected for 4/5");
 
     // 0 off games → 100% (no games = trivially healthy)
-    let pct3 = if 0i64 > 0 { (0i64 as f64 / 0i64 as f64) * 100.0 } else { 100.0 };
+    let total_games = 0_i64;
+    let covered_games = 0_i64;
+    let pct3 = if total_games > 0 {
+        (covered_games as f64 / total_games as f64) * 100.0
+    } else {
+        100.0
+    };
     assert!((pct3 - 100.0).abs() < 0.01, "0 off games should report 100% (trivially healthy)");
 }
 
@@ -51,7 +68,7 @@ async fn test_status_query_healthy_season() {
          ON CONFLICT (game_id, event_id_in_game) DO NOTHING"
     ).execute(pool).await.unwrap();
 
-    let healthy = pucksdata::process::status::run_status(&pool, Some(99981), false)
+    let healthy = pucksdata::process::status::run_status(pool, Some(99981), false)
         .await
         .unwrap();
 
@@ -83,7 +100,7 @@ async fn test_status_query_unhealthy_season() {
          ON CONFLICT (game_id) DO NOTHING"
     ).execute(pool).await.unwrap();
 
-    let healthy = pucksdata::process::status::run_status(&pool, Some(99982), false)
+    let healthy = pucksdata::process::status::run_status(pool, Some(99982), false)
         .await
         .unwrap();
 
@@ -124,13 +141,13 @@ async fn test_status_season_filter() {
     ).execute(pool).await.unwrap();
 
     // Filter to season 99983 → must return healthy (its own game is covered)
-    let healthy_scoped = pucksdata::process::status::run_status(&pool, Some(99983), false)
+    let healthy_scoped = pucksdata::process::status::run_status(pool, Some(99983), false)
         .await
         .unwrap();
     assert!(healthy_scoped, "season-scoped query must only see season 99983, which is healthy");
 
     // Filter to season 99984 → must return unhealthy
-    let unhealthy_scoped = pucksdata::process::status::run_status(&pool, Some(99984), false)
+    let unhealthy_scoped = pucksdata::process::status::run_status(pool, Some(99984), false)
         .await
         .unwrap();
     assert!(!unhealthy_scoped, "season-scoped query for 99984 must return unhealthy (game has no events)");
@@ -170,7 +187,7 @@ async fn test_status_excludes_fut_pre_games() {
     ).execute(pool).await.unwrap();
 
     // Should be healthy: FUT game doesn't reduce coverage
-    let healthy = pucksdata::process::status::run_status(&pool, Some(99985), false)
+    let healthy = pucksdata::process::status::run_status(pool, Some(99985), false)
         .await
         .unwrap();
     assert!(healthy, "FUT/PRE games must not count toward total_off_games (season should be healthy)");

@@ -81,7 +81,7 @@ pub struct PendingGame {
     pub away_abbrev: String,
 }
 
-/// Query all non-done games in scope (returns Vec<PendingGame> with joined metadata).
+/// Query all non-done games in scope (returns `Vec<PendingGame>` with joined metadata).
 /// Used after seeding to build the work list for the current run.
 /// Includes both 'pending' and 'failed' games (failed games are retried).
 pub async fn query_pending_games(

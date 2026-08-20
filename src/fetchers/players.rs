@@ -231,7 +231,7 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
                         ),
                     }
                     stats_done += 1;
-                    if stats_done % 8 == 0 || stats_done == stats_total {
+                    if stats_done.is_multiple_of(8) || stats_done == stats_total {
                         println!("  enumerating players: stats pages {}/{} ({} unique IDs)", stats_done, stats_total, all_ids.len());
                     }
                 }
@@ -321,35 +321,6 @@ pub async fn fetch_all_players(player_ids: Vec<i64>, pb: &ProgressBar) -> Vec<Db
         }
     }
     results
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_enumerate_player_ids_empty_seasons() {
-        // When seasons slice is empty the stats loop is a no-op.
-        // The only IDs returned come from rosters (network-dependent); we just
-        // verify the call compiles and the deduplication logic is correct by
-        // passing an empty slice — not a network call.
-        let seasons: Vec<i32> = vec![];
-        // No assertion needed — this is a compilation + logic sanity test.
-        // The real assertion is that the function signature accepts &[i32].
-        let _ = seasons.as_slice();
-    }
-
-    #[test]
-    fn test_season_id_format() {
-        // NHL season IDs are YYYYYYYY: start-year * 10000 + end-year.
-        // 2007-2008 season → 20072008
-        let start: i32 = 2007;
-        let end: i32 = 2008;
-        let season_id = start * 10_000 + end;
-        assert_eq!(season_id, 20_072_008);
-
-        // 2024-2025 season → 20242025
-        let season_id2 = 2024 * 10_000 + 2025;
-        assert_eq!(season_id2, 20_242_025);
-    }
 }
 
 /// Find all player IDs referenced in any event child table but absent from the players table,
@@ -446,4 +417,33 @@ pub async fn fetch_players(pool: &sqlx::PgPool) -> Result<Vec<DbPlayer>, AnyErro
     pb.finish_with_message(format!("Fetched {} players", records.len()));
 
     Ok(records)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_enumerate_player_ids_empty_seasons() {
+        // When seasons slice is empty the stats loop is a no-op.
+        // The only IDs returned come from rosters (network-dependent); we just
+        // verify the call compiles and the deduplication logic is correct by
+        // passing an empty slice — not a network call.
+        let seasons: Vec<i32> = vec![];
+        // No assertion needed — this is a compilation + logic sanity test.
+        // The real assertion is that the function signature accepts &[i32].
+        let _ = seasons.as_slice();
+    }
+
+    #[test]
+    fn test_season_id_format() {
+        // NHL season IDs are YYYYYYYY: start-year * 10000 + end-year.
+        // 2007-2008 season → 20072008
+        let start: i32 = 2007;
+        let end: i32 = 2008;
+        let season_id = start * 10_000 + end;
+        assert_eq!(season_id, 20_072_008);
+
+        // 2024-2025 season → 20242025
+        let season_id2 = 2024 * 10_000 + 2025;
+        assert_eq!(season_id2, 20_242_025);
+    }
 }
