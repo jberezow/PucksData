@@ -71,7 +71,7 @@ async fn test_games_upsert_idempotent() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Insert a test team first to satisfy the FK constraint on home_team_id / away_team_id
     // Use high IDs unlikely to conflict with real NHL data
@@ -156,7 +156,7 @@ async fn test_fetch_idempotency() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Use a small, known-complete season for the integration test.
     // Season 20242025 is recent and teams must already be loaded via `pucksdata fetch teams`.
@@ -213,3 +213,4 @@ async fn test_fetch_idempotency() {
         "Idempotency verified: {count_after_run2} games for season {test_season} after 2 runs"
     ));
 }
+mod common;

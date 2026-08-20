@@ -3,6 +3,8 @@
 // Unit tests for serde deserialization and situationCode decode.
 // Integration test stub for upsert idempotency (Plan 03 fills it in).
 
+mod common;
+
 // ── situationCode decode ──────────────────────────────────────────────────────
 
 #[test]
@@ -369,7 +371,7 @@ async fn test_events_upsert_idempotent() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Insert prerequisite test team and game rows
     sqlx::query!(

@@ -3,7 +3,7 @@ async fn test_seasons_upsert_idempotent() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
     let record = pucksdata::models::DbSeason {
         season_year: 19001901,
         start_date: None,
@@ -37,3 +37,4 @@ async fn test_seasons_upsert_idempotent() {
         .await
         .unwrap();
 }
+mod common;

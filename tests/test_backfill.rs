@@ -1,6 +1,8 @@
 // tests/test_backfill.rs
 // Integration tests for backfill orchestration: BACKFILL-01, BACKFILL-02, QUAL-02
 
+mod common;
+
 /// Verify seeding is idempotent: running seed_backfill_progress twice for the same
 /// scope produces the same rows (ON CONFLICT DO NOTHING — no duplicates, no errors).
 #[tokio::test]
@@ -8,7 +10,7 @@ async fn test_backfill_progress_seed_idempotent() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Insert synthetic prerequisite rows
     sqlx::query!(
@@ -21,10 +23,10 @@ async fn test_backfill_progress_seed_idempotent() {
     .await
     .unwrap();
 
-    sqlx::query!(
-        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
-         VALUES (9990000001, 99991, '2099-01-01', 99901, 99902, 2),
-                (9990000002, 99991, '2099-01-02', 99901, 99902, 2)
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9990000001, 99991, '2099-01-01', 99901, 99902, 2, 'OFF'),
+                (9990000002, 99991, '2099-01-02', 99901, 99902, 2, 'OFF')
          ON CONFLICT (game_id) DO NOTHING"
     )
     .execute(pool)
@@ -77,7 +79,7 @@ async fn test_backfill_resume_skips_done() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Insert prerequisite rows
     sqlx::query!(
@@ -90,11 +92,11 @@ async fn test_backfill_resume_skips_done() {
     .await
     .unwrap();
 
-    sqlx::query!(
-        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
-         VALUES (9990000003, 99992, '2099-01-03', 99903, 99904, 2),
-                (9990000004, 99992, '2099-01-04', 99903, 99904, 2),
-                (9990000005, 99992, '2099-01-05', 99903, 99904, 2)
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9990000003, 99992, '2099-01-03', 99903, 99904, 2, 'OFF'),
+                (9990000004, 99992, '2099-01-04', 99903, 99904, 2, 'OFF'),
+                (9990000005, 99992, '2099-01-05', 99903, 99904, 2, 'OFF')
          ON CONFLICT (game_id) DO NOTHING"
     )
     .execute(pool)
@@ -154,7 +156,7 @@ async fn test_backfill_status_transitions() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     sqlx::query!(
         "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
@@ -166,9 +168,9 @@ async fn test_backfill_status_transitions() {
     .await
     .unwrap();
 
-    sqlx::query!(
-        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
-         VALUES (9990000006, 99993, '2099-01-06', 99905, 99906, 2)
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9990000006, 99993, '2099-01-06', 99905, 99906, 2, 'OFF')
          ON CONFLICT (game_id) DO NOTHING"
     )
     .execute(pool)
@@ -220,7 +222,7 @@ async fn test_query_pending_games_enriched() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Use distinct synthetic IDs to avoid conflicts with other tests
     sqlx::query!(
@@ -233,10 +235,10 @@ async fn test_query_pending_games_enriched() {
     .await
     .unwrap();
 
-    sqlx::query!(
-        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
-         VALUES (9990000020, 99998, '2099-03-01', 99910, 99911, 2),
-                (9990000021, 99998, '2099-03-02', 99910, 99911, 2)
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9990000020, 99998, '2099-03-01', 99910, 99911, 2, 'OFF'),
+                (9990000021, 99998, '2099-03-02', 99910, 99911, 2, 'OFF')
          ON CONFLICT (game_id) DO NOTHING"
     )
     .execute(pool)
@@ -300,7 +302,7 @@ async fn test_failed_game_records_error_message() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Synthetic teams and game
     sqlx::query!(
@@ -313,9 +315,9 @@ async fn test_failed_game_records_error_message() {
     .await
     .unwrap();
 
-    sqlx::query!(
-        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
-         VALUES (9990000030, 99996, '2099-04-01', 99920, 99921, 2)
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9990000030, 99996, '2099-04-01', 99920, 99921, 2, 'OFF')
          ON CONFLICT (game_id) DO NOTHING"
     )
     .execute(pool)
@@ -402,7 +404,7 @@ async fn test_skipped_game_excluded_from_pending() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Synthetic teams and games
     sqlx::query!(
@@ -415,10 +417,10 @@ async fn test_skipped_game_excluded_from_pending() {
     .await
     .unwrap();
 
-    sqlx::query!(
-        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
-         VALUES (9990000031, 99997, '2099-05-01', 99922, 99923, 2),
-                (9990000032, 99997, '2099-05-02', 99922, 99923, 2)
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9990000031, 99997, '2099-05-01', 99922, 99923, 2, 'OFF'),
+                (9990000032, 99997, '2099-05-02', 99922, 99923, 2, 'OFF')
          ON CONFLICT (game_id) DO NOTHING"
     )
     .execute(pool)
@@ -476,7 +478,7 @@ async fn test_checkpoint_kill_resume() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Synthetic teams
     sqlx::query!(
@@ -490,12 +492,12 @@ async fn test_checkpoint_kill_resume() {
     .unwrap();
 
     // 4 synthetic games in season 99999
-    sqlx::query!(
-        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
-         VALUES (9990000040, 99999, '2099-06-01', 99930, 99931, 2),
-                (9990000041, 99999, '2099-06-02', 99930, 99931, 2),
-                (9990000042, 99999, '2099-06-03', 99930, 99931, 2),
-                (9990000043, 99999, '2099-06-04', 99930, 99931, 2)
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9990000040, 99999, '2099-06-01', 99930, 99931, 2, 'OFF'),
+                (9990000041, 99999, '2099-06-02', 99930, 99931, 2, 'OFF'),
+                (9990000042, 99999, '2099-06-03', 99930, 99931, 2, 'OFF'),
+                (9990000043, 99999, '2099-06-04', 99930, 99931, 2, 'OFF')
          ON CONFLICT (game_id) DO NOTHING"
     )
     .execute(pool)
@@ -580,7 +582,7 @@ async fn test_backfill_season_scope() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     sqlx::query!(
         "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
@@ -593,11 +595,11 @@ async fn test_backfill_season_scope() {
     .unwrap();
 
     // Two games in season 99994, one in 99995
-    sqlx::query!(
-        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type)
-         VALUES (9990000007, 99994, '2099-01-07', 99907, 99908, 2),
-                (9990000008, 99994, '2099-01-08', 99907, 99908, 2),
-                (9990000009, 99995, '2099-01-09', 99907, 99908, 2)
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9990000007, 99994, '2099-01-07', 99907, 99908, 2, 'OFF'),
+                (9990000008, 99994, '2099-01-08', 99907, 99908, 2, 'OFF'),
+                (9990000009, 99995, '2099-01-09', 99907, 99908, 2, 'OFF')
          ON CONFLICT (game_id) DO NOTHING"
     )
     .execute(pool)

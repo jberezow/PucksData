@@ -53,7 +53,7 @@ async fn test_status_query_healthy_season() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Insert synthetic teams and a completed game with events
     sqlx::query!(
@@ -109,7 +109,7 @@ async fn test_status_query_unhealthy_season() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     sqlx::query!(
         "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
@@ -154,7 +154,7 @@ async fn test_status_season_filter() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     sqlx::query!(
         "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
@@ -221,7 +221,7 @@ async fn test_status_excludes_fut_pre_games() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     sqlx::query!(
         "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
@@ -279,7 +279,7 @@ async fn test_fix_idempotent() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Insert synthetic teams, a completed+covered game, and a backfill_progress row (done)
     sqlx::query!(
@@ -382,3 +382,4 @@ fn test_exit_code_unhealthy_is_one() {
         "healthy=false must trigger exit(1) in main.rs dispatch arm"
     );
 }
+mod common;

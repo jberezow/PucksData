@@ -38,7 +38,7 @@ async fn test_players_upsert_idempotent() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
     let record = pucksdata::models::DbPlayer {
         player_id: 9000001,
         first_name: "Test".into(),
@@ -96,3 +96,4 @@ async fn test_players_upsert_idempotent() {
         .await
         .unwrap();
 }
+mod common;

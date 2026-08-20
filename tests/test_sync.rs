@@ -1,5 +1,7 @@
 // tests/test_sync.rs
 // Integration tests for Phase 6: Sync Command Core
+mod common;
+
 // Tests: SYNC-01 (gap detection), SYNC-02 (idempotency), SYNC-04 (--from filter), QUAL-SYNC-01
 //
 // Synthetic ID ranges (no collision with test_backfill.rs 99901-99908 / 9990000001-9990000009):
@@ -48,7 +50,7 @@ async fn test_query_sync_candidates_detects_gap() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Insert synthetic prerequisite teams
     sqlx::query!(
@@ -116,7 +118,7 @@ async fn test_query_sync_candidates_from_date_filter() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Insert synthetic teams (unique range: 99913-99914 for this test)
     sqlx::query!(
@@ -171,7 +173,7 @@ async fn test_query_sync_candidates_includes_null_state() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Insert synthetic teams (unique range: 99915-99916 for this test)
     sqlx::query!(
@@ -232,7 +234,7 @@ async fn test_sync_state_upsert() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // Delete any stale sync_state row from previous runs
     sqlx::query!("DELETE FROM sync_state WHERE key = 'singleton'")
@@ -338,7 +340,7 @@ async fn test_advisory_lock_single_instance() {
     if std::env::var("DATABASE_URL").is_err() {
         return;
     }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    let pool = common::test_pool().await;
 
     // First acquire must succeed
     let guard = pucksdata::process::sync::acquire_daemon_lock(pool).await;
