@@ -1,3 +1,4 @@
+//! Enumerates and fetches player landing pages across all seasons and rosters.
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -5,7 +6,11 @@ use indicatif::ProgressBar;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-use crate::{api::{fetch_api_json, ApiError}, models::DbPlayer, AnyError};
+use crate::{
+    api::{fetch_api_json, ApiError},
+    models::DbPlayer,
+    AnyError,
+};
 
 /// Query all distinct season IDs present in the games table.
 ///
@@ -117,7 +122,11 @@ struct RosterResponse {
 async fn fetch_active_team_abbrevs() -> Result<Vec<String>, AnyError> {
     let json = fetch_api_json("https://api-web.nhle.com/v1/standings/now").await?;
     let resp: StandingsResponse = serde_json::from_str(&json)?;
-    Ok(resp.standings.into_iter().map(|s| s.team_abbrev.default).collect())
+    Ok(resp
+        .standings
+        .into_iter()
+        .map(|s| s.team_abbrev.default)
+        .collect())
 }
 
 /// Fetch all player IDs on a team's current roster.
@@ -125,7 +134,9 @@ async fn fetch_roster_player_ids(abbrev: &str) -> Result<Vec<i64>, AnyError> {
     let url = format!("https://api-web.nhle.com/v1/roster/{abbrev}/current");
     let json = fetch_api_json(&url).await?;
     let roster: RosterResponse = serde_json::from_str(&json)?;
-    let ids = roster.forwards.into_iter()
+    let ids = roster
+        .forwards
+        .into_iter()
         .chain(roster.defensemen)
         .chain(roster.goalies)
         .map(|p| p.id)
@@ -139,7 +150,11 @@ async fn fetch_roster_player_ids(abbrev: &str) -> Result<Vec<i64>, AnyError> {
 /// `season_id` must be provided (e.g. 20252026). Querying without a season filter is no longer
 /// supported: the API returns at most 10,000 rows sorted by playerId ASC, which only covers
 /// historical players from the 1930s–90s and silently omits all modern players (IDs > ~8,448,000).
-async fn fetch_stats_player_ids(entity: &str, game_type: u8, season_id: i32) -> Result<HashSet<i64>, AnyError> {
+async fn fetch_stats_player_ids(
+    entity: &str,
+    game_type: u8,
+    season_id: i32,
+) -> Result<HashSet<i64>, AnyError> {
     let mut all_ids: HashSet<i64> = HashSet::new();
     let base_url = format!(
         "https://api.nhle.com/stats/rest/en/{entity}/summary?limit=100&start={{}}&sort=playerId&dir=asc&cayenneExp=gameTypeId%3D{game_type}%20and%20seasonId%3D{season_id}"
@@ -204,11 +219,16 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
                     println!("  enumerating players: rosters {i}/{team_count}");
                 }
                 match fetch_roster_player_ids(abbrev).await {
-                    Ok(ids) => { all_ids.extend(ids); }
+                    Ok(ids) => {
+                        all_ids.extend(ids);
+                    }
                     Err(e) => eprintln!("warn: roster fetch failed for {abbrev}: {e}"),
                 }
             }
-            println!("  enumerating players: rosters done ({} unique IDs so far)", all_ids.len());
+            println!(
+                "  enumerating players: rosters done ({} unique IDs so far)",
+                all_ids.len()
+            );
         }
         Err(e) => eprintln!("warn: active team fetch failed, skipping roster source: {e}"),
     }
@@ -219,7 +239,11 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
     if !seasons.is_empty() {
         // 2 entity types × 2 game types × N seasons
         let stats_total = seasons.len() * 4;
-        println!("  enumerating players: fetching stats pages for {} seasons ({} requests)...", seasons.len(), stats_total);
+        println!(
+            "  enumerating players: fetching stats pages for {} seasons ({} requests)...",
+            seasons.len(),
+            stats_total
+        );
         let mut stats_done = 0usize;
         for &season_id in seasons {
             for entity in ["skater", "goalie"] {
@@ -232,7 +256,12 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
                     }
                     stats_done += 1;
                     if stats_done.is_multiple_of(8) || stats_done == stats_total {
-                        println!("  enumerating players: stats pages {}/{} ({} unique IDs)", stats_done, stats_total, all_ids.len());
+                        println!(
+                            "  enumerating players: stats pages {}/{} ({} unique IDs)",
+                            stats_done,
+                            stats_total,
+                            all_ids.len()
+                        );
                     }
                 }
             }
@@ -249,8 +278,7 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
 async fn fetch_player_landing(id: i64) -> Result<PlayerLanding, ApiError> {
     let url = format!("https://api-web.nhle.com/v1/player/{id}/landing");
     let json = fetch_api_json(&url).await?;
-    let landing: PlayerLanding = serde_json::from_str(&json)
-        .map_err(|_e| ApiError::Other(500))?;
+    let landing: PlayerLanding = serde_json::from_str(&json).map_err(|_e| ApiError::Other(500))?;
     Ok(landing)
 }
 
@@ -269,7 +297,10 @@ fn landing_to_db(landing: PlayerLanding) -> DbPlayer {
     let draft_year = landing.draft_details.as_ref().and_then(|d| d.year);
     let draft_round = landing.draft_details.as_ref().and_then(|d| d.round);
     let draft_pick = landing.draft_details.as_ref().and_then(|d| d.pick_in_round);
-    let draft_team_abbrev = landing.draft_details.as_ref().and_then(|d| d.team_abbrev.clone());
+    let draft_team_abbrev = landing
+        .draft_details
+        .as_ref()
+        .and_then(|d| d.team_abbrev.clone());
     let draft_overall_pick = landing.draft_details.as_ref().and_then(|d| d.overall_pick);
 
     DbPlayer {

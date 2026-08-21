@@ -1,7 +1,12 @@
-use std::collections::HashMap;
+//! Fetches game metadata (stats + boxscore) and builds the team-ID-to-franchise-ID map.
 use serde::Deserialize;
+use std::collections::HashMap;
 
-use crate::{api::{fetch_api_json, ApiError}, models::DbGame, AnyError};
+use crate::{
+    api::{fetch_api_json, ApiError},
+    models::DbGame,
+    AnyError,
+};
 
 // ── Stats API deserialization structs ────────────────────────────────────────
 
@@ -21,16 +26,16 @@ pub struct StatsGameRecord {
     pub id: i64,
     pub season: i32,
     #[serde(rename = "gameDate")]
-    pub game_date: String,            // "YYYY-MM-DD"
+    pub game_date: String, // "YYYY-MM-DD"
     #[serde(rename = "gameType")]
     pub game_type: i16,
     #[serde(rename = "homeTeamId")]
     pub home_team_id: i64,
-    #[serde(rename = "visitingTeamId")]  // NOT "awayTeamId"
+    #[serde(rename = "visitingTeamId")] // NOT "awayTeamId"
     pub away_team_id: i64,
     #[serde(rename = "homeScore")]
     pub home_score: Option<i16>,
-    #[serde(rename = "visitingScore")]   // NOT "awayScore"
+    #[serde(rename = "visitingScore")] // NOT "awayScore"
     pub away_score: Option<i16>,
 }
 
@@ -57,7 +62,7 @@ pub struct BoxscoreTeam {
 pub struct BoxscoreGame {
     pub id: i64,
     #[serde(rename = "startTimeUTC")]
-    pub start_time_utc: Option<String>,  // ISO 8601 UTC string
+    pub start_time_utc: Option<String>, // ISO 8601 UTC string
     #[serde(rename = "gameState")]
     pub game_state: Option<String>,
     pub venue: Option<LocalizedName>,
@@ -91,7 +96,9 @@ pub async fn fetch_team_id_to_franchise_id_map() -> Result<HashMap<i64, i64>, An
     }
     let json = fetch_api_json("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
     let resp: TeamListResponse = serde_json::from_str(&json)?;
-    let map = resp.data.into_iter()
+    let map = resp
+        .data
+        .into_iter()
         .filter_map(|r| r.franchise_id.map(|fid| (r.id, fid)))
         .collect();
     Ok(map)
@@ -159,7 +166,9 @@ pub fn transform_game(
 
     let (start_time_utc, venue, venue_location, game_state) = match boxscore {
         Some(bs) => {
-            let ts = bs.start_time_utc.as_deref()
+            let ts = bs
+                .start_time_utc
+                .as_deref()
                 .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
             let v = bs.venue.as_ref().map(|v| v.default.clone());
             let vl = bs.venue_location.as_ref().map(|v| v.default.clone());
@@ -175,10 +184,24 @@ pub fn transform_game(
     // exhibition clubs like EHC Red Bull München / id=7509) are absent from both the /team
     // endpoint and the teams table. Inserting the raw ID would always produce an FK violation.
     // Instead we surface an Err so the caller can skip + warn for that game.
-    let home_team_id = team_id_map.get(&stats.home_team_id).copied()
-        .ok_or_else(|| format!("unmapped home_team_id {} for game {}", stats.home_team_id, stats.id))?;
-    let away_team_id = team_id_map.get(&stats.away_team_id).copied()
-        .ok_or_else(|| format!("unmapped away_team_id {} for game {}", stats.away_team_id, stats.id))?;
+    let home_team_id = team_id_map
+        .get(&stats.home_team_id)
+        .copied()
+        .ok_or_else(|| {
+            format!(
+                "unmapped home_team_id {} for game {}",
+                stats.home_team_id, stats.id
+            )
+        })?;
+    let away_team_id = team_id_map
+        .get(&stats.away_team_id)
+        .copied()
+        .ok_or_else(|| {
+            format!(
+                "unmapped away_team_id {} for game {}",
+                stats.away_team_id, stats.id
+            )
+        })?;
 
     Ok(DbGame {
         game_id: stats.id,
@@ -240,7 +263,10 @@ pub async fn fetch_games_for_season_enriched(
                 // before game 6 or 7). Silently use stats-only data — no warning needed.
                 Err(crate::api::ApiError::NotFound) => None,
                 Err(e) => {
-                    eprintln!("warn: boxscore fetch failed for game {}: {e:?}, using stats-only data", stats.id);
+                    eprintln!(
+                        "warn: boxscore fetch failed for game {}: {e:?}, using stats-only data",
+                        stats.id
+                    );
                     None
                 }
             };
@@ -252,12 +278,12 @@ pub async fn fetch_games_for_season_enriched(
     while let Some(res) = join_set.join_next().await {
         pb.inc(1);
         match res {
-            Ok((stats, bs)) => {
-                match transform_game(&stats, bs.as_ref(), &team_id_map) {
-                    Ok(game) => games.push(game),
-                    Err(e) => pb.suspend(|| eprintln!("warn: transform failed for game {}: {e}", stats.id)),
+            Ok((stats, bs)) => match transform_game(&stats, bs.as_ref(), &team_id_map) {
+                Ok(game) => games.push(game),
+                Err(e) => {
+                    pb.suspend(|| eprintln!("warn: transform failed for game {}: {e}", stats.id))
                 }
-            }
+            },
             Err(e) => pb.suspend(|| eprintln!("warn: task join error: {e}")),
         }
     }
@@ -269,12 +295,13 @@ pub async fn fetch_games_for_season_enriched(
 /// Fetch a single game by ID (for --game mode). Fetches stats + boxscore and transforms.
 pub async fn fetch_single_game(game_id: i64) -> Result<DbGame, AnyError> {
     let team_id_map = fetch_team_id_to_franchise_id_map().await?;
-    let url = format!(
-        "https://api.nhle.com/stats/rest/en/game?cayenneExp=id%3D{game_id}"
-    );
+    let url = format!("https://api.nhle.com/stats/rest/en/game?cayenneExp=id%3D{game_id}");
     let json = fetch_api_json(&url).await?;
     let resp: StatsApiResponse<StatsGameRecord> = serde_json::from_str(&json)?;
-    let stats = resp.data.into_iter().next()
+    let stats = resp
+        .data
+        .into_iter()
+        .next()
         .ok_or_else(|| format!("game {game_id} not found in stats API"))?;
     let bs = fetch_game_boxscore(game_id).await.ok();
     transform_game(&stats, bs.as_ref(), &team_id_map)

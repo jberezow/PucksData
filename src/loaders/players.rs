@@ -1,26 +1,31 @@
+//! Bulk-upserts player records to the `players` table via `UNNEST`.
 use crate::models::DbPlayer;
 
-pub async fn upsert_players(pool: &sqlx::PgPool, records: &[DbPlayer]) -> Result<usize, sqlx::Error> {
+/// Bulk-upsert player records into the `players` table using `UNNEST` arrays.
+pub async fn upsert_players(
+    pool: &sqlx::PgPool,
+    records: &[DbPlayer],
+) -> Result<usize, sqlx::Error> {
     if records.is_empty() {
         return Ok(0);
     }
 
     // Collect each column into a parallel Vec so we can pass them as unnest() arrays.
     // One INSERT with 4284 rows replaces 4284 individual round-trips to Neon Postgres.
-    let mut player_ids:          Vec<i64>              = Vec::with_capacity(records.len());
-    let mut first_names:         Vec<String>           = Vec::with_capacity(records.len());
-    let mut last_names:          Vec<String>           = Vec::with_capacity(records.len());
-    let mut positions:           Vec<Option<String>>   = Vec::with_capacity(records.len());
-    let mut shoots_catches:      Vec<Option<String>>   = Vec::with_capacity(records.len());
-    let mut current_team_abbrevs: Vec<Option<String>>  = Vec::with_capacity(records.len());
-    let mut birth_dates:         Vec<Option<time::Date>> = Vec::with_capacity(records.len());
-    let mut heights_cm:          Vec<Option<i16>>      = Vec::with_capacity(records.len());
-    let mut weights_kg:          Vec<Option<i16>>      = Vec::with_capacity(records.len());
-    let mut draft_years:         Vec<Option<i16>>      = Vec::with_capacity(records.len());
-    let mut draft_rounds:        Vec<Option<i16>>      = Vec::with_capacity(records.len());
-    let mut draft_picks:         Vec<Option<i16>>      = Vec::with_capacity(records.len());
-    let mut draft_team_abbrevs:  Vec<Option<String>>   = Vec::with_capacity(records.len());
-    let mut draft_overall_picks: Vec<Option<i16>>      = Vec::with_capacity(records.len());
+    let mut player_ids: Vec<i64> = Vec::with_capacity(records.len());
+    let mut first_names: Vec<String> = Vec::with_capacity(records.len());
+    let mut last_names: Vec<String> = Vec::with_capacity(records.len());
+    let mut positions: Vec<Option<String>> = Vec::with_capacity(records.len());
+    let mut shoots_catches: Vec<Option<String>> = Vec::with_capacity(records.len());
+    let mut current_team_abbrevs: Vec<Option<String>> = Vec::with_capacity(records.len());
+    let mut birth_dates: Vec<Option<time::Date>> = Vec::with_capacity(records.len());
+    let mut heights_cm: Vec<Option<i16>> = Vec::with_capacity(records.len());
+    let mut weights_kg: Vec<Option<i16>> = Vec::with_capacity(records.len());
+    let mut draft_years: Vec<Option<i16>> = Vec::with_capacity(records.len());
+    let mut draft_rounds: Vec<Option<i16>> = Vec::with_capacity(records.len());
+    let mut draft_picks: Vec<Option<i16>> = Vec::with_capacity(records.len());
+    let mut draft_team_abbrevs: Vec<Option<String>> = Vec::with_capacity(records.len());
+    let mut draft_overall_picks: Vec<Option<i16>> = Vec::with_capacity(records.len());
 
     for r in records {
         player_ids.push(r.player_id);

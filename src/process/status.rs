@@ -1,6 +1,4 @@
-// src/process/status.rs
-// Operator diagnostic: per-season health summary.
-// run_status() returns true = healthy (no unprocessed OFF games), false = gaps exist.
+//! Diagnostic operator command — per-season health summary and optional gap repair.
 
 /// Per-season health summary produced by the diagnostic queries.
 pub struct SeasonReport {
@@ -81,31 +79,36 @@ pub async fn run_status(
     .await?;
 
     // Merge cov_rows and bp_rows into SeasonReport vec (outer join on season)
-    let reports: Vec<SeasonReport> = cov_rows.iter().map(|r| {
-        let bp = bp_rows.iter().find(|b| b.season == r.season);
-        let coverage_pct = if r.total_off_games > 0 {
-            (r.games_with_events as f64 / r.total_off_games as f64) * 100.0
-        } else {
-            100.0
-        };
-        SeasonReport {
-            season: r.season,
-            total_off_games: r.total_off_games,
-            games_with_events: r.games_with_events,
-            coverage_pct,
-            goals_missing_shot: 0, // filled below for the scoped or all-seasons row
-            bp_done: bp.map(|b| b.bp_done).unwrap_or(0),
-            bp_failed: bp.map(|b| b.bp_failed).unwrap_or(0),
-            bp_skipped: bp.map(|b| b.bp_skipped).unwrap_or(0),
-            bp_pending: bp.map(|b| b.bp_pending).unwrap_or(0),
-        }
-    }).collect();
+    let reports: Vec<SeasonReport> = cov_rows
+        .iter()
+        .map(|r| {
+            let bp = bp_rows.iter().find(|b| b.season == r.season);
+            let coverage_pct = if r.total_off_games > 0 {
+                (r.games_with_events as f64 / r.total_off_games as f64) * 100.0
+            } else {
+                100.0
+            };
+            SeasonReport {
+                season: r.season,
+                total_off_games: r.total_off_games,
+                games_with_events: r.games_with_events,
+                coverage_pct,
+                goals_missing_shot: 0, // filled below for the scoped or all-seasons row
+                bp_done: bp.map(|b| b.bp_done).unwrap_or(0),
+                bp_failed: bp.map(|b| b.bp_failed).unwrap_or(0),
+                bp_skipped: bp.map(|b| b.bp_skipped).unwrap_or(0),
+                bp_pending: bp.map(|b| b.bp_pending).unwrap_or(0),
+            }
+        })
+        .collect();
 
     // Print the health table
     print_status(&reports, goals_missing, season_filter);
 
     // Determine health: any season with OFF games that have no events = unhealthy
-    let healthy = reports.iter().all(|r| r.games_with_events >= r.total_off_games);
+    let healthy = reports
+        .iter()
+        .all(|r| r.games_with_events >= r.total_off_games);
 
     if fix {
         // Step A: backfill any goals missing a shots row (idempotent; safe to run every time).
@@ -118,7 +121,8 @@ pub async fn run_status(
         }
 
         // Step B: re-backfill seasons where OFF games have no events at all.
-        let seasons_to_fix: Vec<i32> = reports.iter()
+        let seasons_to_fix: Vec<i32> = reports
+            .iter()
             .filter(|r| r.games_with_events < r.total_off_games)
             .map(|r| r.season)
             .collect();
@@ -186,7 +190,8 @@ async fn fix_season(pool: &sqlx::PgPool, season: i32) -> Result<(), crate::AnyEr
 
     // Step 2: Upsert the fetched games (ON CONFLICT — idempotent)
     let pb_upsert = crate::ui::make_progress_bar(count as u64, "games written");
-    crate::loaders::games::upsert_games(pool, &games, &pb_upsert).await
+    crate::loaders::games::upsert_games(pool, &games, &pb_upsert)
+        .await
         .inspect_err(|_| pb_upsert.finish_and_clear())?;
     pb_upsert.finish_and_clear();
 
@@ -243,7 +248,11 @@ fn print_status(reports: &[SeasonReport], goals_missing_shot: i64, season_filter
     println!("{}", "-".repeat(110));
 
     for r in reports {
-        let healthy_marker = if r.games_with_events >= r.total_off_games { "yes" } else { "NO" };
+        let healthy_marker = if r.games_with_events >= r.total_off_games {
+            "yes"
+        } else {
+            "NO"
+        };
         println!(
             "{:<12}  {:>12}  {:>14}  {:>9.1}%  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}",
             r.season,

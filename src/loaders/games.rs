@@ -1,3 +1,4 @@
+//! Upserts game records to the `games` table.
 use crate::models::DbGame;
 
 /// Convert a chrono::DateTime<Utc> to time::OffsetDateTime.
@@ -6,10 +7,8 @@ use crate::models::DbGame;
 fn chrono_to_time(dt: chrono::DateTime<chrono::Utc>) -> time::OffsetDateTime {
     let ts = dt.timestamp();
     let nanos = dt.timestamp_subsec_nanos();
-    time::OffsetDateTime::from_unix_timestamp_nanos(
-        (ts as i128) * 1_000_000_000 + nanos as i128,
-    )
-    .expect("valid timestamp from chrono")
+    time::OffsetDateTime::from_unix_timestamp_nanos((ts as i128) * 1_000_000_000 + nanos as i128)
+        .expect("valid timestamp from chrono")
 }
 
 /// Upsert a batch of games into the games table.
@@ -31,8 +30,7 @@ pub async fn upsert_games(
     for g in records {
         // sqlx 0.8 `time` feature maps TIMESTAMPTZ -> time::OffsetDateTime.
         // The model stores chrono::DateTime<Utc>, so convert at bind time.
-        let start_time_utc: Option<time::OffsetDateTime> =
-            g.start_time_utc.map(chrono_to_time);
+        let start_time_utc: Option<time::OffsetDateTime> = g.start_time_utc.map(chrono_to_time);
 
         sqlx::query!(
             r#"

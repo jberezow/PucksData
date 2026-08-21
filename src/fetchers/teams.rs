@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+//! Fetches franchise records and abbreviations from the NHL stats API.
 use crate::{api::fetch_api_json, models::DbTeam, AnyError};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::HashMap;
 
 #[derive(serde::Deserialize)]
 struct FranchiseRecord {
@@ -26,6 +27,7 @@ struct ApiResponse<T> {
     data: Vec<T>,
 }
 
+/// Fetch all NHL franchise records from the stats API.
 pub async fn fetch_teams() -> Result<Vec<DbTeam>, AnyError> {
     let pb = ProgressBar::new_spinner();
     pb.set_style(
@@ -37,22 +39,15 @@ pub async fn fetch_teams() -> Result<Vec<DbTeam>, AnyError> {
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
     // Fetch franchise data
-    let franchise_json = fetch_api_json(
-        "https://api.nhle.com/stats/rest/en/franchise?limit=-1",
-    )
-    .await?;
-    let franchise_resp: ApiResponse<FranchiseRecord> =
-        serde_json::from_str(&franchise_json)?;
+    let franchise_json =
+        fetch_api_json("https://api.nhle.com/stats/rest/en/franchise?limit=-1").await?;
+    let franchise_resp: ApiResponse<FranchiseRecord> = serde_json::from_str(&franchise_json)?;
 
     pb.set_message("Fetching team abbreviations...");
 
     // Fetch team abbreviation data
-    let abbrev_json = fetch_api_json(
-        "https://api.nhle.com/stats/rest/en/team?limit=-1",
-    )
-    .await?;
-    let abbrev_resp: ApiResponse<TeamAbbrevRecord> =
-        serde_json::from_str(&abbrev_json)?;
+    let abbrev_json = fetch_api_json("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
+    let abbrev_resp: ApiResponse<TeamAbbrevRecord> = serde_json::from_str(&abbrev_json)?;
 
     // Build fullName -> triCode map from the /team endpoint.
     // The /team endpoint has one row per franchise *era* (e.g. "Quebec Nordiques" and

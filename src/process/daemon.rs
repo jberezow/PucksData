@@ -1,9 +1,4 @@
-// src/process/daemon.rs
-// Implements the pucksdata daemon: an interval-based sync loop with graceful
-// SIGTERM/Ctrl-C shutdown and single-instance enforcement via an advisory lock.
-//
-// Requirements: DAEMON-01 (interval loop), DAEMON-02 (MissedTickBehavior::Skip),
-//               DAEMON-03 (SIGTERM/Ctrl-C graceful exit), QUAL-SYNC-03 (stateless loop body).
+//! Long-lived daemon — interval-based sync loop with SIGTERM/Ctrl-C graceful shutdown.
 
 /// Run the pucksdata daemon.
 ///
@@ -60,9 +55,9 @@ async fn run_loop(
 
     let tx2 = shutdown_tx.clone();
     tokio::spawn(async move {
-        if let Ok(mut sigterm) = tokio::signal::unix::signal(
-            tokio::signal::unix::SignalKind::terminate(),
-        ) {
+        if let Ok(mut sigterm) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
             sigterm.recv().await;
             eprintln!("received SIGTERM — shutting down");
             tx2.send(true).ok();
@@ -158,8 +153,7 @@ async fn tick_sync(pool: &sqlx::PgPool, interval_secs: u64) {
 
     match crate::process::sync::run_sync(pool, None).await {
         Ok(_summary) => {
-            let next = chrono::Utc::now()
-                + chrono::Duration::seconds(interval_secs as i64);
+            let next = chrono::Utc::now() + chrono::Duration::seconds(interval_secs as i64);
             eprintln!("next sync at {} UTC", next.format("%H:%M"));
         }
         Err(e) => {

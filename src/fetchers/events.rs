@@ -1,8 +1,6 @@
-// src/fetchers/events.rs
-// Play-by-play event fetcher, situationCode decoder, and transform logic.
-
-use std::collections::HashMap;
+//! Fetches and transforms play-by-play JSON into typed DB event structs.
 use serde::Deserialize;
+use std::collections::HashMap;
 
 use crate::{
     api::fetch_api_json,
@@ -27,7 +25,7 @@ pub struct PlayByPlay {
 /// Contains the NHL team ID (NOT franchise ID — must translate via team_id_map).
 #[derive(Deserialize)]
 pub struct PbpTeam {
-    pub id: i64,  // NHL team ID — NOT franchise ID
+    pub id: i64, // NHL team ID — NOT franchise ID
 }
 
 /// A single play/event from the plays array.
@@ -38,11 +36,11 @@ pub struct Play {
     #[serde(rename = "periodDescriptor")]
     pub period_descriptor: PeriodDescriptor,
     #[serde(rename = "timeInPeriod")]
-    pub time_in_period: String,  // "MM:SS"
+    pub time_in_period: String, // "MM:SS"
     #[serde(rename = "situationCode")]
-    pub situation_code: Option<String>,  // "1551", "1541", "0651", etc.
+    pub situation_code: Option<String>, // "1551", "1541", "0651", etc.
     #[serde(rename = "typeDescKey")]
-    pub type_desc_key: String,  // "goal", "shot-on-goal", "hit", "blocked-shot", "penalty", "faceoff"
+    pub type_desc_key: String, // "goal", "shot-on-goal", "hit", "blocked-shot", "penalty", "faceoff"
     pub details: Option<EventDetails>,
 }
 
@@ -51,7 +49,7 @@ pub struct Play {
 pub struct PeriodDescriptor {
     pub number: i16,
     #[serde(rename = "periodType")]
-    pub period_type: String,  // "REG", "OT", "SO"
+    pub period_type: String, // "REG", "OT", "SO"
 }
 
 /// Unified flat struct for all possible event detail fields.
@@ -137,16 +135,22 @@ pub fn decode_situation_code(code: &str) -> (bool, i16, i16, bool, String) {
         return (true, 5, 5, true, "ev".to_string());
     }
     let bytes = code.as_bytes();
-    let home_goalie  = bytes[0] == b'1';
+    let home_goalie = bytes[0] == b'1';
     let home_skaters = (bytes[1] - b'0') as i16;
     let away_skaters = (bytes[2] - b'0') as i16;
-    let away_goalie  = bytes[3] == b'1';
+    let away_goalie = bytes[3] == b'1';
     let strength = match home_skaters.cmp(&away_skaters) {
-        std::cmp::Ordering::Equal   => "ev".to_string(),
+        std::cmp::Ordering::Equal => "ev".to_string(),
         std::cmp::Ordering::Greater => "pp".to_string(),
-        std::cmp::Ordering::Less    => "sh".to_string(),
+        std::cmp::Ordering::Less => "sh".to_string(),
     };
-    (home_goalie, home_skaters, away_skaters, away_goalie, strength)
+    (
+        home_goalie,
+        home_skaters,
+        away_skaters,
+        away_goalie,
+        strength,
+    )
 }
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
@@ -191,12 +195,12 @@ pub fn transform_events(
     Vec<String>,
 ) {
     let game_id = pbp.id;
-    let mut events   = Vec::new();
-    let mut goals    = Vec::new();
-    let mut shots    = Vec::new();
-    let mut hits     = Vec::new();
-    let mut blocks   = Vec::new();
-    let mut penalties= Vec::new();
+    let mut events = Vec::new();
+    let mut goals = Vec::new();
+    let mut shots = Vec::new();
+    let mut hits = Vec::new();
+    let mut blocks = Vec::new();
+    let mut penalties = Vec::new();
     let mut faceoffs = Vec::new();
     let mut skip_warnings = Vec::new();
 
@@ -208,8 +212,7 @@ pub fn transform_events(
 
         // Decode situationCode (default to even strength when absent)
         let code = play.situation_code.as_deref().unwrap_or("");
-        let (home_goalie, home_sk, away_sk, away_goalie, strength) =
-            decode_situation_code(code);
+        let (home_goalie, home_sk, away_sk, away_goalie, strength) = decode_situation_code(code);
 
         // Translate event_owner_team_id from NHL team ID to franchise ID
         let event_owner_team_id: Option<i64> = play
@@ -219,10 +222,9 @@ pub fn transform_events(
             .and_then(|tid| team_id_map.get(&tid).copied());
 
         // Extract coordinates and zone from details (all Optional)
-        let (x_coord, y_coord, zone_code) = play.details.as_ref().map_or(
-            (None, None, None),
-            |d| (d.x_coord, d.y_coord, d.zone_code.clone()),
-        );
+        let (x_coord, y_coord, zone_code) = play.details.as_ref().map_or((None, None, None), |d| {
+            (d.x_coord, d.y_coord, d.zone_code.clone())
+        });
 
         let base = DbEvent {
             game_id,
@@ -275,94 +277,84 @@ pub fn transform_events(
                     }
                 }
             }
-            "shot-on-goal" => {
-                match &play.details {
-                    None => {
-                        skip_warnings.push(format!(
-                            "skip: shot-on-goal event {} in game {} has no details",
-                            play.event_id, game_id
-                        ));
-                    }
-                    Some(d) => {
-                        shots.push(DbShot {
-                            event_id_in_game: play.event_id,
-                            shooting_player_id: d.shooting_player_id,
-                            goalie_in_net_id: d.goalie_in_net_id,
-                            shot_type: d.shot_type.clone(),
-                        });
-                    }
+            "shot-on-goal" => match &play.details {
+                None => {
+                    skip_warnings.push(format!(
+                        "skip: shot-on-goal event {} in game {} has no details",
+                        play.event_id, game_id
+                    ));
                 }
-            }
-            "hit" => {
-                match &play.details {
-                    None => {
-                        skip_warnings.push(format!(
-                            "skip: hit event {} in game {} has no details",
-                            play.event_id, game_id
-                        ));
-                    }
-                    Some(d) => {
-                        hits.push(DbHit {
-                            event_id_in_game: play.event_id,
-                            hitting_player_id: d.hitting_player_id,
-                            hittee_player_id: d.hittee_player_id,
-                        });
-                    }
+                Some(d) => {
+                    shots.push(DbShot {
+                        event_id_in_game: play.event_id,
+                        shooting_player_id: d.shooting_player_id,
+                        goalie_in_net_id: d.goalie_in_net_id,
+                        shot_type: d.shot_type.clone(),
+                    });
                 }
-            }
-            "blocked-shot" => {
-                match &play.details {
-                    None => {
-                        skip_warnings.push(format!(
-                            "skip: blocked-shot event {} in game {} has no details",
-                            play.event_id, game_id
-                        ));
-                    }
-                    Some(d) => {
-                        blocks.push(DbBlock {
-                            event_id_in_game: play.event_id,
-                            blocking_player_id: d.blocking_player_id,
-                            shooting_player_id: d.shooting_player_id,
-                        });
-                    }
+            },
+            "hit" => match &play.details {
+                None => {
+                    skip_warnings.push(format!(
+                        "skip: hit event {} in game {} has no details",
+                        play.event_id, game_id
+                    ));
                 }
-            }
-            "penalty" => {
-                match &play.details {
-                    None => {
-                        skip_warnings.push(format!(
-                            "skip: penalty event {} in game {} has no details",
-                            play.event_id, game_id
-                        ));
-                    }
-                    Some(d) => {
-                        penalties.push(DbPenalty {
-                            event_id_in_game: play.event_id,
-                            committed_by_player_id: d.committed_by_player_id,
-                            drawn_by_player_id: d.drawn_by_player_id,
-                            infraction_type: d.desc_key.clone(),
-                            duration_minutes: d.duration,
-                        });
-                    }
+                Some(d) => {
+                    hits.push(DbHit {
+                        event_id_in_game: play.event_id,
+                        hitting_player_id: d.hitting_player_id,
+                        hittee_player_id: d.hittee_player_id,
+                    });
                 }
-            }
-            "faceoff" => {
-                match &play.details {
-                    None => {
-                        skip_warnings.push(format!(
-                            "skip: faceoff event {} in game {} has no details",
-                            play.event_id, game_id
-                        ));
-                    }
-                    Some(d) => {
-                        faceoffs.push(DbFaceoff {
-                            event_id_in_game: play.event_id,
-                            winning_player_id: d.winning_player_id,
-                            losing_player_id: d.losing_player_id,
-                        });
-                    }
+            },
+            "blocked-shot" => match &play.details {
+                None => {
+                    skip_warnings.push(format!(
+                        "skip: blocked-shot event {} in game {} has no details",
+                        play.event_id, game_id
+                    ));
                 }
-            }
+                Some(d) => {
+                    blocks.push(DbBlock {
+                        event_id_in_game: play.event_id,
+                        blocking_player_id: d.blocking_player_id,
+                        shooting_player_id: d.shooting_player_id,
+                    });
+                }
+            },
+            "penalty" => match &play.details {
+                None => {
+                    skip_warnings.push(format!(
+                        "skip: penalty event {} in game {} has no details",
+                        play.event_id, game_id
+                    ));
+                }
+                Some(d) => {
+                    penalties.push(DbPenalty {
+                        event_id_in_game: play.event_id,
+                        committed_by_player_id: d.committed_by_player_id,
+                        drawn_by_player_id: d.drawn_by_player_id,
+                        infraction_type: d.desc_key.clone(),
+                        duration_minutes: d.duration,
+                    });
+                }
+            },
+            "faceoff" => match &play.details {
+                None => {
+                    skip_warnings.push(format!(
+                        "skip: faceoff event {} in game {} has no details",
+                        play.event_id, game_id
+                    ));
+                }
+                Some(d) => {
+                    faceoffs.push(DbFaceoff {
+                        event_id_in_game: play.event_id,
+                        winning_player_id: d.winning_player_id,
+                        losing_player_id: d.losing_player_id,
+                    });
+                }
+            },
             _ => {
                 // Unknown or untracked event type (stoppage, period-start, missed-shot, etc.)
                 // These are stored in the base events table but have no child record.
@@ -370,5 +362,14 @@ pub fn transform_events(
         }
     }
 
-    (events, goals, shots, hits, blocks, penalties, faceoffs, skip_warnings)
+    (
+        events,
+        goals,
+        shots,
+        hits,
+        blocks,
+        penalties,
+        faceoffs,
+        skip_warnings,
+    )
 }

@@ -1,7 +1,9 @@
 #[tokio::test]
 async fn test_teams_upsert_idempotent() {
-    if std::env::var("DATABASE_URL").is_err() { return; }
-    let pool = pucksdata::db::get_pool().await.unwrap();
+    if std::env::var("DATABASE_URL").is_err() {
+        return;
+    }
+    let pool = common::test_pool().await;
     let record = pucksdata::models::DbTeam {
         team_id: 999999,
         full_name: "Test Team".into(),
@@ -10,22 +12,39 @@ async fn test_teams_upsert_idempotent() {
         abbrev: "TST".into(),
     };
     // Insert twice
-    pucksdata::loaders::teams::upsert_teams(pool, &[record], &indicatif::ProgressBar::hidden()).await.unwrap();
-    pucksdata::loaders::teams::upsert_teams(pool, &[pucksdata::models::DbTeam {
-        team_id: 999999,
-        full_name: "Test Team Updated".into(),
-        common_name: "Tests".into(),
-        place_name: "Testville".into(),
-        abbrev: "TST".into(),
-    }], &indicatif::ProgressBar::hidden()).await.unwrap();
+    pucksdata::loaders::teams::upsert_teams(pool, &[record], &indicatif::ProgressBar::hidden())
+        .await
+        .unwrap();
+    pucksdata::loaders::teams::upsert_teams(
+        pool,
+        &[pucksdata::models::DbTeam {
+            team_id: 999999,
+            full_name: "Test Team Updated".into(),
+            common_name: "Tests".into(),
+            place_name: "Testville".into(),
+            abbrev: "TST".into(),
+        }],
+        &indicatif::ProgressBar::hidden(),
+    )
+    .await
+    .unwrap();
     // Verify exactly one row with team_id=999999
     let count: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM teams WHERE team_id = 999999")
-        .fetch_one(pool).await.unwrap().unwrap_or(0);
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .unwrap_or(0);
     assert_eq!(count, 1, "upsert produced more than one row");
     // Verify the update was applied (full_name updated)
     let name: String = sqlx::query_scalar!("SELECT full_name FROM teams WHERE team_id = 999999")
-        .fetch_one(pool).await.unwrap();
+        .fetch_one(pool)
+        .await
+        .unwrap();
     assert_eq!(name, "Test Team Updated");
     // Cleanup
-    sqlx::query!("DELETE FROM teams WHERE team_id = 999999").execute(pool).await.unwrap();
+    sqlx::query!("DELETE FROM teams WHERE team_id = 999999")
+        .execute(pool)
+        .await
+        .unwrap();
 }
+mod common;
