@@ -3,15 +3,22 @@
 target/
 
 # Exclude secrets — pass DATABASE_URL via docker run -e, never bake into image
-.env
-*.env
+.env*
 
 # Exclude git history
 .git
 .gitignore
 
-# Exclude planning/documentation
+# Exclude local agent and planning tooling
+.agents/
+.claude/
+.codex/
 .planning/
+skills-lock.json
+
+# Exclude files not required to build or run the service
+data/
+playground/
 README.md
 *.md
 
