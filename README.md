@@ -1,6 +1,7 @@
 # PucksData
 
 [![CI](https://github.com/jberezow/pucksdata/actions/workflows/ci.yml/badge.svg?branch=prime)](https://github.com/jberezow/pucksdata/actions/workflows/ci.yml)
+[![NHL API canary](https://github.com/jberezow/pucksdata/actions/workflows/canary.yml/badge.svg?branch=prime)](https://github.com/jberezow/pucksdata/actions/workflows/canary.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](https://www.rust-lang.org/)
 
@@ -234,6 +235,8 @@ cargo test --all-targets
 ```
 
 Database-backed tests return early when `DATABASE_URL` is unset. CI supplies an ephemeral PostgreSQL service, applies every migration in order, and exercises those integration paths without access to production secrets.
+
+The daily `NHL API and ingestion canary` separately exercises the live NHL season endpoints, validates their response shape, and writes the results to disposable PostgreSQL. It can also be started manually from the Actions tab and never connects to the production Neon database.
 
 For production-shaped manual testing, create a short-lived Neon branch and use its connection string locally. Neon branches are isolated copy-on-write clones; reset or delete the branch when testing is complete. Prefer schema-only branches when production data is sensitive.
 

@@ -6,6 +6,8 @@ use std::sync::LazyLock;
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .user_agent("pucksdata/1.0 (Hockey Statistics Research)")
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .expect("failed to build reqwest client")
 });
