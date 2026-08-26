@@ -56,17 +56,13 @@ pub fn current_season() -> i32 {
 ///            binding at the top of the daemon arm in main.rs (Phase 8 task). Underscore prefix
 ///            keeps the binding alive without an "unused variable" warning.
 /// PITFALL 2: try_acquire takes `PoolConnection<Postgres>`, not `&PgPool`. `pool.acquire()` is called first.
-/// PITFALL 3: PgAdvisoryLockGuard<'lock, C> borrows from PgAdvisoryLock — Box::leak gives 'static lifetime
-///            so the guard can be returned from this function without lifetime errors.
 pub async fn acquire_daemon_lock(
     pool: &sqlx::PgPool,
 ) -> Result<
-    sqlx::postgres::PgAdvisoryLockGuard<'static, sqlx::pool::PoolConnection<sqlx::Postgres>>,
+    sqlx::postgres::PgAdvisoryLockGuard<sqlx::pool::PoolConnection<sqlx::Postgres>>,
     crate::AnyError,
 > {
-    // Box::leak gives the lock a 'static lifetime — valid for a daemon that holds the guard until exit.
-    let lock: &'static PgAdvisoryLock =
-        Box::leak(Box::new(PgAdvisoryLock::new("pucksdata_daemon")));
+    let lock = PgAdvisoryLock::new("pucksdata_daemon");
     let conn = pool.acquire().await?;
     match lock.try_acquire(conn).await? {
         Either::Left(guard) => Ok(guard),
