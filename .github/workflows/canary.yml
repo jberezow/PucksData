@@ -1,0 +1,69 @@
+name: NHL API and ingestion canary
+
+on:
+  schedule:
+    - cron: "17 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nhl-api-ingestion-canary
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pucksdata_canary
+
+jobs:
+  canary:
+    name: Live API to PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pucksdata_canary
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pucksdata_canary"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply database migrations
+        run: |
+          for migration in migrations/*.sql; do
+            psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file "$migration"
+          done
+
+      - name: Exercise live API-to-database path
+        run: |
+          for attempt in 1 2 3; do
+            cargo test --test test_canary -- --ignored --nocapture && exit 0
+            if [ "$attempt" -lt 3 ]; then
+              echo "Canary attempt $attempt failed; retrying..."
+              sleep $((attempt * 15))
+            fi
+          done
+          exit 1
