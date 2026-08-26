@@ -1,6 +1,7 @@
 # PucksData
 
 [![CI](https://github.com/jberezow/pucksdata/actions/workflows/ci.yml/badge.svg?branch=prime)](https://github.com/jberezow/pucksdata/actions/workflows/ci.yml)
+[![NHL API canary](https://github.com/jberezow/pucksdata/actions/workflows/canary.yml/badge.svg?branch=prime)](https://github.com/jberezow/pucksdata/actions/workflows/canary.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](https://www.rust-lang.org/)
 
@@ -14,7 +15,7 @@ It is designed as the data foundation for hockey analytics, machine-learning exp
 flowchart LR
     NHL[Unofficial NHL APIs] --> Fetch[Concurrent Rust fetchers]
     Fetch --> Normalize[Typed normalization]
-    Normalize --> PG[(PostgreSQL / Neon)]
+    Normalize --> PG[(PostgreSQL)]
     CLI[CLI] --> Fetch
     CLI --> Ops[Backfill · Sync · Daemon]
     Ops --> PG
@@ -32,9 +33,9 @@ The pipeline provides:
 - Per-season health reporting and automated gap remediation
 - SQLx offline metadata and a non-root Docker runtime
 
-## Production snapshot
+## Validated dataset
 
-The Neon-hosted dataset was audited in August 2026 against the NHL API:
+A populated PucksData database was audited in August 2026 against the NHL API:
 
 - Complete 2025–26 NHL club inventory: 104 preseason, 1,312 regular-season, and 105 playoff records
 - 100% event coverage for every completed 2025–26 regular-season and playoff game
@@ -47,7 +48,7 @@ The API also lists 30 `game_type = 9` international games for February 2026. Tho
 ## Prerequisites
 
 - A stable [Rust toolchain](https://rustup.rs/)
-- PostgreSQL 14 or newer; Neon, a local server, and containerized PostgreSQL are supported
+- PostgreSQL 14 or newer
 - [`sqlx-cli`](https://crates.io/crates/sqlx-cli) for applying migrations
 
 Install the migration CLI with PostgreSQL support:
@@ -56,24 +57,16 @@ Install the migration CLI with PostgreSQL support:
 cargo install sqlx-cli --no-default-features --features postgres
 ```
 
-On Ubuntu or WSL2, install the native build dependencies:
+## Quick start
 
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential pkg-config libssl-dev
-```
-
-## Setup
-
-Clone and build the project:
+Clone the repository:
 
 ```bash
 git clone https://github.com/jberezow/pucksdata.git
 cd pucksdata
-cargo build --release
 ```
 
-Copy the environment template and set your PostgreSQL connection string:
+Create `.env` from the template and provide a PostgreSQL connection string:
 
 ```bash
 cp .env.example .env
@@ -84,29 +77,24 @@ DATABASE_URL=postgresql://user:password@host/database?sslmode=require
 SYNC_INTERVAL_SECS=21600
 ```
 
-Use a direct Neon connection rather than a `-pooler` endpoint when applying migrations or regenerating SQLx's offline query cache. Never commit `.env`.
-
-Apply the schema:
+Apply the schema and build the binary:
 
 ```bash
 sqlx migrate run
+cargo build --release
 ```
 
-Install the binary on your Cargo path:
+Initialize the database before the first historical backfill:
 
 ```bash
-cargo install --path .
+cargo run --release -- fetch teams
+cargo run --release -- fetch seasons
+cargo run --release -- fetch games --all
+cargo run --release -- fetch players
+cargo run --release -- backfill
 ```
 
-Seed the entity tables before the first historical backfill:
-
-```bash
-pucksdata fetch teams
-pucksdata fetch seasons
-pucksdata fetch games --all
-pucksdata fetch players
-pucksdata backfill
-```
+These commands are idempotent and can be restarted safely. Install the binary with `cargo install --path .` if you prefer to invoke `pucksdata` directly.
 
 ## Commands
 
@@ -196,7 +184,7 @@ PucksData does not need to run continuously during the offseason.
    pucksdata status --season 20262027
    ```
 
-4. Stop the compute when live updates are no longer needed. Neon storage remains independent of the ingestion host.
+4. Stop the daemon when live updates are no longer needed.
 
 ## Docker
 
@@ -235,7 +223,7 @@ cargo test --all-targets
 
 Database-backed tests return early when `DATABASE_URL` is unset. CI supplies an ephemeral PostgreSQL service, applies every migration in order, and exercises those integration paths without access to production secrets.
 
-For production-shaped manual testing, create a short-lived Neon branch and use its connection string locally. Neon branches are isolated copy-on-write clones; reset or delete the branch when testing is complete. Prefer schema-only branches when production data is sensitive.
+The daily `NHL API and ingestion canary` separately exercises the live NHL season endpoints, validates their response shape, and writes the results to disposable PostgreSQL. It can also be started manually from the Actions tab and never connects to a production database.
 
 ## Data model
 
