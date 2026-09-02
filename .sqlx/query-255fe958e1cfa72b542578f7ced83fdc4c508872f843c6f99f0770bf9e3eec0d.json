@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT g.game_id, g.game_state\n           FROM games g\n           WHERE g.game_date < CURRENT_DATE\n             AND ($1::date IS NULL OR g.game_date >= $1)\n             AND g.game_type != 1\n             AND NOT EXISTS (\n               SELECT 1 FROM events e WHERE e.game_id = g.game_id\n             )\n             AND NOT EXISTS (\n               SELECT 1 FROM backfill_progress bp\n               WHERE bp.game_id = g.game_id\n                 AND bp.status IN ('done', 'skipped')\n             )\n           ORDER BY g.game_date ASC, g.game_id ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "game_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "games",
+            "name": "game_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "game_state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "games",
+            "name": "game_state"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "255fe958e1cfa72b542578f7ced83fdc4c508872f843c6f99f0770bf9e3eec0d"
+}

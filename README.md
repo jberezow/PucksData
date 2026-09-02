@@ -161,6 +161,9 @@ pucksdata status --season 20252026
 pucksdata status --json
 ```
 
+Use `--json --no-fail` when an unhealthy report should remain informational,
+such as in the scheduled synchronization workflow.
+
 Use `--fix` only after reviewing the read-only report:
 
 ```bash
