@@ -68,7 +68,7 @@ fn test_games_deserialize_stats_response() {
 
 #[tokio::test]
 async fn test_games_upsert_idempotent() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -153,7 +153,7 @@ async fn test_games_upsert_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn test_fetch_idempotency() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;

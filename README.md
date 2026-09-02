@@ -221,7 +221,21 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 cargo test --all-targets
 ```
 
-Database-backed tests return early when `DATABASE_URL` is unset. CI supplies an ephemeral PostgreSQL service, applies every migration in order, and exercises those integration paths without access to production secrets.
+Database-backed tests use `TEST_DATABASE_URL` exclusively and skip when it is
+unset. They never fall back to the application `DATABASE_URL`. The target
+database name must contain `test` unless the explicit
+`PUCKSDATA_ALLOW_UNSAFE_TEST_DATABASE=1` override is set.
+
+Run the complete suite against a disposable local PostgreSQL container:
+
+```bash
+./scripts/test-database.sh
+```
+
+The script starts PostgreSQL on port `55432`, applies every migration, runs all
+tests, and removes the container and its temporary storage even when a test
+fails. CI uses the same isolated-database approach and never receives production
+credentials.
 
 The daily `NHL API and ingestion canary` separately exercises the live NHL season endpoints, validates their response shape, and writes the results to disposable PostgreSQL. It can also be started manually from the Actions tab and never connects to a production database.
 

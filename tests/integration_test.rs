@@ -2,8 +2,8 @@
 
 #[tokio::test]
 async fn pool_connects_and_queries() {
-    if std::env::var("DATABASE_URL").is_err() {
-        eprintln!("Skipping pool_connects_and_queries: DATABASE_URL not set");
+    if !common::test_database_configured() {
+        eprintln!("Skipping pool_connects_and_queries: TEST_DATABASE_URL not set");
         return;
     }
     let pool = common::test_pool().await;

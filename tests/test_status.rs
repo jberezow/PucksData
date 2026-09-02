@@ -50,7 +50,7 @@ fn test_coverage_calculation_unit() {
 /// SYNC-05 integration: run_status() returns Ok(true) when a season has all OFF games covered.
 #[tokio::test]
 async fn test_status_query_healthy_season() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -106,7 +106,7 @@ async fn test_status_query_healthy_season() {
 /// SYNC-05 integration: run_status() returns Ok(false) when OFF game has no events.
 #[tokio::test]
 async fn test_status_query_unhealthy_season() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -151,7 +151,7 @@ async fn test_status_query_unhealthy_season() {
 /// SYNC-05 integration: --season filter scopes output to the specified season only.
 #[tokio::test]
 async fn test_status_season_filter() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -218,7 +218,7 @@ async fn test_status_season_filter() {
 /// SYNC-05 integration: FUT/PRE games are excluded from total_off_games count.
 #[tokio::test]
 async fn test_status_excludes_fut_pre_games() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -276,7 +276,7 @@ async fn test_status_excludes_fut_pre_games() {
 /// Verifies idempotency: after fix, the season remains healthy and backfill_progress is unchanged.
 #[tokio::test]
 async fn test_fix_idempotent() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;

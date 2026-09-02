@@ -7,7 +7,7 @@ mod common;
 /// scope produces the same rows (ON CONFLICT DO NOTHING — no duplicates, no errors).
 #[tokio::test]
 async fn test_backfill_progress_seed_idempotent() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -76,7 +76,7 @@ async fn test_backfill_progress_seed_idempotent() {
 /// 'pending' and 'failed' games are included.
 #[tokio::test]
 async fn test_backfill_resume_skips_done() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -153,7 +153,7 @@ async fn test_backfill_resume_skips_done() {
 /// Verify update_progress_status transitions: status column updates correctly.
 #[tokio::test]
 async fn test_backfill_status_transitions() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -219,7 +219,7 @@ async fn test_backfill_status_transitions() {
 /// home_abbrev, and away_abbrev populated via JOIN to games and teams tables.
 #[tokio::test]
 async fn test_query_pending_games_enriched() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -299,7 +299,7 @@ async fn test_query_pending_games_enriched() {
 /// update_progress_with_error stores status and error_message atomically.
 #[tokio::test]
 async fn test_failed_game_records_error_message() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -401,7 +401,7 @@ fn test_is_api_gap_error_unit() {
 /// Skipped games are terminal (not retried); failed games are still pending retry.
 #[tokio::test]
 async fn test_skipped_game_excluded_from_pending() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -475,7 +475,7 @@ async fn test_skipped_game_excluded_from_pending() {
 /// Failed and pending games are included in the next run's work list.
 #[tokio::test]
 async fn test_checkpoint_kill_resume() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -579,7 +579,7 @@ async fn test_checkpoint_kill_resume() {
 /// Verify season filter: seeding with Some(season) only touches that season's games.
 #[tokio::test]
 async fn test_backfill_season_scope() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
