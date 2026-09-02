@@ -99,6 +99,11 @@ pub async fn query_sync_candidates(
              AND NOT EXISTS (
                SELECT 1 FROM events e WHERE e.game_id = g.game_id
              )
+             AND NOT EXISTS (
+               SELECT 1 FROM backfill_progress bp
+               WHERE bp.game_id = g.game_id
+                 AND bp.status IN ('done', 'skipped')
+             )
            ORDER BY g.game_date ASC, g.game_id ASC"#,
         from_date
     )

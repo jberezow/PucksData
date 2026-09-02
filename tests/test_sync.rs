@@ -112,6 +112,60 @@ async fn test_query_sync_candidates_detects_gap() {
         .unwrap();
 }
 
+#[tokio::test]
+async fn test_query_sync_candidates_respects_acknowledged_gaps() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+
+    sqlx::query(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
+         VALUES (99917, 'Sync Home 4', 'SyncH4', 'Testville', 'SH4'),
+                (99918, 'Sync Away 4', 'SyncA4', 'Testville', 'SA4')
+         ON CONFLICT (team_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9991000006, 99995, '2020-01-01', 99917, 99918, 2, 'OFF')
+         ON CONFLICT (game_id) DO NOTHING"
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO backfill_progress (game_id, season, status)
+         VALUES (9991000006, 99995, 'done')
+         ON CONFLICT (game_id) DO UPDATE SET status = EXCLUDED.status",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let candidates = pucksdata::process::sync::query_sync_candidates(pool, None)
+        .await
+        .unwrap();
+    assert!(!candidates.iter().any(|(id, _)| *id == 9991000006));
+
+    sqlx::query("DELETE FROM backfill_progress WHERE game_id = 9991000006")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM games WHERE game_id = 9991000006")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM teams WHERE team_id IN (99917, 99918)")
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 /// SYNC-04: --from DATE filter — query_sync_candidates with from_date only returns games on/after that date.
 #[tokio::test]
 async fn test_query_sync_candidates_from_date_filter() {

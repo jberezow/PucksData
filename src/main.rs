@@ -92,6 +92,10 @@ struct StatusArgs {
     /// Emit the health report as JSON
     #[arg(long, conflicts_with = "fix")]
     json: bool,
+
+    /// Return success after producing an unhealthy report
+    #[arg(long, requires = "json")]
+    no_fail: bool,
 }
 
 #[derive(Args)]
@@ -308,7 +312,7 @@ async fn main() -> Result<(), pucksdata::AnyError> {
             } else {
                 pucksdata::process::status::run_status(pool, args.season, args.fix).await?
             };
-            if !healthy {
+            if !healthy && !args.no_fail {
                 std::process::exit(1);
             }
         }

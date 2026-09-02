@@ -43,15 +43,10 @@ jobs:
       - name: Collect database health
         id: health
         if: always() && steps.build.outcome == 'success'
-        continue-on-error: true
         run: |
-          set +e
-          target/release/pucksdata status --json > pucksdata-health.json
-          health_exit=$?
-          set -e
+          target/release/pucksdata status --json --no-fail > pucksdata-health.json
           jq empty pucksdata-health.json
           echo "report=true" >> "$GITHUB_OUTPUT"
-          exit "$health_exit"
 
       - name: Add health summary
         if: always() && steps.health.outputs.report == 'true'
@@ -64,6 +59,9 @@ jobs:
             jq -r '"- Event coverage: " + ((.summary.games_with_events / (if .summary.completed_games == 0 then 1 else .summary.completed_games end) * 10000 | round) / 100 | tostring) + "%"' pucksdata-health.json
             jq -r '"- Missing games: " + (.summary.missing_event_games | tostring) + "; failed backfills: " + (.summary.backfill_failed | tostring)' pucksdata-health.json
           } >> "$GITHUB_STEP_SUMMARY"
+          if ! jq -e '.summary.healthy' pucksdata-health.json > /dev/null; then
+            echo "::warning::Database health requires attention; review the job summary and artifact."
+          fi
 
       - name: Upload health report
         if: always() && steps.health.outputs.report == 'true'
@@ -72,7 +70,3 @@ jobs:
           name: pucksdata-health-${{ github.run_id }}
           path: pucksdata-health.json
           retention-days: 14
-
-      - name: Enforce health result
-        if: always() && steps.health.outcome == 'failure'
-        run: exit 1

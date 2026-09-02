@@ -403,6 +403,8 @@ pub async fn repair_missing_players(pool: &sqlx::PgPool) -> Result<usize, AnyErr
             SELECT losing_player_id    AS pid FROM faceoffs  WHERE losing_player_id    IS NOT NULL
         ) all_refs
         WHERE pid NOT IN (SELECT player_id FROM players)
+          -- Historical feeds use 9xxxxxx placeholders without player landing pages.
+          AND pid < 9000000
         "#
     )
     .fetch_all(pool)
