@@ -88,6 +88,18 @@ async fn test_status_query_healthy_season() {
         "season with all OFF games covered must return healthy=true"
     );
 
+    let report = pucksdata::process::status::collect_health(pool, Some(99981))
+        .await
+        .unwrap();
+    assert_eq!(report.seasons.len(), 1);
+    assert_eq!(report.seasons[0].completed_games, 1);
+    assert_eq!(report.seasons[0].missing_event_games, 0);
+    assert!(report.seasons[0].healthy);
+
+    let json = serde_json::to_value(&report).unwrap();
+    assert_eq!(json["seasons"][0]["season"], 99981);
+    assert!(json["summary"].get("last_sync_at").is_some());
+
     // Cleanup (child tables first)
     sqlx::query!("DELETE FROM events WHERE game_id = 9992000001")
         .execute(pool)

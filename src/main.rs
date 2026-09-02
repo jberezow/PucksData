@@ -88,6 +88,10 @@ struct StatusArgs {
     /// Fetch game metadata and run backfill to remediate coverage gaps
     #[arg(long)]
     fix: bool,
+
+    /// Emit the health report as JSON
+    #[arg(long, conflicts_with = "fix")]
+    json: bool,
 }
 
 #[derive(Args)]
@@ -299,8 +303,11 @@ async fn main() -> Result<(), pucksdata::AnyError> {
         }
         Commands::Status(args) => {
             let pool = db::get_pool().await?;
-            let healthy =
-                pucksdata::process::status::run_status(pool, args.season, args.fix).await?;
+            let healthy = if args.json {
+                pucksdata::process::status::run_status_json(pool, args.season).await?
+            } else {
+                pucksdata::process::status::run_status(pool, args.season, args.fix).await?
+            };
             if !healthy {
                 std::process::exit(1);
             }
