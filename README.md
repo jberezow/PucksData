@@ -257,6 +257,18 @@ The migrations create:
 
 Goals are also represented in `shots`, so the shots table covers every shot on net. Ingestion uses upsert semantics throughout and is designed to recover safely after partial failures.
 
+Downstream applications can use a dedicated read-only role. In addition to
+permissions on the statistical tables they query, grant access to the health
+views with:
+
+```sql
+GRANT USAGE ON SCHEMA observability TO reader_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA observability TO reader_role;
+```
+
+Replace `reader_role` with the application role. Repeat the `SELECT` grant
+after migrations that add new observability views.
+
 ## Scope and limitations
 
 - The NHL APIs are public but unofficial and unversioned. Historical seasons, especially pre-2010 data, can contain structural gaps.

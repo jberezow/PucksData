@@ -94,6 +94,8 @@ async fn test_status_query_healthy_season() {
     assert_eq!(report.seasons.len(), 1);
     assert_eq!(report.seasons[0].completed_games, 1);
     assert_eq!(report.seasons[0].missing_event_games, 0);
+    assert_eq!(report.seasons[0].acknowledged_gap_games, 0);
+    assert_eq!(report.seasons[0].actionable_gap_games, 0);
     assert!(report.seasons[0].healthy);
 
     let json = serde_json::to_value(&report).unwrap();
@@ -155,6 +157,77 @@ async fn test_status_query_unhealthy_season() {
         .await
         .unwrap();
     sqlx::query!("DELETE FROM teams WHERE team_id IN (99943, 99944)")
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// A completed game explicitly classified as done remains a visible gap but is not actionable.
+#[tokio::test]
+async fn test_status_classifies_acknowledged_gap() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+
+    sqlx::query(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
+         VALUES (99953, 'Known Gap Home', 'KnownH', 'Testville', 'KGH'),
+                (99954, 'Known Gap Away', 'KnownA', 'Testville', 'KGA')
+         ON CONFLICT (team_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO games (game_id, season, game_date, home_team_id, away_team_id, game_type, game_state)
+         VALUES (9992000011, 99987, '2099-02-02', 99953, 99954, 2, 'OFF')
+         ON CONFLICT (game_id) DO NOTHING"
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO backfill_progress (game_id, season, status)
+         VALUES (9992000011, 99987, 'done')
+         ON CONFLICT (game_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let healthy = pucksdata::process::status::run_status(pool, Some(99987), true)
+        .await
+        .unwrap();
+    assert!(!healthy, "strict health must retain known gaps");
+
+    let report = pucksdata::process::status::collect_health(pool, Some(99987))
+        .await
+        .unwrap();
+    let season = &report.seasons[0];
+    assert_eq!(season.missing_event_games, 1);
+    assert_eq!(season.acknowledged_gap_games, 1);
+    assert_eq!(season.actionable_gap_games, 0);
+    assert!(!season.healthy);
+
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM backfill_progress WHERE game_id = 9992000011")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "done", "--fix must not requeue acknowledged gaps");
+
+    sqlx::query("DELETE FROM backfill_progress WHERE game_id = 9992000011")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM games WHERE game_id = 9992000011")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM teams WHERE team_id IN (99953, 99954)")
         .execute(pool)
         .await
         .unwrap();

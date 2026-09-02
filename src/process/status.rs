@@ -15,6 +15,8 @@ pub struct SeasonReport {
     pub backfill_skipped: i64,
     pub backfill_pending: i64,
     pub healthy: bool,
+    pub acknowledged_gap_games: i64,
+    pub actionable_gap_games: i64,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -31,6 +33,8 @@ pub struct DatasetSummary {
     pub backfill_pending: i64,
     pub backfill_skipped: i64,
     pub healthy: bool,
+    pub acknowledged_gap_games: i64,
+    pub actionable_gap_games: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,7 +58,8 @@ pub async fn collect_health(
     let summary = sqlx::query_as::<_, DatasetSummary>(
         "SELECT last_sync_at, last_sync_games, latest_completed_game_date, latest_event_game_date,
                 completed_games, games_with_events, missing_event_games, goals_missing_shots,
-                backfill_failed, backfill_pending, backfill_skipped, healthy
+                backfill_failed, backfill_pending, backfill_skipped, healthy,
+                acknowledged_gap_games, actionable_gap_games
          FROM observability.dataset_health",
     )
     .fetch_one(pool)
@@ -63,7 +68,8 @@ pub async fn collect_health(
     let seasons = sqlx::query_as::<_, SeasonReport>(
         "SELECT season, completed_games, games_with_events, missing_event_games,
                 event_coverage_pct, goals_missing_shots, backfill_done, backfill_failed,
-                backfill_skipped, backfill_pending, healthy
+                backfill_skipped, backfill_pending, healthy,
+                acknowledged_gap_games, actionable_gap_games
          FROM observability.season_health
          WHERE ($1::integer IS NULL OR season = $1)
          ORDER BY season",
@@ -81,7 +87,7 @@ pub async fn collect_health(
 }
 
 /// Run diagnostic queries and optionally fix coverage gaps.
-/// Returns true if all in-scope seasons are healthy (no unprocessed OFF games).
+/// Returns true if all in-scope seasons have strict event coverage and consistency.
 pub async fn run_status(
     pool: &sqlx::PgPool,
     season_filter: Option<i32>,
@@ -107,13 +113,13 @@ pub async fn run_status(
         let seasons_to_fix: Vec<i32> = report
             .seasons
             .iter()
-            .filter(|season| season.missing_event_games > 0)
+            .filter(|season| season.actionable_gap_games > 0)
             .map(|r| r.season)
             .collect();
 
         if seasons_to_fix.is_empty() {
             if goals_missing == 0 {
-                println!("--fix: all seasons already healthy, nothing to do.");
+                println!("--fix: no actionable gaps found, nothing to do.");
             }
         } else {
             if season_filter.is_none() {
@@ -183,29 +189,6 @@ async fn fix_season(pool: &sqlx::PgPool, season: i32) -> Result<(), crate::AnyEr
         .inspect_err(|_| pb_upsert.finish_and_clear())?;
     pb_upsert.finish_and_clear();
 
-    // Reset games that are marked done or skipped but still have no events.
-    // seed_backfill_progress uses ON CONFLICT DO NOTHING, so stale 'done' rows
-    // are never re-queued — force them back to 'pending' before backfill.
-    // Excludes game_type = 1 (preseason) — preseason games have no API play-by-play
-    // and would otherwise be reset and re-backfilled in an infinite no-op loop.
-    sqlx::query!(
-        "UPDATE backfill_progress
-         SET status = 'pending', updated_at = NOW(), error_message = NULL
-         WHERE season = $1
-           AND status IN ('done', 'skipped')
-           AND game_id IN (
-               SELECT g.game_id
-               FROM games g
-               WHERE g.season = $1
-                 AND g.game_type != 1
-                 AND g.game_state NOT IN ('FUT', 'PRE')
-                 AND NOT EXISTS (SELECT 1 FROM events e WHERE e.game_id = g.game_id)
-           )",
-        season
-    )
-    .execute(pool)
-    .await?;
-
     crate::process::backfill::run_backfill(pool, Some(season)).await
 }
 
@@ -221,7 +204,7 @@ fn print_status(report: &HealthReport, season_filter: Option<i32>) {
     }
 
     println!(
-        "{:<12}  {:>12}  {:>14}  {:>10}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}",
+        "{:<12}  {:>12}  {:>14}  {:>10}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}",
         "Season",
         "Games (OFF+)",
         "Events Loaded",
@@ -230,14 +213,16 @@ fn print_status(report: &HealthReport, season_filter: Option<i32>) {
         "BP Fail",
         "BP Skip",
         "BP Pend",
+        "Known",
+        "Open",
         "Healthy?"
     );
-    println!("{}", "-".repeat(110));
+    println!("{}", "-".repeat(130));
 
     for r in &report.seasons {
         let healthy_marker = if r.healthy { "yes" } else { "NO" };
         println!(
-            "{:<12}  {:>12}  {:>14}  {:>9.1}%  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}",
+            "{:<12}  {:>12}  {:>14}  {:>9.1}%  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}",
             r.season,
             r.completed_games,
             r.games_with_events,
@@ -246,11 +231,13 @@ fn print_status(report: &HealthReport, season_filter: Option<i32>) {
             r.backfill_failed,
             r.backfill_skipped,
             r.backfill_pending,
+            r.acknowledged_gap_games,
+            r.actionable_gap_games,
             healthy_marker
         );
     }
 
-    println!("{}", "-".repeat(110));
+    println!("{}", "-".repeat(130));
     let goals_missing_shots: i64 = report
         .seasons
         .iter()
