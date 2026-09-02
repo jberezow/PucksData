@@ -28,7 +28,7 @@ serde_json = "1.0"
 clap = { version = "4.4", features = ["derive"] }
 
 # Date/time
-time = { version = "0.3", features = ["serde", "macros", "parsing"] }
+time = { version = "0.3", features = ["serde-human-readable", "macros", "parsing"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # Progress bars

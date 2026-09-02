@@ -47,6 +47,17 @@ pub fn current_season() -> i32 {
     season_for_date(now.month(), now.year())
 }
 
+async fn refresh_current_season_games(pool: &sqlx::PgPool) -> Result<usize, crate::AnyError> {
+    let season = current_season();
+    println!("[sync 0/5] refreshing game metadata for season {season}...");
+    let progress = indicatif::ProgressBar::hidden();
+    let games = crate::fetchers::games::fetch_games_for_season_enriched(season, &progress).await;
+    let count = games.len();
+    crate::loaders::games::upsert_games(pool, &games, &progress).await?;
+    println!("[sync 0/5] {count} games upserted for season {season}");
+    Ok(count)
+}
+
 /// Acquire the pucksdata daemon advisory lock for single-instance enforcement (QUAL-SYNC-02).
 /// Returns Ok(guard) if the lock was acquired — caller MUST hold the guard for the process lifetime.
 /// The guard is RAII: dropping it releases the lock and returns the connection to the pool.
@@ -113,6 +124,8 @@ pub async fn run_sync(
     use tokio::task::JoinSet;
 
     let started_at = Instant::now();
+
+    refresh_current_season_games(pool).await?;
 
     // Step 1: Entity refresh — teams then players (SYNC-03)
     // Must happen before team_id_map fetch to avoid stale map (Pitfall 3 from RESEARCH.md)

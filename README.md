@@ -158,6 +158,7 @@ Report game counts, event coverage, goals-in-shots consistency, and backfill sta
 ```bash
 pucksdata status
 pucksdata status --season 20252026
+pucksdata status --json
 ```
 
 Use `--fix` only after reviewing the read-only report:
@@ -239,6 +240,8 @@ credentials.
 
 The daily `NHL API and ingestion canary` separately exercises the live NHL season endpoints, validates their response shape, and writes the results to disposable PostgreSQL. It can also be started manually from the Actions tab and never connects to a production database.
 
+The `Scheduled database sync` workflow runs `sync` against the configured database each day and can also be started manually. It publishes a concise job summary and retains the JSON health report as a short-lived workflow artifact. The workflow requires a repository Actions secret named `DATABASE_URL` containing an ingestion-role connection string.
+
 ## Data model
 
 The migrations create:
@@ -247,6 +250,7 @@ The migrations create:
 - A shared `events` parent table
 - Event detail tables: `goals`, `shots`, `hits`, `blocks`, `penalties`, and `faceoffs`
 - Operational tables: `backfill_progress` and `sync_state`
+- Read-only health views in the `observability` schema
 
 Goals are also represented in `shots`, so the shots table covers every shot on net. Ingestion uses upsert semantics throughout and is designed to recover safely after partial failures.
 
