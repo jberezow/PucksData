@@ -51,15 +51,25 @@ jobs:
       - name: Add health summary
         if: always() && steps.health.outputs.report == 'true'
         run: |
+          status=$(jq -r '
+            if .summary.healthy then "healthy"
+            elif .summary.actionable_gap_games == 0
+              and .summary.goals_missing_shots == 0
+              and .summary.backfill_failed == 0
+            then "healthy with known gaps"
+            else "attention required"
+            end
+          ' pucksdata-health.json)
           {
             echo "## PucksData health"
-            jq -r '"- Status: **" + (if .summary.healthy then "healthy" else "attention required" end) + "**"' pucksdata-health.json
+            echo "- Status: **${status}**"
             jq -r '"- Last sync: " + (.summary.last_sync_at // "not recorded")' pucksdata-health.json
             jq -r '"- Latest completed game: " + (.summary.latest_completed_game_date // "not recorded")' pucksdata-health.json
             jq -r '"- Event coverage: " + ((.summary.games_with_events / (if .summary.completed_games == 0 then 1 else .summary.completed_games end) * 10000 | round) / 100 | tostring) + "%"' pucksdata-health.json
-            jq -r '"- Missing games: " + (.summary.missing_event_games | tostring) + "; failed backfills: " + (.summary.backfill_failed | tostring)' pucksdata-health.json
+            jq -r '"- Missing games: " + (.summary.missing_event_games | tostring) + " (" + (.summary.acknowledged_gap_games | tostring) + " known, " + (.summary.actionable_gap_games | tostring) + " actionable)"' pucksdata-health.json
+            jq -r '"- Failed backfills: " + (.summary.backfill_failed | tostring)' pucksdata-health.json
           } >> "$GITHUB_STEP_SUMMARY"
-          if ! jq -e '.summary.healthy' pucksdata-health.json > /dev/null; then
+          if [[ "$status" == "attention required" ]]; then
             echo "::warning::Database health requires attention; review the job summary and artifact."
           fi
 

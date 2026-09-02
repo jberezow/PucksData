@@ -223,6 +223,11 @@ pub fn transform_game(
 
 const MAX_CONCURRENT_BOXSCORES: usize = 10;
 
+/// Game types represented by NHL-franchise teams in this database.
+fn is_supported_game_type(game_type: i16) -> bool {
+    matches!(game_type, 1..=4)
+}
+
 /// Enumerate all games for a season, concurrently fetch their boxscores (10-permit semaphore),
 /// transform and return DbGame records. Individual game errors skip + warn.
 pub async fn fetch_games_for_season_enriched(
@@ -237,13 +242,24 @@ pub async fn fetch_games_for_season_enriched(
         }
     };
 
-    let stats_records = match fetch_games_for_season(season_year).await {
+    let mut stats_records = match fetch_games_for_season(season_year).await {
         Ok(r) => r,
         Err(e) => {
             pb.suspend(|| eprintln!("warn: failed to fetch games for season {season_year}: {e}"));
             return Vec::new();
         }
     };
+
+    let fetched_count = stats_records.len();
+    stats_records.retain(|game| is_supported_game_type(game.game_type));
+    let unsupported_count = fetched_count - stats_records.len();
+    if unsupported_count > 0 {
+        pb.suspend(|| {
+            eprintln!(
+                "info: skipped {unsupported_count} out-of-scope game(s) for season {season_year}"
+            )
+        });
+    }
 
     pb.set_length(stats_records.len() as u64);
     pb.set_message(format!("games (season {season_year:08})"));
@@ -305,4 +321,18 @@ pub async fn fetch_single_game(game_id: i64) -> Result<DbGame, AnyError> {
         .ok_or_else(|| format!("game {game_id} not found in stats API"))?;
     let bs = fetch_game_boxscore(game_id).await.ok();
     transform_game(&stats, bs.as_ref(), &team_id_map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_supported_game_type;
+
+    #[test]
+    fn supported_game_types_exclude_international_games() {
+        for game_type in 1..=4 {
+            assert!(is_supported_game_type(game_type));
+        }
+        assert!(!is_supported_game_type(9));
+        assert!(!is_supported_game_type(18));
+    }
 }
