@@ -47,7 +47,7 @@ fn test_is_game_completed_unit() {
 /// After adding a fake events row, the game disappears (idempotency by construction).
 #[tokio::test]
 async fn test_query_sync_candidates_detects_gap() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -115,7 +115,7 @@ async fn test_query_sync_candidates_detects_gap() {
 /// SYNC-04: --from DATE filter — query_sync_candidates with from_date only returns games on/after that date.
 #[tokio::test]
 async fn test_query_sync_candidates_from_date_filter() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -170,7 +170,7 @@ async fn test_query_sync_candidates_from_date_filter() {
 /// The SQL does NOT filter by game_state — that is Rust-side in run_sync().
 #[tokio::test]
 async fn test_query_sync_candidates_includes_null_state() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -231,7 +231,7 @@ async fn test_query_sync_candidates_includes_null_state() {
 /// Synthetic IDs: teams 99921-99922, game 9991000005 (unique range, no FK collisions).
 #[tokio::test]
 async fn test_sync_state_upsert() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
@@ -337,7 +337,7 @@ async fn test_sync_state_upsert() {
 /// Tests the single-instance enforcement pattern.
 #[tokio::test]
 async fn test_advisory_lock_single_instance() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;

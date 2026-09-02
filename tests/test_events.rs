@@ -368,7 +368,7 @@ fn test_goal_produces_shot_entry() {
 
 #[tokio::test]
 async fn test_events_upsert_idempotent() {
-    if std::env::var("DATABASE_URL").is_err() {
+    if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
