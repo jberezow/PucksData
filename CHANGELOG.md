@@ -3,6 +3,18 @@
 All notable changes to PucksData are documented here. The project follows
 [Semantic Versioning](https://semver.org/) beginning with version 1.5.0.
 
+## [Unreleased]
+
+### Changed
+
+- Corrected the home/away interpretation of NHL `situationCode` values.
+- Defined event `strength` from the event owner's perspective and made it
+  nullable for events without an owning team.
+
+### Added
+
+- Preserved validated NHL `situationCode` values on newly ingested events.
+
 ## [1.5.0] - Unreleased
 
 ### Added

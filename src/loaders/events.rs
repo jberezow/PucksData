@@ -46,7 +46,9 @@ pub async fn upsert_game_events(
         let home_sks: Vec<i16> = events.iter().map(|e| e.home_skater_count).collect();
         let away_sks: Vec<i16> = events.iter().map(|e| e.away_skater_count).collect();
         let away_goalies: Vec<bool> = events.iter().map(|e| e.away_goalie_present).collect();
-        let strengths: Vec<&str> = events.iter().map(|e| e.strength.as_str()).collect();
+        let strengths: Vec<Option<&str>> = events.iter().map(|e| e.strength.as_deref()).collect();
+        let situation_codes: Vec<Option<&str>> =
+            events.iter().map(|e| e.situation_code.as_deref()).collect();
 
         let rows = sqlx::query(
             r#"
@@ -54,15 +56,16 @@ pub async fn upsert_game_events(
                 (game_id, event_id_in_game, period, period_type, time_in_period,
                  event_type, x_coord, y_coord, zone_code, event_owner_team_id,
                  home_goalie_present, home_skater_count, away_skater_count,
-                 away_goalie_present, strength)
+                 away_goalie_present, strength, situation_code)
             SELECT * FROM UNNEST(
                 $1::bigint[], $2::int[], $3::smallint[], $4::text[], $5::text[],
                 $6::text[], $7::smallint[], $8::smallint[], $9::text[], $10::bigint[],
-                $11::bool[], $12::smallint[], $13::smallint[], $14::bool[], $15::text[]
+                $11::bool[], $12::smallint[], $13::smallint[], $14::bool[], $15::text[],
+                $16::text[]
             ) AS t(game_id, event_id_in_game, period, period_type, time_in_period,
                    event_type, x_coord, y_coord, zone_code, event_owner_team_id,
                    home_goalie_present, home_skater_count, away_skater_count,
-                   away_goalie_present, strength)
+                   away_goalie_present, strength, situation_code)
             ON CONFLICT (game_id, event_id_in_game) DO UPDATE SET
                 period              = EXCLUDED.period,
                 period_type         = EXCLUDED.period_type,
@@ -76,7 +79,8 @@ pub async fn upsert_game_events(
                 home_skater_count   = EXCLUDED.home_skater_count,
                 away_skater_count   = EXCLUDED.away_skater_count,
                 away_goalie_present = EXCLUDED.away_goalie_present,
-                strength            = EXCLUDED.strength
+                strength            = EXCLUDED.strength,
+                situation_code      = EXCLUDED.situation_code
             RETURNING id, event_id_in_game
             "#,
         )
@@ -95,6 +99,7 @@ pub async fn upsert_game_events(
         .bind(&away_sks)
         .bind(&away_goalies)
         .bind(&strengths)
+        .bind(&situation_codes)
         .fetch_all(&mut *tx)
         .await?;
 
