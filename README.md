@@ -257,6 +257,10 @@ The migrations create:
 
 Goals are also represented in `shots`, so the shots table covers every shot on net. Ingestion uses upsert semantics throughout and is designed to recover safely after partial failures.
 
+Each event retains the NHL `situationCode` and its decoded skater and goalie
+state. The `strength` value (`ev`, `pp`, or `sh`) is expressed from the event
+owner's perspective and is `NULL` for events without an owning team.
+
 Downstream applications can use a dedicated read-only role. In addition to
 permissions on the statistical tables they query, grant access to the health
 views with:

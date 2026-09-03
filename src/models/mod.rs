@@ -68,11 +68,12 @@ pub struct DbEvent {
     pub y_coord: Option<i16>,
     pub zone_code: Option<String>,
     pub event_owner_team_id: Option<i64>, // franchise ID after translation
-    pub home_goalie_present: bool,
-    pub home_skater_count: i16,
-    pub away_skater_count: i16,
     pub away_goalie_present: bool,
-    pub strength: String,
+    pub away_skater_count: i16,
+    pub home_skater_count: i16,
+    pub home_goalie_present: bool,
+    pub strength: Option<String>,
+    pub situation_code: Option<String>,
 }
 
 /// Goal child row — maps to the `goals` table.

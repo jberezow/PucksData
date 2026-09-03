@@ -11,38 +11,50 @@ mod common;
 fn test_situation_code_decode() {
     use pucksdata::fetchers::events::decode_situation_code;
 
-    // "1551" => even strength, both goalies present, 5v5
-    // Format: [home_goalie][home_skaters][away_skaters][away_goalie]
-    let (home_goalie, home_sk, away_sk, away_goalie, strength) = decode_situation_code("1551");
-    assert!(home_goalie, "1551: home_goalie should be true");
-    assert_eq!(home_sk, 5, "1551: home_skaters should be 5");
-    assert_eq!(away_sk, 5, "1551: away_skaters should be 5");
-    assert!(away_goalie, "1551: away_goalie should be true");
-    assert_eq!(strength, "ev", "1551: strength should be ev");
+    let cases = [
+        ("1551", true, 5, 5, true),
+        ("1451", true, 4, 5, true),
+        ("1541", true, 5, 4, true),
+        ("0651", false, 6, 5, true),
+        ("1560", true, 5, 6, false),
+        ("1331", true, 3, 3, true),
+        ("1341", true, 3, 4, true),
+        ("0641", false, 6, 4, true),
+    ];
 
-    // "1541" => home team on power play (home 5, away 4)
-    let (home_goalie, home_sk, away_sk, away_goalie, strength) = decode_situation_code("1541");
-    assert!(home_goalie, "1541: home_goalie should be true");
-    assert_eq!(home_sk, 5, "1541: home_skaters should be 5");
-    assert_eq!(away_sk, 4, "1541: away_skaters should be 4");
-    assert!(away_goalie, "1541: away_goalie should be true");
-    assert_eq!(strength, "pp", "1541: strength should be pp");
+    for (code, away_goalie, away_skaters, home_skaters, home_goalie) in cases {
+        let situation = decode_situation_code(code).unwrap();
+        assert_eq!(situation.away_goalie_present, away_goalie, "{code}");
+        assert_eq!(situation.away_skater_count, away_skaters, "{code}");
+        assert_eq!(situation.home_skater_count, home_skaters, "{code}");
+        assert_eq!(situation.home_goalie_present, home_goalie, "{code}");
+    }
 
-    // "1451" => away team on power play (home 4, away 5) => home is short-handed
-    let (home_goalie, home_sk, away_sk, away_goalie, strength) = decode_situation_code("1451");
-    assert!(home_goalie, "1451: home_goalie should be true");
-    assert_eq!(home_sk, 4, "1451: home_skaters should be 4");
-    assert_eq!(away_sk, 5, "1451: away_skaters should be 5");
-    assert!(away_goalie, "1451: away_goalie should be true");
-    assert_eq!(strength, "sh", "1451: strength should be sh");
+    for malformed in ["", "155", "15511", "15x1", "2551", "1552"] {
+        assert_eq!(decode_situation_code(malformed), None, "{malformed}");
+    }
+}
 
-    // "0651" => home goalie pulled (empty net), home 6 skaters, away 5 skaters, away goalie in
-    let (home_goalie, home_sk, away_sk, away_goalie, strength) = decode_situation_code("0651");
-    assert!(!home_goalie, "0651: home_goalie should be false");
-    assert_eq!(home_sk, 6, "0651: home_skaters should be 6");
-    assert_eq!(away_sk, 5, "0651: away_skaters should be 5");
-    assert!(away_goalie, "0651: away_goalie should be true");
-    assert_eq!(strength, "pp", "0651: strength should be pp (6 > 5)");
+#[test]
+fn test_strength_for_owner() {
+    use pucksdata::fetchers::events::{decode_situation_code, strength_for_owner};
+
+    let strength = |code, owner_is_home| {
+        strength_for_owner(&decode_situation_code(code).unwrap(), owner_is_home)
+    };
+
+    assert_eq!(strength("1451", Some(true)), Some("pp"));
+    assert_eq!(strength("1451", Some(false)), Some("sh"));
+    assert_eq!(strength("0651", Some(true)), Some("ev"));
+    assert_eq!(strength("0651", Some(false)), Some("ev"));
+    assert_eq!(strength("0641", Some(false)), Some("pp"));
+    assert_eq!(strength("0641", Some(true)), Some("sh"));
+    assert_eq!(strength("1331", Some(true)), Some("ev"));
+    assert_eq!(strength("1331", Some(false)), Some("ev"));
+    assert_eq!(strength("1341", Some(true)), Some("pp"));
+    assert_eq!(strength("1441", Some(true)), Some("ev"));
+    assert_eq!(strength("1441", Some(false)), Some("ev"));
+    assert_eq!(strength("1451", None), None);
 }
 
 // ── EventDetails serde deserialization ───────────────────────────────────────
@@ -248,28 +260,28 @@ fn test_goal_produces_shot_entry() {
     use std::collections::HashMap;
 
     let pbp = PlayByPlay {
-        id: 2023020001,
-        home_team: PbpTeam { id: 14 },
-        away_team: PbpTeam { id: 18 },
+        id: 2025020004,
+        home_team: PbpTeam { id: 10 },
+        away_team: PbpTeam { id: 8 },
         plays: vec![
             Play {
-                event_id: 154,
+                event_id: 1081,
                 period_descriptor: PeriodDescriptor {
-                    number: 1,
+                    number: 3,
                     period_type: "REG".to_string(),
                 },
-                time_in_period: "10:00".to_string(),
-                situation_code: Some("1551".to_string()),
+                time_in_period: "18:28".to_string(),
+                situation_code: Some("0651".to_string()),
                 type_desc_key: "goal".to_string(),
                 details: Some(EventDetails {
-                    x_coord: Some(-56),
-                    y_coord: Some(8),
+                    x_coord: Some(-87),
+                    y_coord: Some(-6),
                     zone_code: Some("O".to_string()),
-                    event_owner_team_id: Some(14),
-                    scoring_player_id: Some(8480801),
-                    assist1_player_id: Some(8478476),
+                    event_owner_team_id: Some(10),
+                    scoring_player_id: Some(8479318),
+                    assist1_player_id: Some(8477939),
                     assist2_player_id: None,
-                    goalie_in_net_id: Some(8480382),
+                    goalie_in_net_id: None,
                     shot_type: Some("wrist".to_string()),
                     shooting_player_id: None,
                     hitting_player_id: None,
@@ -297,7 +309,7 @@ fn test_goal_produces_shot_entry() {
                     x_coord: Some(65),
                     y_coord: Some(-12),
                     zone_code: Some("O".to_string()),
-                    event_owner_team_id: Some(18),
+                    event_owner_team_id: Some(8),
                     scoring_player_id: None,
                     assist1_player_id: None,
                     assist2_player_id: None,
@@ -320,7 +332,7 @@ fn test_goal_produces_shot_entry() {
     };
 
     let team_id_map = HashMap::new();
-    let (_events, goals, shots, _hits, _blocks, _penalties, _faceoffs, warnings) =
+    let (events, goals, shots, _hits, _blocks, _penalties, _faceoffs, warnings) =
         transform_events(&pbp, &team_id_map);
 
     assert!(
@@ -335,20 +347,30 @@ fn test_goal_produces_shot_entry() {
         "expected 2 shots (goal-derived + shot-on-goal)"
     );
 
-    // Find the goal-derived shot (event_id_in_game == 154, same as the goal)
+    let goal_event = events
+        .iter()
+        .find(|event| event.event_id_in_game == 1081)
+        .expect("goal event must be present");
+    assert!(!goal_event.away_goalie_present);
+    assert_eq!(goal_event.away_skater_count, 6);
+    assert_eq!(goal_event.home_skater_count, 5);
+    assert!(goal_event.home_goalie_present);
+    assert_eq!(goal_event.strength.as_deref(), Some("ev"));
+    assert_eq!(goal_event.situation_code.as_deref(), Some("0651"));
+
+    // Find the goal-derived shot (same event ID as the goal).
     let goal_shot = shots
         .iter()
-        .find(|s| s.event_id_in_game == 154)
-        .expect("goal-derived shot must have event_id_in_game == 154");
+        .find(|s| s.event_id_in_game == 1081)
+        .expect("goal-derived shot must have the goal event ID");
     assert_eq!(
         goal_shot.shooting_player_id,
-        Some(8480801),
+        Some(8479318),
         "goal scorer maps to shooting_player_id"
     );
     assert_eq!(
-        goal_shot.goalie_in_net_id,
-        Some(8480382),
-        "goalie_in_net_id carried through from goal event"
+        goal_shot.goalie_in_net_id, None,
+        "empty-net goal has no goalie_in_net_id"
     );
     assert_eq!(
         goal_shot.shot_type.as_deref(),
@@ -404,12 +426,13 @@ async fn test_events_upsert_idempotent() {
         x_coord: None,
         y_coord: None,
         zone_code: None,
-        event_owner_team_id: None,
+        event_owner_team_id: Some(99001),
         home_goalie_present: true,
         home_skater_count: 5,
         away_skater_count: 5,
         away_goalie_present: true,
-        strength: "ev".into(),
+        strength: Some("ev".into()),
+        situation_code: Some("1551".into()),
     };
     let goal = pucksdata::models::DbGoal {
         event_id_in_game: 1,
@@ -446,12 +469,13 @@ async fn test_events_upsert_idempotent() {
         x_coord: None,
         y_coord: None,
         zone_code: None,
-        event_owner_team_id: None,
+        event_owner_team_id: Some(99001),
         home_goalie_present: true,
         home_skater_count: 5,
-        away_skater_count: 5,
+        away_skater_count: 4,
         away_goalie_present: true,
-        strength: "ev".into(),
+        strength: Some("pp".into()),
+        situation_code: Some("1451".into()),
     };
     let goal2 = pucksdata::models::DbGoal {
         event_id_in_game: 1,
@@ -489,6 +513,18 @@ async fn test_events_upsert_idempotent() {
         "SELECT COUNT(*) FROM goals g JOIN events e ON e.id = g.event_id WHERE e.game_id = 9900000002"
     ).fetch_one(pool).await.unwrap().unwrap_or(0);
     assert_eq!(goal_count, 1, "upsert produced more than one goal row");
+
+    let (strength, situation_code, away_skaters): (Option<String>, Option<String>, i16) =
+        sqlx::query_as(
+            "SELECT strength, situation_code, away_skater_count
+             FROM events WHERE game_id = 9900000002 AND event_id_in_game = 1",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(strength.as_deref(), Some("pp"));
+    assert_eq!(situation_code.as_deref(), Some("1451"));
+    assert_eq!(away_skaters, 4);
 
     // Cleanup (child rows cascade on events delete if FK is deferred, otherwise delete in order)
     sqlx::query!(

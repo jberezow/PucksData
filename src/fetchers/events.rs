@@ -115,42 +115,65 @@ pub struct EventDetails {
 
 // ── situationCode decode ──────────────────────────────────────────────────────
 
-/// Decode a 4-character situationCode into game-state components.
+/// Decoded NHL `situationCode`.
 ///
-/// Format: `\[home_goalie\]\[home_skaters\]\[away_skaters\]\[away_goalie\]`
-/// - home_goalie: '1' = goalie present, '0' = pulled
-/// - home_skaters: digit (3-6)
-/// - away_skaters: digit (3-6)
-/// - away_goalie: '1' = goalie present, '0' = pulled
-///
-/// strength is derived from skater counts:
-/// - home == away: "ev" (even strength)
-/// - home > away:  "pp" (home team on power play)
-/// - home < away:  "sh" (home team short-handed)
-///
-/// Returns (home_goalie, home_skaters, away_skaters, away_goalie, strength).
-/// Falls back to (true, 5, 5, true, "ev") if code is not exactly 4 bytes.
-pub fn decode_situation_code(code: &str) -> (bool, i16, i16, bool, String) {
-    if code.len() != 4 {
-        return (true, 5, 5, true, "ev".to_string());
-    }
-    let bytes = code.as_bytes();
-    let home_goalie = bytes[0] == b'1';
-    let home_skaters = (bytes[1] - b'0') as i16;
-    let away_skaters = (bytes[2] - b'0') as i16;
-    let away_goalie = bytes[3] == b'1';
-    let strength = match home_skaters.cmp(&away_skaters) {
-        std::cmp::Ordering::Equal => "ev".to_string(),
-        std::cmp::Ordering::Greater => "pp".to_string(),
-        std::cmp::Ordering::Less => "sh".to_string(),
+/// The code is `[away_goalie][away_skaters][home_skaters][home_goalie]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SituationCode {
+    pub away_goalie_present: bool,
+    pub away_skater_count: i16,
+    pub home_skater_count: i16,
+    pub home_goalie_present: bool,
+}
+
+impl SituationCode {
+    pub const EVEN_FIVE_ON_FIVE: Self = Self {
+        away_goalie_present: true,
+        away_skater_count: 5,
+        home_skater_count: 5,
+        home_goalie_present: true,
     };
-    (
-        home_goalie,
-        home_skaters,
-        away_skaters,
-        away_goalie,
-        strength,
-    )
+}
+
+/// Decode an NHL situation code, rejecting malformed values.
+pub fn decode_situation_code(code: &str) -> Option<SituationCode> {
+    let [away_goalie, away_skaters, home_skaters, home_goalie] = code.as_bytes() else {
+        return None;
+    };
+    if !matches!(away_goalie, b'0' | b'1')
+        || !away_skaters.is_ascii_digit()
+        || !home_skaters.is_ascii_digit()
+        || !matches!(home_goalie, b'0' | b'1')
+    {
+        return None;
+    }
+
+    Some(SituationCode {
+        away_goalie_present: *away_goalie == b'1',
+        away_skater_count: i16::from(*away_skaters - b'0'),
+        home_skater_count: i16::from(*home_skaters - b'0'),
+        home_goalie_present: *home_goalie == b'1',
+    })
+}
+
+/// Manpower state from the perspective of the team that owns the event.
+pub fn strength_for_owner(
+    situation: &SituationCode,
+    owner_is_home: Option<bool>,
+) -> Option<&'static str> {
+    let home_effective = situation.home_skater_count - i16::from(!situation.home_goalie_present);
+    let away_effective = situation.away_skater_count - i16::from(!situation.away_goalie_present);
+    let difference = if owner_is_home? {
+        home_effective - away_effective
+    } else {
+        away_effective - home_effective
+    };
+
+    Some(match difference.signum() {
+        1 => "pp",
+        -1 => "sh",
+        _ => "ev",
+    })
 }
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
@@ -210,9 +233,27 @@ pub fn transform_events(
             continue;
         }
 
-        // Decode situationCode (default to even strength when absent)
-        let code = play.situation_code.as_deref().unwrap_or("");
-        let (home_goalie, home_sk, away_sk, away_goalie, strength) = decode_situation_code(code);
+        let decoded = play
+            .situation_code
+            .as_deref()
+            .and_then(decode_situation_code);
+        let situation = decoded.unwrap_or(SituationCode::EVEN_FIVE_ON_FIVE);
+        let situation_code = decoded.and(play.situation_code.clone());
+
+        let raw_owner_team_id = play.details.as_ref().and_then(|d| d.event_owner_team_id);
+        let owner_is_home = match raw_owner_team_id {
+            Some(team_id) if team_id == pbp.home_team.id => Some(true),
+            Some(team_id) if team_id == pbp.away_team.id => Some(false),
+            Some(team_id) => {
+                skip_warnings.push(format!(
+                    "event {} in game {} has owner team {} outside the game matchup",
+                    play.event_id, game_id, team_id
+                ));
+                None
+            }
+            None => None,
+        };
+        let strength = strength_for_owner(&situation, owner_is_home).map(str::to_string);
 
         // Translate event_owner_team_id from NHL team ID to franchise ID
         let event_owner_team_id: Option<i64> = play
@@ -237,11 +278,12 @@ pub fn transform_events(
             y_coord,
             zone_code,
             event_owner_team_id,
-            home_goalie_present: home_goalie,
-            home_skater_count: home_sk,
-            away_skater_count: away_sk,
-            away_goalie_present: away_goalie,
+            away_goalie_present: situation.away_goalie_present,
+            away_skater_count: situation.away_skater_count,
+            home_skater_count: situation.home_skater_count,
+            home_goalie_present: situation.home_goalie_present,
             strength,
+            situation_code,
         };
         events.push(base);
 
