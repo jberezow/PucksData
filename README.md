@@ -113,6 +113,8 @@ Fetch and upsert NHL entity or play-by-play data.
 | `fetch games --season <YEAR>` | Fetch all games in one season |
 | `fetch games --all` | Fetch games across every available season |
 | `fetch events <GAME_ID>` | Fetch and store one game's play-by-play events |
+| `fetch official-stats` | Fetch official NHL skater and goalie season totals for every season |
+| `fetch official-stats --season <YEAR>` | Fetch official season totals for one season |
 
 Season values use the NHL's eight-digit format:
 
@@ -258,7 +260,7 @@ The migrations create:
 - Event detail tables: `goals`, `shots`, `hits`, `blocks`, `penalties`, and `faceoffs`
 - Operational tables: `backfill_progress` and `sync_state`
 - Read-only health views in the `observability` schema
-- Dataset coverage metadata in the `analytics` schema
+- Dataset coverage metadata and official NHL season totals in the `analytics` schema
 
 Goals are also represented in `shots`, so the shots table covers every shot on net. Ingestion uses upsert semantics throughout and is designed to recover safely after partial failures.
 
@@ -269,6 +271,14 @@ state. For 2005-06 through 2008-09, ingestion supplements the JSON feed with
 the NHL scoring summary for goals and archived play-by-play reports for other
 events. Values remain `NULL` when none of those sources establishes strength;
 unknown data is not treated as even strength.
+
+`analytics.official_skater_seasons` and `analytics.official_goalie_seasons`
+hold the league's own published season totals, loaded by `fetch official-stats`.
+They are not derived from play-by-play, and are kept in separate tables so the
+two kinds of number stay distinguishable. They answer questions the event
+schema cannot — games played from 1917-18, shots from 1967-68, goalie wins and
+shutouts from 1917-18 — and serve as the reconciliation oracle for
+event-derived figures.
 
 The NHL began recording different facts in different eras, so no single season
 range covers every statistic. `analytics.coverage` publishes the first season

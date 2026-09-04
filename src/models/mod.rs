@@ -144,3 +144,63 @@ pub struct DbFaceoff {
     pub winning_player_id: Option<i64>,
     pub losing_player_id: Option<i64>,
 }
+
+/// Official NHL skater season totals — maps to `analytics.official_skater_seasons`.
+///
+/// Published by the league rather than derived from play-by-play. Fields the
+/// NHL did not record in a given era arrive as `None`.
+pub struct DbOfficialSkaterSeason {
+    pub player_id: i64,
+    pub season: i32,
+    pub game_type: i16,
+    pub full_name: String,
+    pub position_code: Option<String>,
+    pub shoots_catches: Option<String>,
+    pub team_abbrevs: Option<String>,
+    pub games_played: Option<i32>,
+    pub goals: Option<i32>,
+    pub assists: Option<i32>,
+    pub points: Option<i32>,
+    pub plus_minus: Option<i32>,
+    pub penalty_minutes: Option<i32>,
+    pub shots: Option<i32>,
+    pub shooting_pct: Option<f64>,
+    pub ev_goals: Option<i32>,
+    pub ev_points: Option<i32>,
+    pub pp_goals: Option<i32>,
+    pub pp_points: Option<i32>,
+    pub sh_goals: Option<i32>,
+    pub sh_points: Option<i32>,
+    pub ot_goals: Option<i32>,
+    pub game_winning_goals: Option<i32>,
+    pub points_per_game: Option<f64>,
+    pub faceoff_win_pct: Option<f64>,
+    pub time_on_ice_per_game: Option<f64>,
+}
+
+/// Official NHL goalie season totals — maps to `analytics.official_goalie_seasons`.
+pub struct DbOfficialGoalieSeason {
+    pub player_id: i64,
+    pub season: i32,
+    pub game_type: i16,
+    pub full_name: String,
+    pub shoots_catches: Option<String>,
+    pub team_abbrevs: Option<String>,
+    pub games_played: Option<i32>,
+    pub games_started: Option<i32>,
+    pub wins: Option<i32>,
+    pub losses: Option<i32>,
+    pub ties: Option<i32>,
+    pub ot_losses: Option<i32>,
+    pub shutouts: Option<i32>,
+    pub shots_against: Option<i32>,
+    pub saves: Option<i32>,
+    pub goals_against: Option<i32>,
+    pub save_pct: Option<f64>,
+    pub goals_against_average: Option<f64>,
+    pub time_on_ice: Option<i64>,
+    pub goals: Option<i32>,
+    pub assists: Option<i32>,
+    pub points: Option<i32>,
+    pub penalty_minutes: Option<i32>,
+}
