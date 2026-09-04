@@ -7,15 +7,29 @@ pub async fn seed_backfill_progress(
     pool: &sqlx::PgPool,
     season_filter: Option<i32>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
+    seed_backfill_progress_with_refresh(pool, season_filter, false).await
+}
+
+/// Seed a season and optionally reset its completed checkpoints for an
+/// authoritative replay.
+pub async fn seed_backfill_progress_with_refresh(
+    pool: &sqlx::PgPool,
+    season_filter: Option<i32>,
+    refresh: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
         "INSERT INTO backfill_progress (game_id, season, status)
          SELECT game_id, season, 'pending'
          FROM games
-         WHERE ($1::integer IS NULL OR season = $1)
+         WHERE ($1::integer IS NULL OR season = $1::integer)
            AND game_state NOT IN ('FUT', 'PRE')
-         ON CONFLICT (game_id) DO NOTHING",
-        season_filter
+         ON CONFLICT (game_id) DO UPDATE
+         SET status = CASE WHEN $2::boolean THEN 'pending' ELSE backfill_progress.status END,
+             error_message = CASE WHEN $2::boolean THEN NULL ELSE backfill_progress.error_message END,
+             updated_at = CASE WHEN $2::boolean THEN NOW() ELSE backfill_progress.updated_at END"
     )
+    .bind(season_filter)
+    .bind(refresh)
     .execute(pool)
     .await?;
     Ok(())
@@ -117,8 +131,21 @@ pub async fn load_one_game(
     team_id_map: &std::collections::HashMap<i64, i64>,
 ) -> Result<usize, crate::AnyError> {
     let pbp = crate::fetchers::events::fetch_play_by_play(game_id).await?;
+    let goal_strengths = if crate::fetchers::events::needs_goal_strengths(&pbp) {
+        crate::fetchers::events::fetch_goal_strengths(game_id).await?
+    } else {
+        std::collections::HashMap::new()
+    };
+    let report_strengths = crate::fetchers::historical_reports::fetch_reconciled_strengths(&pbp)
+        .await?
+        .strengths;
     let (events, goals, shots, hits, blocks, penalties, faceoffs, skip_warnings) =
-        crate::fetchers::events::transform_events(&pbp, team_id_map);
+        crate::fetchers::events::transform_events_with_strength_sources(
+            &pbp,
+            team_id_map,
+            &goal_strengths,
+            &report_strengths,
+        );
     // skip_warnings are swallowed in batch mode (volume too high for per-game warnings)
     let _ = skip_warnings;
     let (ec, gc, sc, hc, bc, pc, fc) = crate::loaders::events::upsert_game_events(
@@ -144,6 +171,16 @@ type BackfillTaskResult = (
 pub async fn run_backfill(
     pool: &sqlx::PgPool,
     season_filter: Option<i32>,
+) -> Result<(), crate::AnyError> {
+    run_backfill_with_refresh(pool, season_filter, false).await
+}
+
+/// Run a backfill and optionally reprocess already-completed games in one
+/// explicitly selected season.
+pub async fn run_backfill_with_refresh(
+    pool: &sqlx::PgPool,
+    season_filter: Option<i32>,
+    refresh: bool,
 ) -> Result<(), crate::AnyError> {
     use indicatif::{ProgressBar, ProgressStyle};
     use std::sync::Arc;
@@ -172,9 +209,9 @@ pub async fn run_backfill(
             .inspect_err(|_| spinner.finish_and_clear())?,
     );
 
-    // Step 2: Seed backfill_progress with all in-scope games (ON CONFLICT DO NOTHING)
+    // Step 2: Seed the queue, resetting selected checkpoints for a refresh.
     spinner.set_message("Seeding backfill queue...");
-    seed_backfill_progress(pool, season_filter)
+    seed_backfill_progress_with_refresh(pool, season_filter, refresh)
         .await
         .inspect_err(|_| spinner.finish_and_clear())?;
 
@@ -256,7 +293,7 @@ pub async fn run_backfill(
                             "{game_date}  {game_id}  {home_abbrev} vs {away_abbrev}  [SKIPPED]"
                         )
                     });
-                    update_progress_status(pool, game_id, "skipped")
+                    update_progress_with_error(pool, game_id, "skipped", &e.to_string())
                         .await
                         .unwrap_or_else(|e2| {
                             pb.suspend(|| {

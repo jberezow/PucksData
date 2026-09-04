@@ -128,7 +128,11 @@ Process historical games through the checkpointed event-ingestion pipeline. Comp
 ```bash
 pucksdata backfill
 pucksdata backfill --season 20252026
+pucksdata backfill --season 20052006 --refresh
 ```
+
+Use `--refresh` to re-fetch a complete season and atomically replace previously
+ingested event snapshots. A season is required for this operation.
 
 ### `sync`
 
@@ -257,9 +261,13 @@ The migrations create:
 
 Goals are also represented in `shots`, so the shots table covers every shot on net. Ingestion uses upsert semantics throughout and is designed to recover safely after partial failures.
 
-Each event retains the NHL `situationCode` and its decoded skater and goalie
-state. The `strength` value (`ev`, `pp`, or `sh`) is expressed from the event
-owner's perspective and is `NULL` for events without an owning team.
+Each event records `strength` (`ev`, `pp`, or `sh`) from the event owner's
+perspective and identifies its NHL source in `strength_source`. From 2009-10
+onward, validated `situationCode` values also provide exact skater and goalie
+state. For 2005-06 through 2008-09, ingestion supplements the JSON feed with
+the NHL scoring summary for goals and archived play-by-play reports for other
+events. Values remain `NULL` when none of those sources establishes strength;
+unknown data is not treated as even strength.
 
 Downstream applications can use a dedicated read-only role. In addition to
 permissions on the statistical tables they query, grant access to the health

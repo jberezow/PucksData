@@ -57,6 +57,10 @@ struct BackfillArgs {
     /// Restrict backfill to a single season (e.g. 20232024)
     #[arg(long)]
     season: Option<i32>,
+
+    /// Re-fetch and atomically replace games already marked done
+    #[arg(long, requires = "season")]
+    refresh: bool,
 }
 
 #[derive(Args)]
@@ -193,8 +197,22 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 pb.inc(1);
 
                 pb.set_message("transforming and loading events...");
+                let goal_strengths = if fetchers::events::needs_goal_strengths(&pbp) {
+                    fetchers::events::fetch_goal_strengths(args.game_id).await?
+                } else {
+                    std::collections::HashMap::new()
+                };
+                let report_strengths =
+                    fetchers::historical_reports::fetch_reconciled_strengths(&pbp)
+                        .await?
+                        .strengths;
                 let (events, goals, shots, hits, blocks, penalties, faceoffs, skip_warnings) =
-                    fetchers::events::transform_events(&pbp, &team_id_map);
+                    fetchers::events::transform_events_with_strength_sources(
+                        &pbp,
+                        &team_id_map,
+                        &goal_strengths,
+                        &report_strengths,
+                    );
                 for warning in &skip_warnings {
                     pb.suspend(|| eprintln!("{warning}"));
                 }
@@ -275,7 +293,12 @@ async fn main() -> Result<(), pucksdata::AnyError> {
         },
         Commands::Backfill(args) => {
             let pool = db::get_pool().await?;
-            pucksdata::process::backfill::run_backfill(pool, args.season).await?;
+            pucksdata::process::backfill::run_backfill_with_refresh(
+                pool,
+                args.season,
+                args.refresh,
+            )
+            .await?;
         }
         Commands::Sync(args) => {
             let pool = db::get_pool().await?;

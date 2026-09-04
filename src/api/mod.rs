@@ -38,8 +38,8 @@ impl From<reqwest::Error> for ApiError {
     }
 }
 
-/// Fetch a URL via the shared HTTP client and deserialize the JSON response.
-pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
+/// Fetch a URL via the shared HTTP client and return its response body.
+pub async fn fetch_api_text(url: &str) -> Result<String, ApiError> {
     let response = CLIENT.get(url).send().await?;
 
     match response.status() {
@@ -47,4 +47,9 @@ pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
         reqwest::StatusCode::NOT_FOUND => Err(ApiError::NotFound),
         status => Err(ApiError::Other(status.as_u16())),
     }
+}
+
+/// Fetch a JSON endpoint via the shared HTTP client.
+pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
+    fetch_api_text(url).await
 }

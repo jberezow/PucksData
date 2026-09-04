@@ -261,8 +261,14 @@ fn test_goal_produces_shot_entry() {
 
     let pbp = PlayByPlay {
         id: 2025020004,
-        home_team: PbpTeam { id: 10 },
-        away_team: PbpTeam { id: 8 },
+        home_team: PbpTeam {
+            id: 10,
+            abbrev: None,
+        },
+        away_team: PbpTeam {
+            id: 8,
+            abbrev: None,
+        },
         plays: vec![
             Play {
                 event_id: 1081,
@@ -351,11 +357,15 @@ fn test_goal_produces_shot_entry() {
         .iter()
         .find(|event| event.event_id_in_game == 1081)
         .expect("goal event must be present");
-    assert!(!goal_event.away_goalie_present);
-    assert_eq!(goal_event.away_skater_count, 6);
-    assert_eq!(goal_event.home_skater_count, 5);
-    assert!(goal_event.home_goalie_present);
+    assert_eq!(goal_event.away_goalie_present, Some(false));
+    assert_eq!(goal_event.away_skater_count, Some(6));
+    assert_eq!(goal_event.home_skater_count, Some(5));
+    assert_eq!(goal_event.home_goalie_present, Some(true));
     assert_eq!(goal_event.strength.as_deref(), Some("ev"));
+    assert_eq!(
+        goal_event.strength_source,
+        pucksdata::models::StrengthSource::SituationCode
+    );
     assert_eq!(goal_event.situation_code.as_deref(), Some("0651"));
 
     // Find the goal-derived shot (same event ID as the goal).
@@ -384,6 +394,65 @@ fn test_goal_produces_shot_entry() {
         .find(|s| s.event_id_in_game == 200)
         .expect("regular shot-on-goal must be present");
     assert_eq!(reg_shot.shooting_player_id, Some(8479318));
+}
+
+#[test]
+fn test_missing_situation_uses_goal_summary_without_fabricating_on_ice_state() {
+    use pucksdata::fetchers::events::{
+        transform_events, transform_events_with_goal_strengths,
+        transform_events_with_strength_sources, EventStrength, PlayByPlay,
+    };
+    use pucksdata::models::StrengthSource;
+    use std::collections::HashMap;
+
+    let pbp: PlayByPlay = serde_json::from_str(
+        r#"{
+            "id": 2005020001,
+            "homeTeam": {"id": 6},
+            "awayTeam": {"id": 8},
+            "plays": [{
+                "eventId": 10088563,
+                "periodDescriptor": {"number": 3, "periodType": "REG"},
+                "timeInPeriod": "19:48",
+                "typeDescKey": "goal",
+                "details": {
+                    "eventOwnerTeamId": 8,
+                    "scoringPlayerId": 8467545,
+                    "shotType": "slap"
+                }
+            }]
+        }"#,
+    )
+    .unwrap();
+    let teams = HashMap::from([(6, 6), (8, 8)]);
+
+    let (events, ..) = transform_events(&pbp, &teams);
+    let event = &events[0];
+    assert_eq!(event.strength, None);
+    assert_eq!(event.strength_source, StrengthSource::Unavailable);
+    assert_eq!(event.situation_code, None);
+    assert_eq!(event.away_goalie_present, None);
+    assert_eq!(event.away_skater_count, None);
+    assert_eq!(event.home_skater_count, None);
+    assert_eq!(event.home_goalie_present, None);
+
+    let strengths = HashMap::from([(10088563, EventStrength::PowerPlay)]);
+    let (events, ..) = transform_events_with_goal_strengths(&pbp, &teams, &strengths);
+    let event = &events[0];
+    assert_eq!(event.strength.as_deref(), Some("pp"));
+    assert_eq!(event.strength_source, StrengthSource::ScoringSummary);
+    assert_eq!(event.situation_code, None);
+    assert_eq!(event.away_goalie_present, None);
+    assert_eq!(event.away_skater_count, None);
+    assert_eq!(event.home_skater_count, None);
+    assert_eq!(event.home_goalie_present, None);
+
+    let report_strengths = HashMap::from([(10088563, EventStrength::ShortHanded)]);
+    let (events, ..) =
+        transform_events_with_strength_sources(&pbp, &teams, &HashMap::new(), &report_strengths);
+    let event = &events[0];
+    assert_eq!(event.strength.as_deref(), Some("sh"));
+    assert_eq!(event.strength_source, StrengthSource::HtmlReport);
 }
 
 // ── Integration stubs (DB required) ──────────────────────────────────────────
@@ -427,11 +496,12 @@ async fn test_events_upsert_idempotent() {
         y_coord: None,
         zone_code: None,
         event_owner_team_id: Some(99001),
-        home_goalie_present: true,
-        home_skater_count: 5,
-        away_skater_count: 5,
-        away_goalie_present: true,
+        home_goalie_present: Some(true),
+        home_skater_count: Some(5),
+        away_skater_count: Some(5),
+        away_goalie_present: Some(true),
         strength: Some("ev".into()),
+        strength_source: pucksdata::models::StrengthSource::SituationCode,
         situation_code: Some("1551".into()),
     };
     let goal = pucksdata::models::DbGoal {
@@ -442,12 +512,31 @@ async fn test_events_upsert_idempotent() {
         goalie_id: None,
         shot_type: None,
     };
+    let stale_event = pucksdata::models::DbEvent {
+        game_id: 9900000002,
+        event_id_in_game: 2,
+        period: 1,
+        period_type: "REG".into(),
+        time_in_period: "06:00".into(),
+        event_type: "shot-on-goal".into(),
+        x_coord: None,
+        y_coord: None,
+        zone_code: None,
+        event_owner_team_id: Some(99002),
+        home_goalie_present: Some(true),
+        home_skater_count: Some(5),
+        away_skater_count: Some(5),
+        away_goalie_present: Some(true),
+        strength: Some("ev".into()),
+        strength_source: pucksdata::models::StrengthSource::SituationCode,
+        situation_code: Some("1551".into()),
+    };
 
-    // First upsert
+    // First snapshot contains an event later removed by an NHL feed revision.
     pucksdata::loaders::events::upsert_game_events(
         pool,
         9900000002,
-        &[event],
+        &[event, stale_event],
         &[goal],
         &[],
         &[],
@@ -470,11 +559,12 @@ async fn test_events_upsert_idempotent() {
         y_coord: None,
         zone_code: None,
         event_owner_team_id: Some(99001),
-        home_goalie_present: true,
-        home_skater_count: 5,
-        away_skater_count: 4,
-        away_goalie_present: true,
+        home_goalie_present: Some(true),
+        home_skater_count: Some(5),
+        away_skater_count: Some(4),
+        away_goalie_present: Some(true),
         strength: Some("pp".into()),
+        strength_source: pucksdata::models::StrengthSource::SituationCode,
         situation_code: Some("1451".into()),
     };
     let goal2 = pucksdata::models::DbGoal {
@@ -486,7 +576,7 @@ async fn test_events_upsert_idempotent() {
         shot_type: None,
     };
 
-    // Second upsert — must produce same row count
+    // Second snapshot must replace the first and remove the stale event.
     pucksdata::loaders::events::upsert_game_events(
         pool,
         9900000002,
@@ -514,17 +604,22 @@ async fn test_events_upsert_idempotent() {
     ).fetch_one(pool).await.unwrap().unwrap_or(0);
     assert_eq!(goal_count, 1, "upsert produced more than one goal row");
 
-    let (strength, situation_code, away_skaters): (Option<String>, Option<String>, i16) =
-        sqlx::query_as(
-            "SELECT strength, situation_code, away_skater_count
+    let (strength, strength_source, situation_code, away_skaters): (
+        Option<String>,
+        String,
+        Option<String>,
+        Option<i16>,
+    ) = sqlx::query_as(
+        "SELECT strength, strength_source, situation_code, away_skater_count
              FROM events WHERE game_id = 9900000002 AND event_id_in_game = 1",
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
     assert_eq!(strength.as_deref(), Some("pp"));
+    assert_eq!(strength_source, "situation_code");
     assert_eq!(situation_code.as_deref(), Some("1451"));
-    assert_eq!(away_skaters, 4);
+    assert_eq!(away_skaters, Some(4));
 
     // Cleanup (child rows cascade on events delete if FK is deferred, otherwise delete in order)
     sqlx::query!(
