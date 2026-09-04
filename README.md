@@ -258,6 +258,7 @@ The migrations create:
 - Event detail tables: `goals`, `shots`, `hits`, `blocks`, `penalties`, and `faceoffs`
 - Operational tables: `backfill_progress` and `sync_state`
 - Read-only health views in the `observability` schema
+- Dataset coverage metadata in the `analytics` schema
 
 Goals are also represented in `shots`, so the shots table covers every shot on net. Ingestion uses upsert semantics throughout and is designed to recover safely after partial failures.
 
@@ -269,17 +270,28 @@ the NHL scoring summary for goals and archived play-by-play reports for other
 events. Values remain `NULL` when none of those sources establishes strength;
 unknown data is not treated as even strength.
 
+The NHL began recording different facts in different eras, so no single season
+range covers every statistic. `analytics.coverage` publishes the first season
+each event type and derived measure is available, and names the concepts the
+schema does not contain at all, such as time on ice and games played. Consumers
+should consult it before answering a question that spans seasons: shot events
+begin in 1997-98, and hits, faceoffs, blocks, giveaways and takeaways begin in
+2009-10. `analytics.coverage_observed` compares that contract with the seasons
+actually present so drift is detectable.
+
 Downstream applications can use a dedicated read-only role. In addition to
 permissions on the statistical tables they query, grant access to the health
-views with:
+views and coverage metadata with:
 
 ```sql
 GRANT USAGE ON SCHEMA observability TO reader_role;
 GRANT SELECT ON ALL TABLES IN SCHEMA observability TO reader_role;
+GRANT USAGE ON SCHEMA analytics TO reader_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA analytics TO reader_role;
 ```
 
-Replace `reader_role` with the application role. Repeat the `SELECT` grant
-after migrations that add new observability views.
+Replace `reader_role` with the application role. Repeat the `SELECT` grants
+after migrations that add new views or tables to either schema.
 
 ## Scope and limitations
 
