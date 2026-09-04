@@ -107,8 +107,12 @@ pub async fn fetch_reconciled_strengths(
 ///
 /// Report strength is stated from one team's perspective and is inverted when
 /// JSON assigns event ownership to the other side. Which team the report means
-/// is per event type: see [`report_strength_names_opponent`] for blocked shots
-/// and [`report_strength_is_usable`] for the types that are skipped entirely.
+/// depends on the event type. A blocked-shot row reads `SHOOTER BLOCKED BY
+/// BLOCKER`, so its description names the shooting team, which is the side JSON
+/// assigns ownership to, while its strength column describes the blocking team;
+/// blocked shots are therefore read from the opposite side. Penalty rows state
+/// the manpower before the penalty is applied and show even strength for
+/// coincidental majors, so they are skipped entirely.
 pub fn reconcile_report_strengths(
     pbp: &PlayByPlay,
     report_events: &[ReportEvent],
