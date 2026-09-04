@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::{
     api::fetch_api_json,
-    models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot},
+    models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot, StrengthSource},
     AnyError,
 };
 
@@ -26,6 +26,8 @@ pub struct PlayByPlay {
 #[derive(Deserialize)]
 pub struct PbpTeam {
     pub id: i64, // NHL team ID — NOT franchise ID
+    #[serde(default)]
+    pub abbrev: Option<String>,
 }
 
 /// A single play/event from the plays array.
@@ -113,6 +115,68 @@ pub struct EventDetails {
     pub losing_player_id: Option<i64>,
 }
 
+// ── Game landing scoring summary ─────────────────────────────────────────────
+
+/// Categorical manpower strength reported by the NHL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventStrength {
+    Even,
+    PowerPlay,
+    ShortHanded,
+}
+
+impl EventStrength {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Even => "ev",
+            Self::PowerPlay => "pp",
+            Self::ShortHanded => "sh",
+        }
+    }
+
+    pub(crate) fn from_nhl(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "ev" => Some(Self::Even),
+            "pp" => Some(Self::PowerPlay),
+            "sh" => Some(Self::ShortHanded),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn inverted(self) -> Self {
+        match self {
+            Self::Even => Self::Even,
+            Self::PowerPlay => Self::ShortHanded,
+            Self::ShortHanded => Self::PowerPlay,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct GameLanding {
+    #[serde(default)]
+    summary: LandingSummary,
+}
+
+#[derive(Default, Deserialize)]
+struct LandingSummary {
+    #[serde(default)]
+    scoring: Vec<LandingScoringPeriod>,
+}
+
+#[derive(Deserialize)]
+struct LandingScoringPeriod {
+    #[serde(default)]
+    goals: Vec<LandingGoal>,
+}
+
+#[derive(Deserialize)]
+struct LandingGoal {
+    #[serde(rename = "eventId")]
+    event_id: i32,
+    strength: Option<String>,
+}
+
 // ── situationCode decode ──────────────────────────────────────────────────────
 
 /// Decoded NHL `situationCode`.
@@ -124,15 +188,6 @@ pub struct SituationCode {
     pub away_skater_count: i16,
     pub home_skater_count: i16,
     pub home_goalie_present: bool,
-}
-
-impl SituationCode {
-    pub const EVEN_FIVE_ON_FIVE: Self = Self {
-        away_goalie_present: true,
-        away_skater_count: 5,
-        home_skater_count: 5,
-        home_goalie_present: true,
-    };
 }
 
 /// Decode an NHL situation code, rejecting malformed values.
@@ -188,6 +243,41 @@ pub async fn fetch_play_by_play(game_id: i64) -> Result<PlayByPlay, AnyError> {
     Ok(pbp)
 }
 
+/// Fetch explicit goal strength from the game landing scoring summary.
+///
+/// Historical play-by-play before 2009-10 omits `situationCode`, while this
+/// endpoint still reports each goal as even-strength, power-play, or
+/// short-handed using the same event ID.
+pub async fn fetch_goal_strengths(game_id: i64) -> Result<HashMap<i32, EventStrength>, AnyError> {
+    let url = format!("https://api-web.nhle.com/v1/gamecenter/{game_id}/landing");
+    let json = fetch_api_json(&url).await?;
+    let landing: GameLanding = serde_json::from_str(&json)?;
+
+    Ok(landing
+        .summary
+        .scoring
+        .into_iter()
+        .flat_map(|period| period.goals)
+        .filter_map(|goal| {
+            let strength = EventStrength::from_nhl(goal.strength.as_deref()?)?;
+            Some((goal.event_id, strength))
+        })
+        .collect())
+}
+
+/// Return whether the play-by-play needs scoring-summary enrichment for at
+/// least one goal.
+pub fn needs_goal_strengths(pbp: &PlayByPlay) -> bool {
+    pbp.plays.iter().any(|play| {
+        play.type_desc_key == "goal"
+            && play
+                .situation_code
+                .as_deref()
+                .and_then(decode_situation_code)
+                .is_none()
+    })
+}
+
 // ── Transform ─────────────────────────────────────────────────────────────────
 
 /// Transform a PlayByPlay response into typed Db model vectors.
@@ -217,6 +307,47 @@ pub fn transform_events(
     Vec<DbFaceoff>,
     Vec<String>,
 ) {
+    transform_events_with_goal_strengths(pbp, team_id_map, &HashMap::new())
+}
+
+/// Transform play-by-play and enrich goals with explicit scoring-summary
+/// strength when the play itself has no valid `situationCode`.
+#[allow(clippy::type_complexity)]
+pub fn transform_events_with_goal_strengths(
+    pbp: &PlayByPlay,
+    team_id_map: &HashMap<i64, i64>,
+    goal_strengths: &HashMap<i32, EventStrength>,
+) -> (
+    Vec<DbEvent>,
+    Vec<DbGoal>,
+    Vec<DbShot>,
+    Vec<DbHit>,
+    Vec<DbBlock>,
+    Vec<DbPenalty>,
+    Vec<DbFaceoff>,
+    Vec<String>,
+) {
+    transform_events_with_strength_sources(pbp, team_id_map, goal_strengths, &HashMap::new())
+}
+
+/// Transform play-by-play using explicit NHL strength sources in priority
+/// order: situation code, structured scoring summary, then archived report.
+#[allow(clippy::type_complexity)]
+pub fn transform_events_with_strength_sources(
+    pbp: &PlayByPlay,
+    team_id_map: &HashMap<i64, i64>,
+    goal_strengths: &HashMap<i32, EventStrength>,
+    report_strengths: &HashMap<i32, EventStrength>,
+) -> (
+    Vec<DbEvent>,
+    Vec<DbGoal>,
+    Vec<DbShot>,
+    Vec<DbHit>,
+    Vec<DbBlock>,
+    Vec<DbPenalty>,
+    Vec<DbFaceoff>,
+    Vec<String>,
+) {
     let game_id = pbp.id;
     let mut events = Vec::new();
     let mut goals = Vec::new();
@@ -233,13 +364,6 @@ pub fn transform_events(
             continue;
         }
 
-        let decoded = play
-            .situation_code
-            .as_deref()
-            .and_then(decode_situation_code);
-        let situation = decoded.unwrap_or(SituationCode::EVEN_FIVE_ON_FIVE);
-        let situation_code = decoded.and(play.situation_code.clone());
-
         let raw_owner_team_id = play.details.as_ref().and_then(|d| d.event_owner_team_id);
         let owner_is_home = match raw_owner_team_id {
             Some(team_id) if team_id == pbp.home_team.id => Some(true),
@@ -253,7 +377,33 @@ pub fn transform_events(
             }
             None => None,
         };
-        let strength = strength_for_owner(&situation, owner_is_home).map(str::to_string);
+
+        let decoded = play
+            .situation_code
+            .as_deref()
+            .and_then(decode_situation_code);
+        let situation_code = decoded.and(play.situation_code.clone());
+        let summary_strength = (play.type_desc_key == "goal")
+            .then(|| goal_strengths.get(&play.event_id).copied())
+            .flatten();
+        let (strength, strength_source) = if let Some(situation) = decoded.as_ref() {
+            (
+                strength_for_owner(situation, owner_is_home).map(str::to_string),
+                StrengthSource::SituationCode,
+            )
+        } else if let Some(summary_strength) = summary_strength {
+            (
+                Some(summary_strength.as_str().to_string()),
+                StrengthSource::ScoringSummary,
+            )
+        } else if let Some(report_strength) = report_strengths.get(&play.event_id) {
+            (
+                Some(report_strength.as_str().to_string()),
+                StrengthSource::HtmlReport,
+            )
+        } else {
+            (None, StrengthSource::Unavailable)
+        };
 
         // Translate event_owner_team_id from NHL team ID to franchise ID
         let event_owner_team_id: Option<i64> = play
@@ -278,11 +428,12 @@ pub fn transform_events(
             y_coord,
             zone_code,
             event_owner_team_id,
-            away_goalie_present: situation.away_goalie_present,
-            away_skater_count: situation.away_skater_count,
-            home_skater_count: situation.home_skater_count,
-            home_goalie_present: situation.home_goalie_present,
+            away_goalie_present: decoded.map(|value| value.away_goalie_present),
+            away_skater_count: decoded.map(|value| value.away_skater_count),
+            home_skater_count: decoded.map(|value| value.home_skater_count),
+            home_goalie_present: decoded.map(|value| value.home_goalie_present),
             strength,
+            strength_source,
             situation_code,
         };
         events.push(base);

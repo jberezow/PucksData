@@ -5,7 +5,11 @@ use sqlx::Row;
 
 use crate::models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot};
 
-/// Insert all events for a game atomically in a single PostgreSQL transaction.
+/// Replace all events for a game atomically in a single PostgreSQL transaction.
+///
+/// Existing child and base rows are deleted before the authoritative snapshot
+/// is inserted. Any failure rolls back both operations, preserving the prior
+/// game state. This removes events that disappear in later NHL feed revisions.
 ///
 /// Uses UNNEST-based bulk inserts: one SQL roundtrip for base events
 /// (with RETURNING id to build the FK map), then one per non-empty child type.
@@ -16,7 +20,7 @@ use crate::models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbSho
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_game_events(
     pool: &sqlx::PgPool,
-    _game_id: i64,
+    game_id: i64,
     events: &[DbEvent],
     goals: &[DbGoal],
     shots: &[DbShot],
@@ -26,6 +30,38 @@ pub async fn upsert_game_events(
     faceoffs: &[DbFaceoff],
 ) -> Result<(usize, usize, usize, usize, usize, usize, usize), sqlx::Error> {
     let mut tx = pool.begin().await?;
+
+    if !events.is_empty() {
+        sqlx::query(
+            r#"
+            WITH target_events AS MATERIALIZED (
+                SELECT id FROM events WHERE game_id = $1
+            ),
+            deleted_goals AS (
+                DELETE FROM goals WHERE event_id IN (SELECT id FROM target_events)
+            ),
+            deleted_shots AS (
+                DELETE FROM shots WHERE event_id IN (SELECT id FROM target_events)
+            ),
+            deleted_hits AS (
+                DELETE FROM hits WHERE event_id IN (SELECT id FROM target_events)
+            ),
+            deleted_blocks AS (
+                DELETE FROM blocks WHERE event_id IN (SELECT id FROM target_events)
+            ),
+            deleted_penalties AS (
+                DELETE FROM penalties WHERE event_id IN (SELECT id FROM target_events)
+            ),
+            deleted_faceoffs AS (
+                DELETE FROM faceoffs WHERE event_id IN (SELECT id FROM target_events)
+            )
+            DELETE FROM events WHERE id IN (SELECT id FROM target_events)
+            "#,
+        )
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await?;
+    }
 
     // Map from event_id_in_game -> events.id (surrogate PK) for child FK lookups.
     let mut event_db_id_map: HashMap<i32, i64> = HashMap::with_capacity(events.len());
@@ -42,11 +78,15 @@ pub async fn upsert_game_events(
         let y_coords: Vec<Option<i16>> = events.iter().map(|e| e.y_coord).collect();
         let zone_codes: Vec<Option<&str>> = events.iter().map(|e| e.zone_code.as_deref()).collect();
         let owner_ids: Vec<Option<i64>> = events.iter().map(|e| e.event_owner_team_id).collect();
-        let home_goalies: Vec<bool> = events.iter().map(|e| e.home_goalie_present).collect();
-        let home_sks: Vec<i16> = events.iter().map(|e| e.home_skater_count).collect();
-        let away_sks: Vec<i16> = events.iter().map(|e| e.away_skater_count).collect();
-        let away_goalies: Vec<bool> = events.iter().map(|e| e.away_goalie_present).collect();
+        let home_goalies: Vec<Option<bool>> =
+            events.iter().map(|e| e.home_goalie_present).collect();
+        let home_sks: Vec<Option<i16>> = events.iter().map(|e| e.home_skater_count).collect();
+        let away_sks: Vec<Option<i16>> = events.iter().map(|e| e.away_skater_count).collect();
+        let away_goalies: Vec<Option<bool>> =
+            events.iter().map(|e| e.away_goalie_present).collect();
         let strengths: Vec<Option<&str>> = events.iter().map(|e| e.strength.as_deref()).collect();
+        let strength_sources: Vec<&str> =
+            events.iter().map(|e| e.strength_source.as_str()).collect();
         let situation_codes: Vec<Option<&str>> =
             events.iter().map(|e| e.situation_code.as_deref()).collect();
 
@@ -56,16 +96,16 @@ pub async fn upsert_game_events(
                 (game_id, event_id_in_game, period, period_type, time_in_period,
                  event_type, x_coord, y_coord, zone_code, event_owner_team_id,
                  home_goalie_present, home_skater_count, away_skater_count,
-                 away_goalie_present, strength, situation_code)
+                 away_goalie_present, strength, strength_source, situation_code)
             SELECT * FROM UNNEST(
                 $1::bigint[], $2::int[], $3::smallint[], $4::text[], $5::text[],
                 $6::text[], $7::smallint[], $8::smallint[], $9::text[], $10::bigint[],
                 $11::bool[], $12::smallint[], $13::smallint[], $14::bool[], $15::text[],
-                $16::text[]
+                $16::text[], $17::text[]
             ) AS t(game_id, event_id_in_game, period, period_type, time_in_period,
                    event_type, x_coord, y_coord, zone_code, event_owner_team_id,
                    home_goalie_present, home_skater_count, away_skater_count,
-                   away_goalie_present, strength, situation_code)
+                   away_goalie_present, strength, strength_source, situation_code)
             ON CONFLICT (game_id, event_id_in_game) DO UPDATE SET
                 period              = EXCLUDED.period,
                 period_type         = EXCLUDED.period_type,
@@ -80,6 +120,7 @@ pub async fn upsert_game_events(
                 away_skater_count   = EXCLUDED.away_skater_count,
                 away_goalie_present = EXCLUDED.away_goalie_present,
                 strength            = EXCLUDED.strength,
+                strength_source     = EXCLUDED.strength_source,
                 situation_code      = EXCLUDED.situation_code
             RETURNING id, event_id_in_game
             "#,
@@ -99,6 +140,7 @@ pub async fn upsert_game_events(
         .bind(&away_sks)
         .bind(&away_goalies)
         .bind(&strengths)
+        .bind(&strength_sources)
         .bind(&situation_codes)
         .fetch_all(&mut *tx)
         .await?;

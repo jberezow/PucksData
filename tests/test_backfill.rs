@@ -57,6 +57,29 @@ async fn test_backfill_progress_seed_idempotent() {
             .unwrap_or(0);
     assert_eq!(count2, 2, "second seed must not duplicate rows");
 
+    pucksdata::process::backfill::update_progress_status(pool, 9990000001, "done")
+        .await
+        .unwrap();
+    pucksdata::process::backfill::update_progress_with_error(
+        pool,
+        9990000002,
+        "failed",
+        "synthetic failure",
+    )
+    .await
+    .unwrap();
+    pucksdata::process::backfill::seed_backfill_progress_with_refresh(pool, Some(99991), true)
+        .await
+        .unwrap();
+    let refreshed: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM backfill_progress
+         WHERE season = 99991 AND status = 'pending' AND error_message IS NULL",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(refreshed, 2, "refresh must re-queue the complete season");
+
     // Cleanup
     sqlx::query!("DELETE FROM backfill_progress WHERE season = 99991")
         .execute(pool)

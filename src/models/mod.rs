@@ -68,12 +68,33 @@ pub struct DbEvent {
     pub y_coord: Option<i16>,
     pub zone_code: Option<String>,
     pub event_owner_team_id: Option<i64>, // franchise ID after translation
-    pub away_goalie_present: bool,
-    pub away_skater_count: i16,
-    pub home_skater_count: i16,
-    pub home_goalie_present: bool,
+    pub away_goalie_present: Option<bool>,
+    pub away_skater_count: Option<i16>,
+    pub home_skater_count: Option<i16>,
+    pub home_goalie_present: Option<bool>,
     pub strength: Option<String>,
+    pub strength_source: StrengthSource,
     pub situation_code: Option<String>,
+}
+
+/// NHL source used to determine an event's owner-relative manpower strength.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrengthSource {
+    SituationCode,
+    ScoringSummary,
+    HtmlReport,
+    Unavailable,
+}
+
+impl StrengthSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SituationCode => "situation_code",
+            Self::ScoringSummary => "scoring_summary",
+            Self::HtmlReport => "html_report",
+            Self::Unavailable => "unavailable",
+        }
+    }
 }
 
 /// Goal child row — maps to the `goals` table.
