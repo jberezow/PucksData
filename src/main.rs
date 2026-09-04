@@ -38,6 +38,15 @@ enum FetchEntity {
     Games(GamesArgs),
     /// Fetch play-by-play events for a game
     Events(EventsArgs),
+    /// Fetch official NHL season totals for skaters and goalies
+    OfficialStats(OfficialStatsArgs),
+}
+
+#[derive(Args)]
+struct OfficialStatsArgs {
+    /// Restrict the load to a single season (e.g. 20242025)
+    #[arg(long)]
+    season: Option<i32>,
 }
 
 #[derive(Args)]
@@ -132,6 +141,10 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                     .await
                     .inspect_err(|_| pb.finish_and_clear())?;
                 pb.finish_and_clear();
+            }
+            FetchEntity::OfficialStats(args) => {
+                let pool = db::get_pool().await?;
+                pucksdata::process::official_stats::run_official_stats(pool, args.season).await?;
             }
             FetchEntity::Seasons => {
                 let pool = db::get_pool().await?;

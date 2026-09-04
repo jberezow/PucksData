@@ -22,6 +22,10 @@ All notable changes to PucksData are documented here. The project follows
 - Added `strength_source` provenance and historical strength enrichment from
   NHL scoring summaries and archived play-by-play reports.
 - Added season-scoped `backfill --refresh` for authoritative re-ingestion.
+- Added `fetch official-stats`, loading official NHL skater and goalie season
+  totals into the `analytics` schema. These answer season-level questions the
+  event schema cannot, including games played and goalie records from 1917-18,
+  and provide a reconciliation oracle for event-derived figures.
 - Added an `analytics` schema publishing dataset coverage: the first season
   each event type and derived measure is available, the concepts the schema
   does not contain, and a view that detects drift against the stored data.
