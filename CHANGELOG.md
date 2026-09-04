@@ -3,7 +3,26 @@
 All notable changes to PucksData are documented here. The project follows
 [Semantic Versioning](https://semver.org/) beginning with version 1.5.0.
 
-## [Unreleased]
+## [1.7.0] - 2026-09-04
+
+### Upgrade notes
+
+`events.strength` changes meaning in this release, and downstream consumers
+should re-read it rather than assume continuity.
+
+- It is now stated from the perspective of the team that owns the event, not
+  the home team. A value of `pp` means the owning team had the advantage.
+- It is now nullable, and is `NULL` wherever no NHL source establishes a
+  strength: events with no owning team, every season before 2005-06, and
+  penalties before 2009-10. It is no longer silently `ev`.
+- The decoded skater counts and goalie flags are likewise `NULL` before
+  2009-10 rather than defaulting to five a side.
+- `events.strength_source` records which NHL source produced each value.
+  Consult it, and `analytics.coverage`, before aggregating across eras.
+
+Before this release the database reported zero power-play goals for every
+season from 1917-18 to 2008-09. It now reproduces the NHL's official
+power-play and shorthanded totals exactly for 2005-06 onward.
 
 ### Changed
 
@@ -92,4 +111,5 @@ use three-component semantic versions.
 [1.5.1]: https://github.com/jberezow/pucksdata/compare/v1.5.0...v1.5.1
 [1.6.0]: https://github.com/jberezow/pucksdata/compare/v1.5.1...v1.6.0
 [1.6.1]: https://github.com/jberezow/pucksdata/compare/v1.6.0...v1.6.1
-[Unreleased]: https://github.com/jberezow/pucksdata/compare/v1.6.1...HEAD
+[1.7.0]: https://github.com/jberezow/pucksdata/compare/v1.6.1...v1.7.0
+[Unreleased]: https://github.com/jberezow/pucksdata/compare/v1.7.0...HEAD
