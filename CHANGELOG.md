@@ -22,6 +22,9 @@ All notable changes to PucksData are documented here. The project follows
 - Added `strength_source` provenance and historical strength enrichment from
   NHL scoring summaries and archived play-by-play reports.
 - Added season-scoped `backfill --refresh` for authoritative re-ingestion.
+- Added an `analytics` schema publishing dataset coverage: the first season
+  each event type and derived measure is available, the concepts the schema
+  does not contain, and a view that detects drift against the stored data.
 
 ## [1.6.1] - 2026-09-03
 
