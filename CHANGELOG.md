@@ -12,6 +12,9 @@ All notable changes to PucksData are documented here. The project follows
   nullable when the NHL source does not establish a strength.
 - Historical replays now replace each game's prior event snapshot atomically,
   removing events that disappear in later NHL feed revisions.
+- Rewrote `analytics.coverage_observed` to scan the events table once rather
+  than once per event type, bringing it inside the read-only role's statement
+  timeout.
 - Read archived report strength for blocked shots from the blocking team's
   perspective, and stopped deriving strength from penalty rows, which state
   the manpower before the penalty is applied.
@@ -26,6 +29,8 @@ All notable changes to PucksData are documented here. The project follows
   totals into the `analytics` schema. These answer season-level questions the
   event schema cannot, including games played and goalie records from 1917-18,
   and provide a reconciliation oracle for event-derived figures.
+- Recorded a coverage caveat for 2009-10, whose NHL play-by-play feed is
+  incomplete at source.
 - Added an `analytics` schema publishing dataset coverage: the first season
   each event type and derived measure is available, the concepts the schema
   does not contain, and a view that detects drift against the stored data.
