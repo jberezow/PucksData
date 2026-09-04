@@ -2,10 +2,16 @@ mod common;
 
 use pucksdata::models::{DbOfficialGoalieSeason, DbOfficialSkaterSeason};
 
-fn skater(points: Option<i32>) -> DbOfficialSkaterSeason {
+// Tests in a file run concurrently and share one database. Each writing test
+// owns a distinct synthetic season so neither its rows nor its cleanup can
+// touch another test's data.
+const REVISION_SEASON: i32 = 19001901;
+const NULL_FIELD_SEASON: i32 = 19001902;
+
+fn skater(season: i32, points: Option<i32>) -> DbOfficialSkaterSeason {
     DbOfficialSkaterSeason {
         player_id: 9_999_001,
-        season: 19001901,
+        season,
         game_type: 2,
         full_name: "Test Skater".to_string(),
         position_code: Some("C".to_string()),
@@ -33,10 +39,10 @@ fn skater(points: Option<i32>) -> DbOfficialSkaterSeason {
     }
 }
 
-fn goalie(wins: Option<i32>) -> DbOfficialGoalieSeason {
+fn goalie(season: i32, wins: Option<i32>) -> DbOfficialGoalieSeason {
     DbOfficialGoalieSeason {
         player_id: 9_999_002,
-        season: 19001901,
+        season,
         game_type: 2,
         full_name: "Test Goalie".to_string(),
         shoots_catches: Some("L".to_string()),
@@ -61,12 +67,14 @@ fn goalie(wins: Option<i32>) -> DbOfficialGoalieSeason {
     }
 }
 
-async fn cleanup(pool: &sqlx::PgPool) {
-    sqlx::query("DELETE FROM analytics.official_skater_seasons WHERE season = 19001901")
+async fn cleanup(pool: &sqlx::PgPool, season: i32) {
+    sqlx::query("DELETE FROM analytics.official_skater_seasons WHERE season = $1")
+        .bind(season)
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("DELETE FROM analytics.official_goalie_seasons WHERE season = 19001901")
+    sqlx::query("DELETE FROM analytics.official_goalie_seasons WHERE season = $1")
+        .bind(season)
         .execute(pool)
         .await
         .unwrap();
@@ -80,24 +88,26 @@ async fn test_official_stats_upsert_is_idempotent_and_revises() {
         return;
     }
     let pool = common::test_pool().await;
-    cleanup(pool).await;
+    let season = REVISION_SEASON;
+    cleanup(pool, season).await;
 
-    pucksdata::loaders::official_stats::upsert_skater_seasons(pool, &[skater(Some(15))])
+    pucksdata::loaders::official_stats::upsert_skater_seasons(pool, &[skater(season, Some(15))])
         .await
         .unwrap();
-    pucksdata::loaders::official_stats::upsert_skater_seasons(pool, &[skater(Some(16))])
+    pucksdata::loaders::official_stats::upsert_skater_seasons(pool, &[skater(season, Some(16))])
         .await
         .unwrap();
-    pucksdata::loaders::official_stats::upsert_goalie_seasons(pool, &[goalie(Some(10))])
+    pucksdata::loaders::official_stats::upsert_goalie_seasons(pool, &[goalie(season, Some(10))])
         .await
         .unwrap();
-    pucksdata::loaders::official_stats::upsert_goalie_seasons(pool, &[goalie(Some(11))])
+    pucksdata::loaders::official_stats::upsert_goalie_seasons(pool, &[goalie(season, Some(11))])
         .await
         .unwrap();
 
     let (skater_rows, points): (i64, Option<i32>) = sqlx::query_as(
-        "SELECT COUNT(*), MAX(points) FROM analytics.official_skater_seasons WHERE season = 19001901",
+        "SELECT COUNT(*), MAX(points) FROM analytics.official_skater_seasons WHERE season = $1",
     )
+    .bind(season)
     .fetch_one(pool)
     .await
     .unwrap();
@@ -105,15 +115,16 @@ async fn test_official_stats_upsert_is_idempotent_and_revises() {
     assert_eq!(points, Some(16), "skater upsert did not adopt the revision");
 
     let (goalie_rows, wins): (i64, Option<i32>) = sqlx::query_as(
-        "SELECT COUNT(*), MAX(wins) FROM analytics.official_goalie_seasons WHERE season = 19001901",
+        "SELECT COUNT(*), MAX(wins) FROM analytics.official_goalie_seasons WHERE season = $1",
     )
+    .bind(season)
     .fetch_one(pool)
     .await
     .unwrap();
     assert_eq!(goalie_rows, 1, "goalie upsert duplicated a row");
     assert_eq!(wins, Some(11), "goalie upsert did not adopt the revision");
 
-    cleanup(pool).await;
+    cleanup(pool, season).await;
 }
 
 /// Fields the NHL did not record in an era must round-trip as NULL rather
@@ -124,16 +135,18 @@ async fn test_official_stats_preserve_absent_fields_as_null() {
         return;
     }
     let pool = common::test_pool().await;
-    cleanup(pool).await;
+    let season = NULL_FIELD_SEASON;
+    cleanup(pool, season).await;
 
-    pucksdata::loaders::official_stats::upsert_skater_seasons(pool, &[skater(Some(15))])
+    pucksdata::loaders::official_stats::upsert_skater_seasons(pool, &[skater(season, Some(15))])
         .await
         .unwrap();
 
     let (shots, plus_minus, toi): (Option<i32>, Option<i32>, Option<f64>) = sqlx::query_as(
         "SELECT shots, plus_minus, time_on_ice_per_game
-         FROM analytics.official_skater_seasons WHERE season = 19001901",
+         FROM analytics.official_skater_seasons WHERE season = $1",
     )
+    .bind(season)
     .fetch_one(pool)
     .await
     .unwrap();
@@ -141,7 +154,7 @@ async fn test_official_stats_preserve_absent_fields_as_null() {
     assert_eq!(plus_minus, None, "absent plus-minus must stay NULL");
     assert_eq!(toi, None, "absent ice time must stay NULL");
 
-    cleanup(pool).await;
+    cleanup(pool, season).await;
 }
 
 /// The coverage contract must describe the tables that now exist.
