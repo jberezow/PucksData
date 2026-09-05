@@ -365,7 +365,9 @@ pub async fn run_backfill_with_refresh(
         Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {e}"),
     }
 
-    if total_done > 0 {
+    // Any game touched moves the health snapshot, including one that only
+    // recorded a failure.
+    if total_processed > 0 {
         crate::process::analytics::refresh_derived(pool).await;
     }
 

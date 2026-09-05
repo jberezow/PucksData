@@ -60,7 +60,7 @@ pub async fn collect_health(
                 completed_games, games_with_events, missing_event_games, goals_missing_shots,
                 backfill_failed, backfill_pending, backfill_skipped, healthy,
                 acknowledged_gap_games, actionable_gap_games
-         FROM observability.dataset_health",
+         FROM observability.dataset_health_live",
     )
     .fetch_one(pool)
     .await?;
@@ -70,7 +70,7 @@ pub async fn collect_health(
                 event_coverage_pct, goals_missing_shots, backfill_done, backfill_failed,
                 backfill_skipped, backfill_pending, healthy,
                 acknowledged_gap_games, actionable_gap_games
-         FROM observability.season_health
+         FROM observability.season_health_live
          WHERE ($1::integer IS NULL OR season = $1)
          ORDER BY season",
     )
