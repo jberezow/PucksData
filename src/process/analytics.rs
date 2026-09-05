@@ -1,4 +1,4 @@
-//! Maintenance of derived analytics objects.
+//! Maintenance of the materialized objects derived from ingested data.
 
 /// Refresh the player season rollup that backs the player season selector.
 ///
@@ -16,20 +16,39 @@ pub async fn refresh_player_event_seasons(pool: &sqlx::PgPool) -> Result<(), sql
         .map(|_| ())
 }
 
-/// Refresh derived analytics, reporting failure without failing the caller.
+/// Refresh the materialized dataset health snapshot.
 ///
-/// A stale rollup shows a player an out-of-date season list, which is worth a
-/// warning but is not a reason to fail a backfill or sync that has already
-/// written its events.
+/// Computing it live costs tens of seconds, mostly reading the events index
+/// and the goals-without-shots anti-join, which put the health page past the
+/// reading role's statement timeout. The figures only move when ingestion
+/// runs, so they are rebuilt here instead.
+pub async fn refresh_season_health(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query("REFRESH MATERIALIZED VIEW CONCURRENTLY observability.season_health")
+        .execute(pool)
+        .await
+        .map(|_| ())
+}
+
+/// Rebuild every derived object, reporting failure without failing the caller.
+///
+/// A stale rollup shows an out-of-date season list and a stale health snapshot
+/// shows out-of-date completeness figures. Both are worth a warning, and
+/// neither is a reason to fail a backfill or sync whose events are already
+/// written. Each is attempted even if the other fails.
 pub async fn refresh_derived(pool: &sqlx::PgPool) {
-    let started = std::time::Instant::now();
-    match refresh_player_event_seasons(pool).await {
-        Ok(()) => println!(
-            "refreshed analytics.player_event_seasons in {:.1}s",
-            started.elapsed().as_secs_f64()
+    for (label, result) in [
+        (
+            "analytics.player_event_seasons",
+            refresh_player_event_seasons(pool).await,
         ),
-        Err(error) => {
-            eprintln!("warn: analytics.player_event_seasons refresh failed (non-fatal): {error}")
+        (
+            "observability.season_health",
+            refresh_season_health(pool).await,
+        ),
+    ] {
+        match result {
+            Ok(()) => println!("refreshed {label}"),
+            Err(error) => eprintln!("warn: {label} refresh failed (non-fatal): {error}"),
         }
     }
 }
