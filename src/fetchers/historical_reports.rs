@@ -43,15 +43,15 @@ pub fn report_url(game_id: i64) -> Option<String> {
 }
 
 /// Fetch and parse an archived NHL play-by-play report.
+///
+/// A report the NHL published but never populated parses to an empty vector.
+/// That is a description of the page, not a failure; see
+/// [`fetch_reconciled_strengths`] for how an empty report is treated.
 pub async fn fetch_report_events(game_id: i64) -> Result<Vec<ReportEvent>, AnyError> {
     let url = report_url(game_id)
         .ok_or_else(|| format!("historical NHL report is not required for game {game_id}"))?;
     let html = fetch_api_text(&url).await?;
-    let events = parse_report(&html);
-    if events.is_empty() {
-        return Err(format!("NHL historical report for game {game_id} contained no events").into());
-    }
-    Ok(events)
+    Ok(parse_report(&html))
 }
 
 /// Result of aligning archived report rows with JSON events.
@@ -66,9 +66,20 @@ pub struct ReportReconciliation {
 
 /// Fetch and reconcile the archived report when it exists.
 ///
-/// Some otherwise valid historical games have no archived report. A 404 is
-/// therefore treated as an unavailable optional source, while network,
-/// parsing, and reconciliation failures remain errors.
+/// The archive is an optional source, and it is missing in two ways. Some
+/// historical games have no report at all, which answers 404. A few have a
+/// report the NHL published but never populated, which answers 200 carrying
+/// either the page title alone or the column headers with no play rows. Both
+/// leave nothing to reconcile against, so both yield an unavailable
+/// reconciliation and leave those events' strength unresolved rather than
+/// failing the whole game. Network, decoding, and reconciliation failures
+/// remain errors.
+///
+/// A parser regression would also yield empty reports, but for every
+/// historical game rather than the handful the NHL left blank. That surfaces
+/// as 2005-09 power-play and shorthanded totals diverging from
+/// `analytics.official_skater_seasons`, and as a failure of this module's
+/// live parser test.
 pub async fn fetch_reconciled_strengths(
     pbp: &PlayByPlay,
 ) -> Result<ReportReconciliation, AnyError> {
@@ -87,6 +98,10 @@ pub async fn fetch_reconciled_strengths(
         }
         Err(error) => return Err(error),
     };
+
+    if report_events.is_empty() {
+        return Ok(ReportReconciliation::default());
+    }
 
     let reconciliation = reconcile_report_strengths(pbp, &report_events);
     if reconciliation.matched == 0 && !pbp.plays.is_empty() {
@@ -466,6 +481,54 @@ mod tests {
         assert_eq!(events[1].strength, Some(EventStrength::PowerPlay));
     }
 
+    /// A handful of archived reports were published but never populated. The
+    /// NHL serves them as HTTP 200, so they reach the parser and must come
+    /// back empty rather than as a row of nonsense.
+    ///
+    /// The trap is the stylesheet: it defines `.evenColor` and `.oddColor`,
+    /// so the class names the row selector looks for are present in the page
+    /// even though no row carries them.
+    #[test]
+    fn stub_report_parses_to_no_events() {
+        let html = r#"<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=UTF-16">
+<title>Play By Play</title>
+</head>
+<style type="text/css">
+    .oddColor{background-color: #E7E7E7;}
+    .evenColor{background-color: #FFFFFF;}
+</style>
+<body leftmargin="0" topmargin="0"></body>
+</html>"#;
+
+        assert!(parse_report(html).is_empty());
+    }
+
+    /// The other empty shape carries the full header scaffolding and stops
+    /// there. Its column-header row has enough cells to pass the cell-count
+    /// check, so only the row class keeps it from being read as a play.
+    #[test]
+    fn header_only_report_parses_to_no_events() {
+        let html = r#"<html><body><table class="tablewidth">
+<tr>
+<td class="heading + bborder" align="center">#</td>
+<td class="heading + bborder" align="center">Per</td>
+<td class="heading + bborder" align="center">Str</td>
+<td class="heading + bborder" align="center">Time:<br />Elapsed<br />Game</td>
+<td class="heading + bborder" align="center">Event</td>
+<td class="heading + bborder" align="left">Description</td>
+<td class="heading + bborder" align="center">CBJ On Ice</td>
+<td class="heading + bborder" align="center">PIT On Ice</td>
+</tr>
+<tr>
+<td colspan="8">&#169; Copyright 2007, National Hockey League</td>
+</tr>
+</table></body></html>"#;
+
+        assert!(parse_report(html).is_empty());
+    }
+
     #[test]
     fn reconciles_report_rows_to_historical_json_ids() {
         let pbp: PlayByPlay = serde_json::from_str(
@@ -642,6 +705,23 @@ mod tests {
         let missing_report = fetch_reconciled_strengths(&pbp).await.unwrap();
         assert!(!missing_report.report_available);
         assert!(missing_report.strengths.is_empty());
+
+        // Reports the NHL published but never populated. These answer 200,
+        // not 404, and previously failed their whole game.
+        for game_id in [
+            2007010075, 2007010103, 2008010008, 2008020259, 2008020409, 2008021077,
+        ] {
+            assert!(
+                fetch_report_events(game_id).await.unwrap().is_empty(),
+                "game {game_id} was expected to have an unpopulated report"
+            );
+            let pbp = crate::fetchers::events::fetch_play_by_play(game_id)
+                .await
+                .unwrap();
+            let empty_report = fetch_reconciled_strengths(&pbp).await.unwrap();
+            assert!(!empty_report.report_available, "game {game_id}");
+            assert!(empty_report.strengths.is_empty(), "game {game_id}");
+        }
 
         let game_id = 2009020001;
         let pbp = crate::fetchers::events::fetch_play_by_play(game_id)
