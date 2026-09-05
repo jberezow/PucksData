@@ -251,6 +251,12 @@ pub async fn run_sync(
     .execute(pool)
     .await?;
 
+    // Only when events changed. Most daemon ticks find no candidates, and the
+    // refresh is far more expensive than the sync that triggered it.
+    if processed > 0 {
+        crate::process::analytics::refresh_derived(pool).await;
+    }
+
     Ok(SyncSummary {
         processed,
         failed,

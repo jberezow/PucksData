@@ -365,5 +365,9 @@ pub async fn run_backfill_with_refresh(
         Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {e}"),
     }
 
+    if total_done > 0 {
+        crate::process::analytics::refresh_derived(pool).await;
+    }
+
     Ok(())
 }
