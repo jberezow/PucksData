@@ -65,30 +65,45 @@ fn test_games_deserialize_stats_response() {
 }
 
 #[tokio::test]
-async fn test_games_upsert_idempotent() {
+async fn test_games_upsert_empty_without_connection() {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgresql://localhost/pucksdata_test")
+        .unwrap();
+    pool.close().await;
+    let pb = indicatif::ProgressBar::hidden();
+    assert_eq!(
+        pucksdata::loaders::games::upsert_games(&pool, &[], &pb)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(pb.position(), 0);
+}
+
+#[tokio::test]
+async fn test_games_batch_upsert() {
     if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
+    use pucksdata::{loaders::games::upsert_games, models::DbGame};
 
-    sqlx::query!(
+    sqlx::query(
         "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev)
-         VALUES (99001, 'Test Home', 'Home', 'Testville', 'HME'),
-                (99002, 'Test Away', 'Away', 'Testville', 'AWY')
-         ON CONFLICT (team_id) DO NOTHING"
+         VALUES (99101, 'Test Home', 'Home', 'Testville', 'HME'),
+                (99102, 'Test Away', 'Away', 'Testville', 'AWY')",
     )
     .execute(pool)
     .await
     .unwrap();
 
-    let game_date = time::macros::date!(2024 - 10 - 08);
-    let record = pucksdata::models::DbGame {
-        game_id: 9900000001_i64,
+    let game = |game_id| DbGame {
+        game_id,
         season: 20242025,
-        game_date,
-        start_time_utc: None,
-        home_team_id: 99001,
-        away_team_id: 99002,
+        game_date: time::macros::date!(2024 - 10 - 08),
+        start_time_utc: Some("2024-10-09T00:00:00.123456Z".parse().unwrap()),
+        home_team_id: 99101,
+        away_team_id: 99102,
         game_type: 2,
         venue: Some("Test Arena".into()),
         venue_location: Some("Testville, TS".into()),
@@ -96,48 +111,107 @@ async fn test_games_upsert_idempotent() {
         home_score: Some(3),
         away_score: Some(1),
     };
+    let pb = indicatif::ProgressBar::hidden();
+    assert_eq!(
+        upsert_games(pool, &[game(9910000001), game(9910000002)], &pb)
+            .await
+            .unwrap(),
+        2
+    );
 
-    pucksdata::loaders::games::upsert_games(pool, &[record], &indicatif::ProgressBar::hidden())
+    let mut updated = game(9910000001);
+    updated.season = 20252026;
+    updated.game_date = time::macros::date!(2025 - 10 - 10);
+    updated.start_time_utc = Some("2025-10-11T01:02:03.654321Z".parse().unwrap());
+    updated.home_team_id = 99102;
+    updated.away_team_id = 99101;
+    updated.game_type = 3;
+    updated.venue = Some("Updated Arena".into());
+    updated.venue_location = Some("Updated City".into());
+    updated.game_state = Some("FINAL".into());
+    updated.home_score = Some(5);
+    updated.away_score = Some(4);
+
+    let mut nullable = game(9910000002);
+    nullable.start_time_utc = None;
+    nullable.venue = None;
+    nullable.venue_location = None;
+    nullable.game_state = None;
+    nullable.home_score = None;
+    nullable.away_score = None;
+
+    // Mix inserts, updates and a duplicate; the final occurrence must win.
+    let records = [game(9910000001), nullable, game(9910000003), updated];
+    for _ in 0..2 {
+        assert_eq!(upsert_games(pool, &records, &pb).await.unwrap(), 4);
+    }
+    assert_eq!(pb.position(), 10);
+
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT * FROM games WHERE game_id BETWEEN 9910000001 AND 9910000003 ORDER BY game_id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 3);
+    for (row, expected) in rows.iter().zip([&records[3], &records[1], &records[2]]) {
+        assert_eq!(row.get::<i64, _>("game_id"), expected.game_id);
+        assert_eq!(row.get::<i32, _>("season"), expected.season);
+        assert_eq!(row.get::<time::Date, _>("game_date"), expected.game_date);
+        let timestamp = row.get::<Option<time::OffsetDateTime>, _>("start_time_utc");
+        assert_eq!(
+            timestamp.map(|t| t.unix_timestamp_nanos()),
+            expected
+                .start_time_utc
+                .map(|t| i128::from(t.timestamp_micros()) * 1000)
+        );
+        assert_eq!(row.get::<i64, _>("home_team_id"), expected.home_team_id);
+        assert_eq!(row.get::<i64, _>("away_team_id"), expected.away_team_id);
+        assert_eq!(row.get::<i16, _>("game_type"), expected.game_type);
+        assert_eq!(row.get::<Option<String>, _>("venue"), expected.venue);
+        assert_eq!(
+            row.get::<Option<String>, _>("venue_location"),
+            expected.venue_location
+        );
+        assert_eq!(
+            row.get::<Option<String>, _>("game_state"),
+            expected.game_state
+        );
+        assert_eq!(row.get::<Option<i16>, _>("home_score"), expected.home_score);
+        assert_eq!(row.get::<Option<i16>, _>("away_score"), expected.away_score);
+    }
+
+    // A failed batch must neither insert nor overwrite earlier records.
+    let mut invalid = game(9910000005);
+    invalid.home_team_id = -99101;
+    let error = upsert_games(pool, &[game(9910000001), game(9910000004), invalid], &pb)
         .await
-        .unwrap();
-
-    let record2 = pucksdata::models::DbGame {
-        game_id: 9900000001_i64,
-        season: 20242025,
-        game_date,
-        start_time_utc: None,
-        home_team_id: 99001,
-        away_team_id: 99002,
-        game_type: 2,
-        venue: Some("Test Arena Updated".into()),
-        venue_location: Some("Testville, TS".into()),
-        game_state: Some("OFF".into()),
-        home_score: Some(3),
-        away_score: Some(1),
-    };
-    pucksdata::loaders::games::upsert_games(pool, &[record2], &indicatif::ProgressBar::hidden())
-        .await
-        .unwrap();
-
-    let count: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM games WHERE game_id = 9900000001")
-        .fetch_one(pool)
-        .await
-        .unwrap()
-        .unwrap_or(0);
-    assert_eq!(count, 1, "upsert produced more than one row");
-
+        .unwrap_err();
+    assert_eq!(
+        error.as_database_error().and_then(|e| e.code()).as_deref(),
+        Some("23503")
+    );
+    assert_eq!(pb.position(), 10);
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM games WHERE game_id BETWEEN 9910000001 AND 9910000005",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 3);
     let venue: Option<String> =
-        sqlx::query_scalar!("SELECT venue FROM games WHERE game_id = 9900000001")
+        sqlx::query_scalar("SELECT venue FROM games WHERE game_id = 9910000001")
             .fetch_one(pool)
             .await
             .unwrap();
-    assert_eq!(venue.as_deref(), Some("Test Arena Updated"));
+    assert_eq!(venue.as_deref(), Some("Updated Arena"));
 
-    sqlx::query!("DELETE FROM games WHERE game_id = 9900000001")
+    sqlx::query("DELETE FROM games WHERE game_id BETWEEN 9910000001 AND 9910000005")
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query!("DELETE FROM teams WHERE team_id IN (99001, 99002)")
+    sqlx::query("DELETE FROM teams WHERE team_id IN (99101, 99102)")
         .execute(pool)
         .await
         .unwrap();
