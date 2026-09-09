@@ -1,5 +1,7 @@
+-- migrations/0002_events.sql
 -- Events base table: parent table for all event-type child tables
--- situationCode is decoded during ingestion into five columns stored here.
+-- situationCode is decoded at insert time (Phase 4) into 5 columns stored here
+-- Depends on: 0001_entity_tables.sql (references games, teams)
 
 CREATE TABLE events (
     id                    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

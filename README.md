@@ -80,9 +80,27 @@ SYNC_INTERVAL_SECS=21600
 Apply the schema and build the binary:
 
 ```bash
-sqlx migrate run
+./scripts/run-migrations.sh
 cargo build --release
 ```
+
+When upgrading a populated database from migration 0020 or earlier, stage the
+event-scope migration so the large update commits in batches:
+
+```bash
+./scripts/run-migrations.sh --target-version 21
+./scripts/run-event-scope-backfill.sh
+./scripts/run-migrations.sh
+```
+
+The migration wrapper uses the owner-level `MIGRATION_DATABASE_URL`; the
+backfill wrapper uses `DATABASE_URL`. Both load their value directly from
+`.env` when it is not already exported, without sourcing the file. This matters
+when a connection URL contains shell metacharacters such as `&`.
+
+Deploy the updated ingestion binary before the final command, and pause older
+ingestion processes while the backfill and final migrations run. Fresh databases
+can use a single `sqlx migrate run` because there are no existing events to fill.
 
 Initialize the database before the first historical backfill:
 
@@ -263,6 +281,11 @@ The migrations create:
 - Dataset coverage metadata and official NHL season totals in the `analytics` schema
 
 Goals are also represented in `shots`, so the shots table covers every shot on net. Ingestion uses upsert semantics throughout and is designed to recover safely after partial failures.
+
+The `events` table copies `season`, `game_type`, and `game_date` from its parent
+game during ingestion. Consumers can therefore restrict the large event table
+before joining event-type facts; the `(season, game_type, event_type)` index is
+the primary access path for season-scoped event analysis.
 
 Each event records `strength` (`ev`, `pp`, or `sh`) from the event owner's
 perspective and identifies its NHL source in `strength_source`. From 2009-10

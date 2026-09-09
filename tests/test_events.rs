@@ -465,6 +465,18 @@ async fn test_events_upsert_idempotent() {
     .await
     .unwrap();
 
+    let missing_scope = sqlx::query(
+        "INSERT INTO events
+             (game_id, event_id_in_game, period, period_type, time_in_period, event_type)
+         VALUES (9900000002, 999, 1, 'REG', '00:00', 'goal')",
+    )
+    .execute(pool)
+    .await;
+    assert!(
+        missing_scope.is_err(),
+        "event scope columns must reject an insert that does not populate them"
+    );
+
     let event = pucksdata::models::DbEvent {
         game_id: 9900000002,
         event_id_in_game: 1,
@@ -583,13 +595,17 @@ async fn test_events_upsert_idempotent() {
     ).fetch_one(pool).await.unwrap().unwrap_or(0);
     assert_eq!(goal_count, 1, "upsert produced more than one goal row");
 
-    let (strength, strength_source, situation_code, away_skaters): (
+    let (strength, strength_source, situation_code, away_skaters, season, game_type, game_date): (
         Option<String>,
         String,
         Option<String>,
         Option<i16>,
+        i32,
+        i16,
+        String,
     ) = sqlx::query_as(
-        "SELECT strength, strength_source, situation_code, away_skater_count
+        "SELECT strength, strength_source, situation_code, away_skater_count,
+                season, game_type, game_date::text
              FROM events WHERE game_id = 9900000002 AND event_id_in_game = 1",
     )
     .fetch_one(pool)
@@ -599,6 +615,9 @@ async fn test_events_upsert_idempotent() {
     assert_eq!(strength_source, "situation_code");
     assert_eq!(situation_code.as_deref(), Some("1451"));
     assert_eq!(away_skaters, Some(4));
+    assert_eq!(season, 20232024);
+    assert_eq!(game_type, 2);
+    assert_eq!(game_date, "2024-01-01");
 
     sqlx::query!(
         "DELETE FROM goals WHERE event_id IN (SELECT id FROM events WHERE game_id = 9900000002)"
