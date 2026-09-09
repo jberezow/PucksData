@@ -1,4 +1,5 @@
--- Operational metadata for the sync daemon.
+-- migrations/0005_sync_state.sql
+-- Operational metadata store for sync daemon (SCHEMA-15, QUAL-SYNC-02).
 -- Single row keyed by 'singleton'. Informational only — not the sync gate.
 CREATE TABLE sync_state (
     key              TEXT PRIMARY KEY,

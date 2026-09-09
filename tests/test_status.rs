@@ -56,11 +56,17 @@ async fn test_status_query_healthy_season() {
          ON CONFLICT (game_id) DO NOTHING"
     ).execute(pool).await.unwrap();
 
-    sqlx::query!(
-        "INSERT INTO events (game_id, event_id_in_game, period, period_type, time_in_period, event_type)
-         VALUES (9992000001, 1, 1, 'REG', '00:00', 'goal')
-         ON CONFLICT (game_id, event_id_in_game) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO events
+             (game_id, event_id_in_game, period, period_type, time_in_period, event_type,
+              season, game_type, game_date)
+         SELECT game_id, 1, 1, 'REG', '00:00', 'goal', season, game_type, game_date
+         FROM games WHERE game_id = 9992000001
+         ON CONFLICT (game_id, event_id_in_game) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     let healthy = pucksdata::process::status::run_status(pool, Some(99981), false)
         .await
@@ -236,11 +242,17 @@ async fn test_status_season_filter() {
          ON CONFLICT (game_id) DO NOTHING"
     ).execute(pool).await.unwrap();
 
-    sqlx::query!(
-        "INSERT INTO events (game_id, event_id_in_game, period, period_type, time_in_period, event_type)
-         VALUES (9992000003, 1, 1, 'REG', '00:00', 'goal')
-         ON CONFLICT (game_id, event_id_in_game) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO events
+             (game_id, event_id_in_game, period, period_type, time_in_period, event_type,
+              season, game_type, game_date)
+         SELECT game_id, 1, 1, 'REG', '00:00', 'goal', season, game_type, game_date
+         FROM games WHERE game_id = 9992000003
+         ON CONFLICT (game_id, event_id_in_game) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     let healthy_scoped = pucksdata::process::status::run_status(pool, Some(99983), false)
         .await
@@ -296,11 +308,17 @@ async fn test_status_excludes_fut_pre_games() {
          ON CONFLICT (game_id) DO NOTHING"
     ).execute(pool).await.unwrap();
 
-    sqlx::query!(
-        "INSERT INTO events (game_id, event_id_in_game, period, period_type, time_in_period, event_type)
-         VALUES (9992000005, 1, 1, 'REG', '00:00', 'goal')
-         ON CONFLICT (game_id, event_id_in_game) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO events
+             (game_id, event_id_in_game, period, period_type, time_in_period, event_type,
+              season, game_type, game_date)
+         SELECT game_id, 1, 1, 'REG', '00:00', 'goal', season, game_type, game_date
+         FROM games WHERE game_id = 9992000005
+         ON CONFLICT (game_id, event_id_in_game) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     let healthy = pucksdata::process::status::run_status(pool, Some(99985), false)
         .await
@@ -347,11 +365,17 @@ async fn test_fix_idempotent() {
          ON CONFLICT (game_id) DO NOTHING"
     ).execute(pool).await.unwrap();
 
-    sqlx::query!(
-        "INSERT INTO events (game_id, event_id_in_game, period, period_type, time_in_period, event_type)
-         VALUES (9992000010, 1, 1, 'REG', '00:00', 'goal')
-         ON CONFLICT (game_id, event_id_in_game) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO events
+             (game_id, event_id_in_game, period, period_type, time_in_period, event_type,
+              season, game_type, game_date)
+         SELECT game_id, 1, 1, 'REG', '00:00', 'goal', season, game_type, game_date
+         FROM games WHERE game_id = 9992000010
+         ON CONFLICT (game_id, event_id_in_game) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     sqlx::query!(
         "INSERT INTO backfill_progress (game_id, season, status)

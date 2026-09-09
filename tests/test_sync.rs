@@ -64,11 +64,17 @@ async fn test_query_sync_candidates_detects_gap() {
         "game with no events must appear in gap detection"
     );
 
-    sqlx::query!(
-        "INSERT INTO events (game_id, event_id_in_game, period, period_type, time_in_period, event_type)
-         VALUES (9991000001, 1, 1, 'REG', '00:00', 'goal')
-         ON CONFLICT (game_id, event_id_in_game) DO NOTHING"
-    ).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO events
+             (game_id, event_id_in_game, period, period_type, time_in_period, event_type,
+              season, game_type, game_date)
+         SELECT game_id, 1, 1, 'REG', '00:00', 'goal', season, game_type, game_date
+         FROM games WHERE game_id = 9991000001
+         ON CONFLICT (game_id, event_id_in_game) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 
     let candidates2 = pucksdata::process::sync::query_sync_candidates(pool, None)
         .await

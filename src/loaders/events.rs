@@ -92,20 +92,30 @@ pub async fn upsert_game_events(
 
         let rows = sqlx::query(
             r#"
+            WITH input_events AS (
+                SELECT * FROM UNNEST(
+                    $1::bigint[], $2::int[], $3::smallint[], $4::text[], $5::text[],
+                    $6::text[], $7::smallint[], $8::smallint[], $9::text[], $10::bigint[],
+                    $11::bool[], $12::smallint[], $13::smallint[], $14::bool[], $15::text[],
+                    $16::text[], $17::text[]
+                ) AS t(game_id, event_id_in_game, period, period_type, time_in_period,
+                       event_type, x_coord, y_coord, zone_code, event_owner_team_id,
+                       home_goalie_present, home_skater_count, away_skater_count,
+                       away_goalie_present, strength, strength_source, situation_code)
+            )
             INSERT INTO events
                 (game_id, event_id_in_game, period, period_type, time_in_period,
                  event_type, x_coord, y_coord, zone_code, event_owner_team_id,
                  home_goalie_present, home_skater_count, away_skater_count,
-                 away_goalie_present, strength, strength_source, situation_code)
-            SELECT * FROM UNNEST(
-                $1::bigint[], $2::int[], $3::smallint[], $4::text[], $5::text[],
-                $6::text[], $7::smallint[], $8::smallint[], $9::text[], $10::bigint[],
-                $11::bool[], $12::smallint[], $13::smallint[], $14::bool[], $15::text[],
-                $16::text[], $17::text[]
-            ) AS t(game_id, event_id_in_game, period, period_type, time_in_period,
-                   event_type, x_coord, y_coord, zone_code, event_owner_team_id,
-                   home_goalie_present, home_skater_count, away_skater_count,
-                   away_goalie_present, strength, strength_source, situation_code)
+                 away_goalie_present, strength, strength_source, situation_code,
+                 season, game_type, game_date)
+            SELECT i.game_id, i.event_id_in_game, i.period, i.period_type, i.time_in_period,
+                   i.event_type, i.x_coord, i.y_coord, i.zone_code, i.event_owner_team_id,
+                   i.home_goalie_present, i.home_skater_count, i.away_skater_count,
+                   i.away_goalie_present, i.strength, i.strength_source, i.situation_code,
+                   g.season, g.game_type, g.game_date
+            FROM input_events i
+            JOIN games g ON g.game_id = i.game_id
             ON CONFLICT (game_id, event_id_in_game) DO UPDATE SET
                 period              = EXCLUDED.period,
                 period_type         = EXCLUDED.period_type,
@@ -121,7 +131,10 @@ pub async fn upsert_game_events(
                 away_goalie_present = EXCLUDED.away_goalie_present,
                 strength            = EXCLUDED.strength,
                 strength_source     = EXCLUDED.strength_source,
-                situation_code      = EXCLUDED.situation_code
+                situation_code      = EXCLUDED.situation_code,
+                season              = EXCLUDED.season,
+                game_type           = EXCLUDED.game_type,
+                game_date           = EXCLUDED.game_date
             RETURNING id, event_id_in_game
             "#,
         )
@@ -144,6 +157,16 @@ pub async fn upsert_game_events(
         .bind(&situation_codes)
         .fetch_all(&mut *tx)
         .await?;
+
+        // The join above is also the source of the denormalized scope fields. A
+        // missing game would otherwise turn into a silent zero-row insert.
+        if rows.len() != events.len() {
+            return Err(sqlx::Error::Protocol(format!(
+                "inserted {} of {} events; every event must reference a loaded game",
+                rows.len(),
+                events.len()
+            )));
+        }
 
         for row in &rows {
             let id: i64 = row.try_get("id")?;

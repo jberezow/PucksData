@@ -1,3 +1,4 @@
+-- migrations/0001_entity_tables.sql
 -- Entity tables: teams, players, seasons, games
 -- Order: teams → seasons → players → games (games references teams via FK)
 

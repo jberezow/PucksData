@@ -1,4 +1,5 @@
--- Checkpoint table for resumable backfill orchestration.
+-- migrations/0004_backfill_progress.sql
+-- Checkpoint table for backfill orchestration (BACKFILL-02).
 -- Tracks per-game completion status so interrupted backfills resume cleanly.
 -- Status values: 'pending', 'done', 'failed' (no 'in_progress' — killed runs leave 'pending').
 CREATE TABLE backfill_progress (
