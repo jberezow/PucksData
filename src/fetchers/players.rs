@@ -8,7 +8,7 @@ use tokio::task::JoinSet;
 
 use crate::{
     api::{fetch_api_json, ApiError},
-    models::DbPlayer,
+    models::{CurrentRosterObservation, DbPlayer, DbRosterMembership},
     AnyError,
 };
 
@@ -102,6 +102,10 @@ struct StandingsResponse {
 #[derive(serde::Deserialize)]
 struct RosterPlayer {
     id: i64,
+    #[serde(rename = "positionCode")]
+    position_code: Option<String>,
+    #[serde(rename = "sweaterNumber")]
+    sweater_number: Option<i16>,
 }
 
 #[derive(serde::Deserialize)]
@@ -129,19 +133,61 @@ async fn fetch_active_team_abbrevs() -> Result<Vec<String>, AnyError> {
         .collect())
 }
 
-/// Fetch all player IDs on a team's current roster.
-async fn fetch_roster_player_ids(abbrev: &str) -> Result<Vec<i64>, AnyError> {
+/// Fetch the source membership details for one team's current roster.
+async fn fetch_team_roster(abbrev: &str) -> Result<Vec<DbRosterMembership>, AnyError> {
     let url = format!("https://api-web.nhle.com/v1/roster/{abbrev}/current");
     let json = fetch_api_json(&url).await?;
     let roster: RosterResponse = serde_json::from_str(&json)?;
-    let ids = roster
-        .forwards
-        .into_iter()
-        .chain(roster.defensemen)
-        .chain(roster.goalies)
-        .map(|p| p.id)
-        .collect();
-    Ok(ids)
+    Ok(roster_to_memberships(abbrev, roster))
+}
+
+fn roster_to_memberships(abbrev: &str, roster: RosterResponse) -> Vec<DbRosterMembership> {
+    let mut memberships =
+        Vec::with_capacity(roster.forwards.len() + roster.defensemen.len() + roster.goalies.len());
+
+    for (roster_group, players) in [
+        ("forward", roster.forwards),
+        ("defenseman", roster.defensemen),
+        ("goalie", roster.goalies),
+    ] {
+        memberships.extend(players.into_iter().map(|player| DbRosterMembership {
+            team_abbrev: abbrev.to_string(),
+            player_id: player.id,
+            roster_group: roster_group.to_string(),
+            position_code: player.position_code,
+            sweater_number: player.sweater_number,
+        }));
+    }
+
+    memberships
+}
+
+/// Fetch current rosters for all active teams.
+///
+/// The observation reports completeness explicitly. Callers may use a partial
+/// result for player discovery, but must not persist it as the current roster
+/// snapshot.
+pub async fn fetch_current_rosters() -> Result<CurrentRosterObservation, AnyError> {
+    let teams = fetch_active_team_abbrevs().await?;
+    let expected_team_count = teams.len();
+    let mut fetched_team_count = 0usize;
+    let mut memberships = Vec::new();
+
+    for abbrev in teams {
+        match fetch_team_roster(&abbrev).await {
+            Ok(team_memberships) => {
+                fetched_team_count += 1;
+                memberships.extend(team_memberships);
+            }
+            Err(error) => eprintln!("warn: roster fetch failed for {abbrev}: {error}"),
+        }
+    }
+
+    Ok(CurrentRosterObservation {
+        expected_team_count,
+        fetched_team_count,
+        memberships,
+    })
 }
 
 /// Paginate a stats summary endpoint (skater or goalie) for a given game type and season,
@@ -206,32 +252,33 @@ async fn fetch_stats_player_ids(
 /// invisible in that response window. Querying by explicit seasonId returns a
 /// small, complete dataset (~900 rows for a regular season) that correctly includes
 /// all players who appeared in games that season.
-pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError> {
+async fn enumerate_player_ids_and_rosters(
+    seasons: &[i32],
+) -> Result<(Vec<i64>, Option<CurrentRosterObservation>), AnyError> {
     let mut all_ids: HashSet<i64> = HashSet::new();
 
     // Source 1: current team rosters
-    match fetch_active_team_abbrevs().await {
-        Ok(teams) => {
-            let team_count = teams.len();
-            println!("  enumerating players: fetching rosters for {team_count} active teams...");
-            for (i, abbrev) in teams.iter().enumerate() {
-                if i > 0 && i % 8 == 0 {
-                    println!("  enumerating players: rosters {i}/{team_count}");
-                }
-                match fetch_roster_player_ids(abbrev).await {
-                    Ok(ids) => {
-                        all_ids.extend(ids);
-                    }
-                    Err(e) => eprintln!("warn: roster fetch failed for {abbrev}: {e}"),
-                }
-            }
-            println!(
-                "  enumerating players: rosters done ({} unique IDs so far)",
-                all_ids.len()
+    let roster_observation = match fetch_current_rosters().await {
+        Ok(observation) => {
+            all_ids.extend(
+                observation
+                    .memberships
+                    .iter()
+                    .map(|membership| membership.player_id),
             );
+            println!(
+                "  enumerating players: rosters {}/{} ({} unique IDs so far)",
+                observation.fetched_team_count,
+                observation.expected_team_count,
+                all_ids.len(),
+            );
+            Some(observation)
         }
-        Err(e) => eprintln!("warn: active team fetch failed, skipping roster source: {e}"),
-    }
+        Err(error) => {
+            eprintln!("warn: active team fetch failed, skipping roster source: {error}");
+            None
+        }
+    };
 
     // Source 2: stats summaries for all seasons that have game data (regular season + playoffs).
     // Querying every season in the DB ensures players from historical seasons (e.g. 2007-2012)
@@ -270,6 +317,11 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
 
     let mut ids: Vec<i64> = all_ids.into_iter().collect();
     ids.sort();
+    Ok((ids, roster_observation))
+}
+
+pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError> {
+    let (ids, _) = enumerate_player_ids_and_rosters(seasons).await?;
     Ok(ids)
 }
 
@@ -432,7 +484,12 @@ pub async fn repair_missing_players(pool: &sqlx::PgPool) -> Result<usize, AnyErr
 /// Queries the DB for all distinct season IDs in the games table so that
 /// `enumerate_player_ids` covers every season that has game data — including
 /// historical seasons with retired players (e.g. 2007-2012).
-pub async fn fetch_players(pool: &sqlx::PgPool) -> Result<Vec<DbPlayer>, AnyError> {
+pub struct PlayerFetchResult {
+    pub players: Vec<DbPlayer>,
+    pub current_rosters: Option<CurrentRosterObservation>,
+}
+
+pub async fn fetch_players(pool: &sqlx::PgPool) -> Result<PlayerFetchResult, AnyError> {
     let seasons = match query_seasons_in_db(pool).await {
         Ok(s) => s,
         Err(e) => {
@@ -441,7 +498,7 @@ pub async fn fetch_players(pool: &sqlx::PgPool) -> Result<Vec<DbPlayer>, AnyErro
         }
     };
 
-    let player_ids = enumerate_player_ids(&seasons).await?;
+    let (player_ids, current_rosters) = enumerate_player_ids_and_rosters(&seasons).await?;
     let total = player_ids.len() as u64;
 
     let pb = crate::ui::make_progress_bar(total, "players");
@@ -449,11 +506,35 @@ pub async fn fetch_players(pool: &sqlx::PgPool) -> Result<Vec<DbPlayer>, AnyErro
     let records = fetch_all_players(player_ids, &pb).await;
     pb.finish_with_message(format!("Fetched {} players", records.len()));
 
-    Ok(records)
+    Ok(PlayerFetchResult {
+        players: records,
+        current_rosters,
+    })
 }
 
 #[cfg(test)]
 mod tests {
+    use super::{roster_to_memberships, RosterResponse};
+
+    #[test]
+    fn current_roster_preserves_source_group_and_position() {
+        let json = r#"{
+            "forwards": [{"id": 8478402, "positionCode": "C", "sweaterNumber": 97}],
+            "defensemen": [{"id": 8480803, "positionCode": "D", "sweaterNumber": 2}],
+            "goalies": [{"id": 8479973, "positionCode": "G", "sweaterNumber": 74}]
+        }"#;
+        let roster: RosterResponse = serde_json::from_str(json).unwrap();
+        let memberships = roster_to_memberships("EDM", roster);
+
+        assert_eq!(memberships.len(), 3);
+        assert_eq!(memberships[0].team_abbrev, "EDM");
+        assert_eq!(memberships[0].roster_group, "forward");
+        assert_eq!(memberships[0].position_code.as_deref(), Some("C"));
+        assert_eq!(memberships[0].sweater_number, Some(97));
+        assert_eq!(memberships[1].roster_group, "defenseman");
+        assert_eq!(memberships[2].roster_group, "goalie");
+    }
+
     #[test]
     fn test_enumerate_player_ids_empty_seasons() {
         // When seasons slice is empty the stats loop is a no-op.

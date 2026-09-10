@@ -38,6 +38,32 @@ pub struct DbPlayer {
     pub draft_overall_pick: Option<i16>,
 }
 
+/// One player returned by an NHL current team-roster endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DbRosterMembership {
+    pub team_abbrev: String,
+    pub player_id: i64,
+    pub roster_group: String,
+    pub position_code: Option<String>,
+    pub sweater_number: Option<i16>,
+}
+
+/// A fetch attempt across every team returned by the active-team endpoint.
+///
+/// Incomplete observations remain useful for discovering player IDs, but only
+/// complete observations may be persisted as an authoritative snapshot.
+pub struct CurrentRosterObservation {
+    pub expected_team_count: usize,
+    pub fetched_team_count: usize,
+    pub memberships: Vec<DbRosterMembership>,
+}
+
+impl CurrentRosterObservation {
+    pub fn is_complete(&self) -> bool {
+        self.expected_team_count > 0 && self.fetched_team_count == self.expected_team_count
+    }
+}
+
 /// A game record mapping to the `games` table.
 pub struct DbGame {
     pub game_id: i64,

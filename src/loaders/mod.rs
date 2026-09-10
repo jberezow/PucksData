@@ -3,5 +3,6 @@ pub mod events;
 pub mod games;
 pub mod official_stats;
 pub mod players;
+pub mod rosters;
 pub mod seasons;
 pub mod teams;

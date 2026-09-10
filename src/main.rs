@@ -160,8 +160,8 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 use std::time::Duration;
                 let pool = db::get_pool().await?;
 
-                let records = fetchers::players::fetch_players(pool).await?;
-                let count = records.len();
+                let fetched = fetchers::players::fetch_players(pool).await?;
+                let count = fetched.players.len();
 
                 // The bulk upsert has no meaningful per-record progress.
                 let spinner = {
@@ -179,11 +179,28 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                     s.set_message(format!("Writing {count} players to DB..."));
                     s
                 };
-                loaders::players::upsert_players(pool, &records)
+                loaders::players::upsert_players(pool, &fetched.players)
                     .await
                     .inspect_err(|_| spinner.finish_and_clear())?;
                 spinner.finish_and_clear();
                 println!("Wrote {count} players");
+
+                if let Some(rosters) = fetched.current_rosters {
+                    if rosters.is_complete() {
+                        let snapshot_id =
+                            loaders::rosters::insert_roster_snapshot(pool, &rosters).await?;
+                        println!(
+                            "Wrote roster snapshot {snapshot_id} ({} teams, {} memberships)",
+                            rosters.fetched_team_count,
+                            rosters.memberships.len()
+                        );
+                    } else {
+                        eprintln!(
+                            "warn: current roster observation was incomplete ({}/{} teams); snapshot not written",
+                            rosters.fetched_team_count, rosters.expected_team_count
+                        );
+                    }
+                }
             }
             FetchEntity::Events(args) => {
                 use indicatif::{ProgressBar, ProgressStyle};

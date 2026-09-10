@@ -131,9 +131,28 @@ pub async fn run_sync(
     println!("[sync 1/5] {} teams upserted", teams.len());
 
     println!("[sync 2/5] enumerating and refreshing players (rosters + stats pages — this takes ~30s)...");
-    let players = crate::fetchers::players::fetch_players(pool).await?;
-    crate::loaders::players::upsert_players(pool, &players).await?;
-    println!("[sync 2/5] {} players upserted", players.len());
+    let fetched_players = crate::fetchers::players::fetch_players(pool).await?;
+    crate::loaders::players::upsert_players(pool, &fetched_players.players).await?;
+    println!(
+        "[sync 2/5] {} players upserted",
+        fetched_players.players.len()
+    );
+    if let Some(rosters) = fetched_players.current_rosters {
+        if rosters.is_complete() {
+            let snapshot_id =
+                crate::loaders::rosters::insert_roster_snapshot(pool, &rosters).await?;
+            println!(
+                "[sync 2/5] roster snapshot {snapshot_id} written ({} teams, {} memberships)",
+                rosters.fetched_team_count,
+                rosters.memberships.len()
+            );
+        } else {
+            eprintln!(
+                "warn: current roster observation was incomplete ({}/{} teams); snapshot not written",
+                rosters.fetched_team_count, rosters.expected_team_count
+            );
+        }
+    }
 
     let team_id_map = Arc::new(crate::fetchers::games::fetch_team_id_to_franchise_id_map().await?);
 

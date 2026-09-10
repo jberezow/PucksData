@@ -94,3 +94,90 @@ async fn test_players_upsert_idempotent() {
         .unwrap();
 }
 mod common;
+
+#[test]
+fn test_current_roster_observation_completeness() {
+    let complete = pucksdata::models::CurrentRosterObservation {
+        expected_team_count: 1,
+        fetched_team_count: 1,
+        memberships: vec![pucksdata::models::DbRosterMembership {
+            team_abbrev: "TST".into(),
+            player_id: 9_000_002,
+            roster_group: "forward".into(),
+            position_code: Some("C".into()),
+            sweater_number: Some(97),
+        }],
+    };
+    assert!(complete.is_complete());
+
+    let partial = pucksdata::models::CurrentRosterObservation {
+        expected_team_count: 2,
+        fetched_team_count: 1,
+        memberships: complete.memberships,
+    };
+    assert!(!partial.is_complete());
+}
+
+#[tokio::test]
+async fn test_complete_roster_snapshot_is_queryable() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+
+    sqlx::query(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev) \
+         VALUES (9000002, 'Test Team', 'Test', 'Test Place', 'TST') \
+         ON CONFLICT (team_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO players (player_id, first_name, last_name, position) \
+         VALUES (9000002, 'Roster', 'Player', 'C') \
+         ON CONFLICT (player_id) DO NOTHING",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let observation = pucksdata::models::CurrentRosterObservation {
+        expected_team_count: 1,
+        fetched_team_count: 1,
+        memberships: vec![pucksdata::models::DbRosterMembership {
+            team_abbrev: "TST".into(),
+            player_id: 9_000_002,
+            roster_group: "forward".into(),
+            position_code: Some("C".into()),
+            sweater_number: Some(97),
+        }],
+    };
+    let snapshot_id = pucksdata::loaders::rosters::insert_roster_snapshot(pool, &observation)
+        .await
+        .unwrap();
+
+    let membership: (String, i64, String) = sqlx::query_as(
+        "SELECT team_abbrev, player_id, roster_group \
+         FROM analytics.current_rosters WHERE player_id = $1",
+    )
+    .bind(9_000_002_i64)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(membership, ("TST".into(), 9_000_002, "forward".into()));
+
+    sqlx::query("DELETE FROM roster_snapshots WHERE snapshot_id = $1")
+        .bind(snapshot_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM players WHERE player_id = 9000002")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM teams WHERE team_id = 9000002")
+        .execute(pool)
+        .await
+        .unwrap();
+}

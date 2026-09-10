@@ -24,7 +24,7 @@ flowchart LR
 
 The pipeline provides:
 
-- Teams, seasons, players, games, and play-by-play metadata
+- Teams, seasons, players, current roster snapshots, games, and play-by-play metadata
 - Typed tables for goals, shots, hits, blocks, penalties, and faceoffs
 - Idempotent bulk upserts and transactional event writes
 - Resumable historical backfills with per-game progress tracking
@@ -126,7 +126,7 @@ Fetch and upsert NHL entity or play-by-play data.
 |---|---|
 | `fetch teams` | Fetch all NHL franchise records |
 | `fetch seasons` | Fetch all available NHL seasons |
-| `fetch players` | Discover players from rosters and season statistics, then fetch their landing pages |
+| `fetch players` | Discover players from rosters and season statistics, fetch their landing pages, and persist a complete current-roster snapshot |
 | `fetch games --game <ID>` | Fetch one game's metadata |
 | `fetch games --season <YEAR>` | Fetch all games in one season |
 | `fetch games --all` | Fetch games across every available season |
@@ -274,6 +274,7 @@ The `Scheduled database sync` workflow runs `sync` against the configured databa
 The migrations create:
 
 - Entity tables: `teams`, `seasons`, `players`, and `games`
+- Current roster observations: `roster_snapshots`, `roster_memberships`, and `analytics.current_rosters`
 - A shared `events` parent table
 - Event detail tables: `goals`, `shots`, `hits`, `blocks`, `penalties`, and `faceoffs`
 - Operational tables: `backfill_progress` and `sync_state`
