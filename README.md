@@ -133,6 +133,8 @@ Fetch and upsert NHL entity or play-by-play data.
 | `fetch events <GAME_ID>` | Fetch and store one game's play-by-play events |
 | `fetch official-stats` | Fetch official NHL skater and goalie season totals for every season |
 | `fetch official-stats --season <YEAR>` | Fetch official season totals for one season |
+| `fetch official-game-stats --game <ID>` | Fetch final official player statistics for one completed game |
+| `fetch official-game-stats --from <DATE> [--to <DATE>]` | Load or audit completed games in an inclusive date range |
 
 Season values use the NHL's eight-digit format:
 
@@ -205,6 +207,9 @@ PucksData does not need to run continuously during the offseason.
    ```
 
 2. Run the daemon during the season. Six-hour intervals suit current-data applications; daily syncs are sufficient for general analysis.
+   The scheduled workflow also reloads official player/game statistics for the
+   last three days. On Sundays it audits the trailing fourteen days so later
+   NHL corrections advance each affected row's source revision.
 3. After the Stanley Cup Final, run one final sync and health check:
 
    ```bash
@@ -280,6 +285,7 @@ The migrations create:
 - Operational tables: `backfill_progress` and `sync_state`
 - Read-only health views in the `observability` schema
 - Dataset coverage metadata and official NHL season totals in the `analytics` schema
+- Official skater and goalie game totals, plus a long-form downstream scoring view, in the `analytics` schema
 
 Goals are also represented in `shots`, so the shots table covers every shot on net. Ingestion uses upsert semantics throughout and is designed to recover safely after partial failures.
 
@@ -303,6 +309,14 @@ two kinds of number stay distinguishable. They answer questions the event
 schema cannot — games played from 1917-18, shots from 1967-68, goalie wins and
 shutouts from 1917-18 — and serve as the reconciliation oracle for
 event-derived figures.
+
+`analytics.official_skater_games` and `analytics.official_goalie_games` hold
+the league's current final-boxscore values at player/game grain. They complement
+the event tables with facts such as plus/minus, game-winning goals, goalie
+decisions, and shutouts. Re-observing an identical row updates its observation
+time without changing `source_revision`; a changed published value advances the
+revision. `analytics.official_player_game_stats` exposes the supported scoring
+facts as a stable long-form contract for downstream applications.
 
 The NHL began recording different facts in different eras, so no single season
 range covers every statistic. `analytics.coverage` publishes the first season

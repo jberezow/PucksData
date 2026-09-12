@@ -40,6 +40,33 @@ enum FetchEntity {
     Events(EventsArgs),
     /// Fetch official NHL season totals for skaters and goalies
     OfficialStats(OfficialStatsArgs),
+    /// Fetch official final-boxscore player statistics
+    OfficialGameStats(OfficialGameStatsArgs),
+}
+
+#[derive(Args)]
+struct OfficialGameStatsArgs {
+    /// Load one completed game by NHL game ID
+    #[arg(long, conflicts_with = "from")]
+    game: Option<i64>,
+    /// Load completed games on or after this date (YYYY-MM-DD)
+    #[arg(long, conflicts_with = "game")]
+    from: Option<String>,
+    /// Stop a date-range load on this date, inclusive
+    #[arg(long, requires = "from")]
+    to: Option<String>,
+}
+
+fn parse_date(value: Option<String>) -> Result<Option<time::Date>, pucksdata::AnyError> {
+    value
+        .map(|value| {
+            time::Date::parse(
+                &value,
+                time::macros::format_description!("[year]-[month]-[day]"),
+            )
+            .map_err(Into::into)
+        })
+        .transpose()
 }
 
 #[derive(Args)]
@@ -145,6 +172,20 @@ async fn main() -> Result<(), pucksdata::AnyError> {
             FetchEntity::OfficialStats(args) => {
                 let pool = db::get_pool().await?;
                 pucksdata::process::official_stats::run_official_stats(pool, args.season).await?;
+            }
+            FetchEntity::OfficialGameStats(args) => {
+                let pool = db::get_pool().await?;
+                let summary = pucksdata::process::official_games::run_official_games(
+                    pool,
+                    args.game,
+                    parse_date(args.from)?,
+                    parse_date(args.to)?,
+                )
+                .await?;
+                println!(
+                    "Wrote official stats for {} games ({} skaters, {} goalies)",
+                    summary.games, summary.skaters, summary.goalies
+                );
             }
             FetchEntity::Seasons => {
                 let pool = db::get_pool().await?;

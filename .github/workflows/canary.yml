@@ -60,7 +60,10 @@ jobs:
       - name: Exercise live API-to-database path
         run: |
           for attempt in 1 2 3; do
-            cargo test --test test_canary -- --ignored --nocapture && exit 0
+            if cargo test --test test_canary -- --ignored --nocapture \
+              && cargo test --test test_official_games -- --ignored --nocapture; then
+              exit 0
+            fi
             if [ "$attempt" -lt 3 ]; then
               echo "Canary attempt $attempt failed; retrying..."
               sleep $((attempt * 15))
