@@ -2,8 +2,13 @@ name: Scheduled database sync
 
 on:
   schedule:
-    - cron: "17 10 * * *"
+    - cron: "17 12 * * *"
   workflow_dispatch:
+    inputs:
+      audit_days:
+        description: Days of completed official game stats to reload
+        required: false
+        default: "3"
 
 permissions:
   contents: read
@@ -39,6 +44,18 @@ jobs:
 
       - name: Synchronize database
         run: target/release/pucksdata sync
+
+      - name: Load and audit official player-game statistics
+        env:
+          REQUESTED_AUDIT_DAYS: ${{ inputs.audit_days }}
+        run: |
+          audit_days="${REQUESTED_AUDIT_DAYS:-3}"
+          if [[ -z "$REQUESTED_AUDIT_DAYS" && "$(date -u +%u)" == "7" ]]; then
+            audit_days=14
+          fi
+          from_date="$(date -u -d "${audit_days} days ago" +%F)"
+          target/release/pucksdata fetch official-game-stats --from "$from_date"
+          echo "Official player-game audit window: ${from_date} through today" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect database health
         id: health

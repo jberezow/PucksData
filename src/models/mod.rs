@@ -230,3 +230,56 @@ pub struct DbOfficialGoalieSeason {
     pub points: Option<i32>,
     pub penalty_minutes: Option<i32>,
 }
+
+/// Official NHL skater statistics for one completed game.
+#[derive(Clone, Debug)]
+pub struct DbOfficialSkaterGame {
+    pub game_id: i64,
+    pub player_id: i64,
+    pub season: i32,
+    pub game_type: i16,
+    pub team_abbrev: Option<String>,
+    pub full_name: String,
+    pub position_code: Option<String>,
+    pub goals: Option<i32>,
+    pub assists: Option<i32>,
+    pub points: Option<i32>,
+    pub plus_minus: Option<i32>,
+    pub penalty_minutes: Option<i32>,
+    pub shots: Option<i32>,
+    pub ev_goals: Option<i32>,
+    pub ev_points: Option<i32>,
+    pub pp_goals: Option<i32>,
+    pub pp_points: Option<i32>,
+    pub sh_goals: Option<i32>,
+    pub sh_points: Option<i32>,
+    pub ot_goals: Option<i32>,
+    pub game_winning_goals: Option<i32>,
+    pub hits: Option<i32>,
+    pub blocked_shots: Option<i32>,
+    pub giveaways: Option<i32>,
+    pub takeaways: Option<i32>,
+    pub time_on_ice_seconds: Option<i32>,
+}
+
+/// Official NHL goalie statistics for one completed game.
+#[derive(Clone, Debug)]
+pub struct DbOfficialGoalieGame {
+    pub game_id: i64,
+    pub player_id: i64,
+    pub season: i32,
+    pub game_type: i16,
+    pub team_abbrev: Option<String>,
+    pub full_name: String,
+    pub games_started: Option<i32>,
+    pub wins: Option<i32>,
+    pub losses: Option<i32>,
+    pub ties: Option<i32>,
+    pub ot_losses: Option<i32>,
+    pub shutouts: Option<i32>,
+    pub shots_against: Option<i32>,
+    pub saves: Option<i32>,
+    pub goals_against: Option<i32>,
+    pub save_pct: Option<f64>,
+    pub time_on_ice_seconds: Option<i64>,
+}
