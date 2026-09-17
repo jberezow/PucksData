@@ -7,6 +7,7 @@ fn test_player_landing_deserialize() {
         "position": "C",
         "shootsCatches": "L",
         "currentTeamAbbrev": "EDM",
+        "headshot": "https://assets.nhle.com/mugs/nhl/20262027/EDM/8478402.png",
         "birthDate": "1997-01-13",
         "heightInCentimeters": 185,
         "weightInKilograms": 88,
@@ -15,6 +16,10 @@ fn test_player_landing_deserialize() {
     let player: pucksdata::fetchers::players::PlayerLanding = serde_json::from_str(json).unwrap();
     assert_eq!(player.first_name.default, "Connor");
     assert_eq!(player.last_name.default, "McDavid");
+    assert_eq!(
+        player.headshot.as_deref(),
+        Some("https://assets.nhle.com/mugs/nhl/20262027/EDM/8478402.png")
+    );
     assert!(player.draft_details.is_some());
 
     let json2 = r#"{
@@ -27,6 +32,7 @@ fn test_player_landing_deserialize() {
     let p2: pucksdata::fetchers::players::PlayerLanding = serde_json::from_str(json2).unwrap();
     assert_eq!(p2.first_name.default, "Test");
     assert!(p2.current_team_abbrev.is_none());
+    assert!(p2.headshot.is_none());
     assert!(p2.draft_details.is_none());
 }
 
@@ -43,6 +49,7 @@ async fn test_players_upsert_idempotent() {
         position: Some("C".into()),
         shoots_catches: Some("L".into()),
         current_team_abbrev: None,
+        headshot_url: Some("https://assets.nhle.com/mugs/nhl/latest/9000001.png".into()),
         birth_date: None,
         height_cm: Some(185),
         weight_kg: Some(90),
@@ -55,6 +62,15 @@ async fn test_players_upsert_idempotent() {
     pucksdata::loaders::players::upsert_players(pool, &[record])
         .await
         .unwrap();
+    let initial_headshot_url: Option<String> =
+        sqlx::query_scalar!("SELECT headshot_url FROM players WHERE player_id = 9000001")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        initial_headshot_url.as_deref(),
+        Some("https://assets.nhle.com/mugs/nhl/latest/9000001.png")
+    );
     pucksdata::loaders::players::upsert_players(
         pool,
         &[pucksdata::models::DbPlayer {
@@ -64,6 +80,7 @@ async fn test_players_upsert_idempotent() {
             position: Some("C".into()),
             shoots_catches: Some("L".into()),
             current_team_abbrev: None,
+            headshot_url: None,
             birth_date: None,
             height_cm: Some(185),
             weight_kg: Some(90),
@@ -88,6 +105,15 @@ async fn test_players_upsert_idempotent() {
             .await
             .unwrap();
     assert_eq!(name, "Player Updated");
+    let headshot_url: Option<String> =
+        sqlx::query_scalar!("SELECT headshot_url FROM players WHERE player_id = 9000001")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        headshot_url, None,
+        "successful upsert did not clear a removed headshot"
+    );
     sqlx::query!("DELETE FROM players WHERE player_id = 9000001")
         .execute(pool)
         .await

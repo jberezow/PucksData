@@ -28,6 +28,7 @@ pub struct DbPlayer {
     pub position: Option<String>,
     pub shoots_catches: Option<String>,
     pub current_team_abbrev: Option<String>,
+    pub headshot_url: Option<String>,
     pub birth_date: Option<Date>,
     pub height_cm: Option<i16>,
     pub weight_kg: Option<i16>,

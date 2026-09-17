@@ -24,7 +24,8 @@ flowchart LR
 
 The pipeline provides:
 
-- Teams, seasons, players, current roster snapshots, games, and play-by-play metadata
+- Teams, seasons, player identity and headshot metadata, current roster snapshots,
+  games, and play-by-play metadata
 - Typed tables for goals, shots, hits, blocks, penalties, and faceoffs
 - Idempotent bulk upserts and transactional event writes
 - Resumable historical backfills with per-game progress tracking
@@ -278,7 +279,8 @@ The `Scheduled database sync` workflow runs `sync` against the configured databa
 
 The migrations create:
 
-- Entity tables: `teams`, `seasons`, `players`, and `games`
+- Entity tables: `teams`, `seasons`, `players` (including optional NHL headshot
+  URLs), and `games`
 - Current roster observations: `roster_snapshots`, `roster_memberships`, and `analytics.current_rosters`
 - A shared `events` parent table
 - Event detail tables: `goals`, `shots`, `hits`, `blocks`, `penalties`, and `faceoffs`

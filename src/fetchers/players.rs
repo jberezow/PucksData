@@ -59,6 +59,7 @@ pub struct PlayerLanding {
     pub shoots_catches: Option<String>,
     #[serde(rename = "currentTeamAbbrev")]
     pub current_team_abbrev: Option<String>,
+    pub headshot: Option<String>,
     #[serde(rename = "birthDate")]
     pub birth_date: Option<String>,
     #[serde(rename = "heightInCentimeters")]
@@ -362,6 +363,7 @@ fn landing_to_db(landing: PlayerLanding) -> DbPlayer {
         position: landing.position,
         shoots_catches: landing.shoots_catches,
         current_team_abbrev: landing.current_team_abbrev,
+        headshot_url: landing.headshot,
         birth_date,
         height_cm: landing.height_cm,
         weight_kg: landing.weight_kg,
