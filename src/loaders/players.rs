@@ -18,6 +18,7 @@ pub async fn upsert_players(
     let mut positions: Vec<Option<String>> = Vec::with_capacity(records.len());
     let mut shoots_catches: Vec<Option<String>> = Vec::with_capacity(records.len());
     let mut current_team_abbrevs: Vec<Option<String>> = Vec::with_capacity(records.len());
+    let mut headshot_urls: Vec<Option<String>> = Vec::with_capacity(records.len());
     let mut birth_dates: Vec<Option<time::Date>> = Vec::with_capacity(records.len());
     let mut heights_cm: Vec<Option<i16>> = Vec::with_capacity(records.len());
     let mut weights_kg: Vec<Option<i16>> = Vec::with_capacity(records.len());
@@ -34,6 +35,7 @@ pub async fn upsert_players(
         positions.push(r.position.clone());
         shoots_catches.push(r.shoots_catches.clone());
         current_team_abbrevs.push(r.current_team_abbrev.clone());
+        headshot_urls.push(r.headshot_url.clone());
         birth_dates.push(r.birth_date);
         heights_cm.push(r.height_cm);
         weights_kg.push(r.weight_kg);
@@ -49,7 +51,8 @@ pub async fn upsert_players(
         INSERT INTO players
             (player_id, first_name, last_name, position, shoots_catches,
              current_team_abbrev, birth_date, height_cm, weight_kg,
-             draft_year, draft_round, draft_pick, draft_team_abbrev, draft_overall_pick)
+             draft_year, draft_round, draft_pick, draft_team_abbrev, draft_overall_pick,
+             headshot_url)
         SELECT * FROM unnest(
             $1::bigint[],
             $2::text[],
@@ -64,10 +67,12 @@ pub async fn upsert_players(
             $11::smallint[],
             $12::smallint[],
             $13::text[],
-            $14::smallint[]
+            $14::smallint[],
+            $15::text[]
         ) AS t(player_id, first_name, last_name, position, shoots_catches,
                current_team_abbrev, birth_date, height_cm, weight_kg,
-               draft_year, draft_round, draft_pick, draft_team_abbrev, draft_overall_pick)
+               draft_year, draft_round, draft_pick, draft_team_abbrev, draft_overall_pick,
+               headshot_url)
         ON CONFLICT (player_id) DO UPDATE SET
             first_name          = EXCLUDED.first_name,
             last_name           = EXCLUDED.last_name,
@@ -81,7 +86,8 @@ pub async fn upsert_players(
             draft_round         = EXCLUDED.draft_round,
             draft_pick          = EXCLUDED.draft_pick,
             draft_team_abbrev   = EXCLUDED.draft_team_abbrev,
-            draft_overall_pick  = EXCLUDED.draft_overall_pick
+            draft_overall_pick  = EXCLUDED.draft_overall_pick,
+            headshot_url        = EXCLUDED.headshot_url
         "#,
         &player_ids,
         &first_names,
@@ -97,6 +103,7 @@ pub async fn upsert_players(
         &draft_picks as &[Option<i16>],
         &draft_team_abbrevs as &[Option<String>],
         &draft_overall_picks as &[Option<i16>],
+        &headshot_urls as &[Option<String>],
     )
     .execute(pool)
     .await?;

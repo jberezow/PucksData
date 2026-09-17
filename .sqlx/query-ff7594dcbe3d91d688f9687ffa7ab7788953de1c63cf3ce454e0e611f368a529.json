@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT headshot_url FROM players WHERE player_id = 9000001",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "headshot_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "players",
+            "name": "headshot_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "ff7594dcbe3d91d688f9687ffa7ab7788953de1c63cf3ce454e0e611f368a529"
+}
