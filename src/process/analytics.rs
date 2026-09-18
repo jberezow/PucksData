@@ -16,6 +16,14 @@ pub async fn refresh_player_event_seasons(pool: &sqlx::PgPool) -> Result<(), sql
         .map(|_| ())
 }
 
+/// Refresh season-level hits and blocks derived from the event archive.
+pub async fn refresh_skater_physical_season_totals(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query("REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.skater_physical_season_totals")
+        .execute(pool)
+        .await
+        .map(|_| ())
+}
+
 /// Refresh the materialized dataset health snapshot.
 ///
 /// Computing it live costs tens of seconds, mostly reading the events index
@@ -31,15 +39,19 @@ pub async fn refresh_season_health(pool: &sqlx::PgPool) -> Result<(), sqlx::Erro
 
 /// Rebuild every derived object, reporting failure without failing the caller.
 ///
-/// A stale rollup shows an out-of-date season list and a stale health snapshot
-/// shows out-of-date completeness figures. Both are worth a warning, and
-/// neither is a reason to fail a backfill or sync whose events are already
-/// written. Each is attempted even if the other fails.
+/// Stale rollups show out-of-date player seasons, physical totals, or dataset
+/// health. Each is worth a warning, but none is a reason to fail a backfill or
+/// sync whose events are already written. Every refresh is attempted even when
+/// an earlier one fails.
 pub async fn refresh_derived(pool: &sqlx::PgPool) {
     for (label, result) in [
         (
             "analytics.player_event_seasons",
             refresh_player_event_seasons(pool).await,
+        ),
+        (
+            "analytics.skater_physical_season_totals",
+            refresh_skater_physical_season_totals(pool).await,
         ),
         (
             "observability.season_health",
