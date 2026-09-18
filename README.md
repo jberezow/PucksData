@@ -288,6 +288,7 @@ The migrations create:
 - Read-only health views in the `observability` schema
 - Dataset coverage metadata and official NHL season totals in the `analytics` schema
 - Official skater and goalie game totals, plus a long-form downstream scoring view, in the `analytics` schema
+- Materialized skater hit and blocked-shot season totals for low-cost downstream snapshots
 
 Goals are also represented in `shots`, so the shots table covers every shot on net. Ingestion uses upsert semantics throughout and is designed to recover safely after partial failures.
 
@@ -319,6 +320,11 @@ decisions, and shutouts. Re-observing an identical row updates its observation
 time without changing `source_revision`; a changed published value advances the
 revision. `analytics.official_player_game_stats` exposes the supported scoring
 facts as a stable long-form contract for downstream applications.
+
+`analytics.skater_physical_season_totals` aggregates hits and blocked shots
+from the event archive. These categories are absent from the NHL season-total
+endpoint, so the materialized rollup provides an indexed season/player lookup
+without requiring downstream applications to scan historical games.
 
 The NHL began recording different facts in different eras, so no single season
 range covers every statistic. `analytics.coverage` publishes the first season

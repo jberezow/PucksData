@@ -14,6 +14,9 @@ async fn test_player_event_seasons_refreshes_concurrently() {
     pucksdata::process::analytics::refresh_player_event_seasons(pool)
         .await
         .expect("concurrent refresh must succeed");
+    pucksdata::process::analytics::refresh_skater_physical_season_totals(pool)
+        .await
+        .expect("physical season totals refresh must succeed");
     pucksdata::process::analytics::refresh_season_health(pool)
         .await
         .expect("concurrent refresh must succeed");
@@ -103,4 +106,38 @@ async fn test_player_event_seasons_is_keyed_by_player() {
         Some("player_id"),
         "the unique index must lead with player_id or the season lookup cannot use it"
     );
+}
+
+#[tokio::test]
+async fn test_skater_physical_season_totals_exposes_indexed_contract() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+
+    sqlx::query(
+        "SELECT player_id, season, game_type, hits, blocks
+         FROM analytics.skater_physical_season_totals
+         LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .expect("physical season totals must expose its downstream contract");
+
+    let unique_index: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1
+             FROM pg_index i
+             JOIN pg_class c ON c.oid = i.indrelid
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'analytics'
+               AND c.relname = 'skater_physical_season_totals'
+               AND i.indisunique
+         )",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+
+    assert!(unique_index, "concurrent refresh requires a unique index");
 }
