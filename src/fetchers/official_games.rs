@@ -84,6 +84,10 @@ struct GoalieSummaryRow {
     #[serde(default)]
     team_abbrevs: Option<String>,
     #[serde(default)]
+    goals: Option<i32>,
+    #[serde(default)]
+    assists: Option<i32>,
+    #[serde(default)]
     games_started: Option<i32>,
     #[serde(default)]
     wins: Option<i32>,
@@ -184,6 +188,8 @@ fn parse_game_stats(
             game_type,
             team_abbrev: row.team_abbrevs,
             full_name: row.goalie_full_name,
+            goals: row.goals,
+            assists: row.assists,
             games_started: row.games_started,
             wins: row.wins,
             losses: row.losses,
@@ -246,7 +252,7 @@ mod tests {
             2,
             r#"{"data":[{"playerId":1,"seasonId":20252026,"skaterFullName":"A Skater","teamAbbrevs":"MTL","goals":1,"assists":2,"points":3,"plusMinus":2,"ppPoints":1,"shPoints":0,"gameWinningGoals":1,"timeOnIcePerGame":901.6}]}"#,
             r#"{"data":[{"playerId":1,"hits":4,"blockedShots":2,"giveaways":1,"takeaways":3}]}"#,
-            r#"{"data":[{"playerId":2,"seasonId":20252026,"goalieFullName":"A Goalie","teamAbbrevs":"MTL","gamesStarted":1,"wins":1,"shutouts":1,"saves":27}]}"#,
+            r#"{"data":[{"playerId":2,"seasonId":20252026,"goalieFullName":"A Goalie","teamAbbrevs":"MTL","goals":1,"assists":2,"gamesStarted":1,"wins":1,"shutouts":1,"saves":27}]}"#,
         )
         .unwrap();
 
@@ -255,5 +261,7 @@ mod tests {
         assert_eq!(stats.skaters[0].time_on_ice_seconds, Some(902));
         assert_eq!(stats.goalies[0].wins, Some(1));
         assert_eq!(stats.goalies[0].shutouts, Some(1));
+        assert_eq!(stats.goalies[0].goals, Some(1));
+        assert_eq!(stats.goalies[0].assists, Some(2));
     }
 }

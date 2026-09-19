@@ -123,14 +123,16 @@ pub async fn replace_official_game_stats(
             r#"
             INSERT INTO analytics.official_goalie_games AS current
                 (game_id, player_id, season, game_type, team_abbrev, full_name,
-                 games_started, wins, losses, ties, ot_losses, shutouts,
+                 goals, assists, games_started, wins, losses, ties, ot_losses, shutouts,
                  shots_against, saves, goals_against, save_pct, time_on_ice_seconds)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
             ON CONFLICT (game_id, player_id) DO UPDATE SET
                 season = EXCLUDED.season,
                 game_type = EXCLUDED.game_type,
                 team_abbrev = EXCLUDED.team_abbrev,
                 full_name = EXCLUDED.full_name,
+                goals = EXCLUDED.goals,
+                assists = EXCLUDED.assists,
                 games_started = EXCLUDED.games_started,
                 wins = EXCLUDED.wins,
                 losses = EXCLUDED.losses,
@@ -144,25 +146,29 @@ pub async fn replace_official_game_stats(
                 time_on_ice_seconds = EXCLUDED.time_on_ice_seconds,
                 source_revision = current.source_revision + CASE WHEN
                     ROW(current.season, current.game_type, current.team_abbrev,
-                        current.full_name, current.games_started, current.wins,
+                        current.full_name, current.goals, current.assists,
+                        current.games_started, current.wins,
                         current.losses, current.ties, current.ot_losses, current.shutouts,
                         current.shots_against, current.saves, current.goals_against,
                         current.save_pct, current.time_on_ice_seconds)
                     IS DISTINCT FROM
                     ROW(EXCLUDED.season, EXCLUDED.game_type, EXCLUDED.team_abbrev,
-                        EXCLUDED.full_name, EXCLUDED.games_started, EXCLUDED.wins,
+                        EXCLUDED.full_name, EXCLUDED.goals, EXCLUDED.assists,
+                        EXCLUDED.games_started, EXCLUDED.wins,
                         EXCLUDED.losses, EXCLUDED.ties, EXCLUDED.ot_losses, EXCLUDED.shutouts,
                         EXCLUDED.shots_against, EXCLUDED.saves, EXCLUDED.goals_against,
                         EXCLUDED.save_pct, EXCLUDED.time_on_ice_seconds)
                     THEN 1 ELSE 0 END,
                 source_observed_at = NOW(),
                 updated_at = CASE WHEN
-                    ROW(current.games_started, current.wins, current.losses, current.ties,
+                    ROW(current.goals, current.assists, current.games_started,
+                        current.wins, current.losses, current.ties,
                         current.ot_losses, current.shutouts, current.shots_against,
                         current.saves, current.goals_against, current.save_pct,
                         current.time_on_ice_seconds)
                     IS DISTINCT FROM
-                    ROW(EXCLUDED.games_started, EXCLUDED.wins, EXCLUDED.losses, EXCLUDED.ties,
+                    ROW(EXCLUDED.goals, EXCLUDED.assists, EXCLUDED.games_started,
+                        EXCLUDED.wins, EXCLUDED.losses, EXCLUDED.ties,
                         EXCLUDED.ot_losses, EXCLUDED.shutouts, EXCLUDED.shots_against,
                         EXCLUDED.saves, EXCLUDED.goals_against, EXCLUDED.save_pct,
                         EXCLUDED.time_on_ice_seconds)
@@ -175,6 +181,8 @@ pub async fn replace_official_game_stats(
         .bind(row.game_type)
         .bind(&row.team_abbrev)
         .bind(&row.full_name)
+        .bind(row.goals)
+        .bind(row.assists)
         .bind(row.games_started)
         .bind(row.wins)
         .bind(row.losses)

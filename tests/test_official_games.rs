@@ -39,7 +39,7 @@ fn skater(points: i32) -> DbOfficialSkaterGame {
     }
 }
 
-fn goalie() -> DbOfficialGoalieGame {
+fn goalie(goals: i32, assists: i32) -> DbOfficialGoalieGame {
     DbOfficialGoalieGame {
         game_id: GAME_ID,
         player_id: 9_998_002,
@@ -47,6 +47,8 @@ fn goalie() -> DbOfficialGoalieGame {
         game_type: 2,
         team_abbrev: Some("TST".into()),
         full_name: "Test Goalie".into(),
+        goals: Some(goals),
+        assists: Some(assists),
         games_started: Some(1),
         wins: Some(1),
         losses: Some(0),
@@ -102,7 +104,7 @@ async fn official_game_snapshot_is_idempotent_and_revisioned() {
     let first = OfficialGameStats {
         game_id: GAME_ID,
         skaters: vec![skater(2)],
-        goalies: vec![goalie()],
+        goalies: vec![goalie(1, 2)],
     };
     pucksdata::loaders::official_games::replace_official_game_stats(pool, &first)
         .await
@@ -123,7 +125,7 @@ async fn official_game_snapshot_is_idempotent_and_revisioned() {
     let corrected = OfficialGameStats {
         game_id: GAME_ID,
         skaters: vec![skater(3)],
-        goalies: vec![goalie()],
+        goalies: vec![goalie(2, 2)],
     };
     pucksdata::loaders::official_games::replace_official_game_stats(pool, &corrected)
         .await
@@ -139,6 +141,17 @@ async fn official_game_snapshot_is_idempotent_and_revisioned() {
     assert_eq!(points, Some(3));
     assert_eq!(revision, 2);
 
+    let (goalie_goals, goalie_revision): (Option<i32>, i32) = sqlx::query_as(
+        "SELECT goals, source_revision FROM analytics.official_goalie_games
+         WHERE game_id = $1 AND player_id = 9998002",
+    )
+    .bind(GAME_ID)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(goalie_goals, Some(2));
+    assert_eq!(goalie_revision, 2);
+
     let values: Vec<(String, f64)> = sqlx::query_as(
         "SELECT stat_code, stat_value FROM analytics.official_player_game_stats
          WHERE game_id = $1 AND player_id = 9998001 ORDER BY stat_code",
@@ -149,6 +162,17 @@ async fn official_game_snapshot_is_idempotent_and_revisioned() {
     .unwrap();
     assert!(values.contains(&("plus_minus".into(), 2.0)));
     assert!(values.contains(&("game_winning_goals".into(), 1.0)));
+
+    let goalie_values: Vec<(String, f64)> = sqlx::query_as(
+        "SELECT stat_code, stat_value FROM analytics.official_player_game_stats
+         WHERE game_id = $1 AND player_id = 9998002 ORDER BY stat_code",
+    )
+    .bind(GAME_ID)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert!(goalie_values.contains(&("goals".into(), 2.0)));
+    assert!(goalie_values.contains(&("assists".into(), 2.0)));
 
     sqlx::query("DELETE FROM games WHERE game_id = $1")
         .bind(GAME_ID)
@@ -168,4 +192,19 @@ async fn live_final_game_reports_cover_fantasy_categories() {
     assert!(stats.skaters.iter().any(|row| row.plus_minus.is_some()));
     assert!(stats.skaters.iter().any(|row| row.hits.is_some()));
     assert!(stats.goalies.iter().any(|row| row.wins == Some(1)));
+}
+
+#[tokio::test]
+#[ignore = "requires the live NHL stats API"]
+async fn live_goalie_goal_is_published_by_summary_report() {
+    let stats = pucksdata::fetchers::official_games::fetch_official_game_stats(2023020345, 2)
+        .await
+        .unwrap();
+    let jarry = stats
+        .goalies
+        .iter()
+        .find(|row| row.player_id == 8_477_465)
+        .expect("Tristan Jarry should appear in the official goalie report");
+    assert_eq!(jarry.goals, Some(1));
+    assert_eq!(jarry.assists, Some(0));
 }

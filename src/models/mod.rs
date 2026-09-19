@@ -272,6 +272,8 @@ pub struct DbOfficialGoalieGame {
     pub game_type: i16,
     pub team_abbrev: Option<String>,
     pub full_name: String,
+    pub goals: Option<i32>,
+    pub assists: Option<i32>,
     pub games_started: Option<i32>,
     pub wins: Option<i32>,
     pub losses: Option<i32>,
