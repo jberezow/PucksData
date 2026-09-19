@@ -3,6 +3,13 @@
 All notable changes to PucksData are documented here. The project follows
 [Semantic Versioning](https://semver.org/) beginning with version 1.5.0.
 
+## [Unreleased]
+
+### Added
+
+- Published official goalie goals and assists in finalized per-game records
+  and the long-form player-game stats view.
+
 ## [1.7.0] - 2026-09-04
 
 ### Upgrade notes
