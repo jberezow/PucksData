@@ -1,9 +1,13 @@
-# PucksData
+<h1 align="center">
+  <img src="docs/assets/pucksdata-logo.png" alt="PucksData" width="900">
+</h1>
 
-[![CI](https://github.com/jberezow/pucksdata/actions/workflows/ci.yml/badge.svg?branch=prime)](https://github.com/jberezow/pucksdata/actions/workflows/ci.yml)
-[![NHL API canary](https://github.com/jberezow/pucksdata/actions/workflows/canary.yml/badge.svg?branch=prime)](https://github.com/jberezow/pucksdata/actions/workflows/canary.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](https://www.rust-lang.org/)
+<p align="center">
+  <a href="https://github.com/jberezow/pucksdata/actions/workflows/ci.yml"><img src="https://github.com/jberezow/pucksdata/actions/workflows/ci.yml/badge.svg?branch=prime" alt="CI status"></a>
+  <a href="https://github.com/jberezow/pucksdata/actions/workflows/canary.yml"><img src="https://github.com/jberezow/pucksdata/actions/workflows/canary.yml/badge.svg?branch=prime" alt="NHL API canary status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021-orange.svg" alt="Rust 2021"></a>
+</p>
 
 PucksData is a production-oriented Rust ETL engine that fetches NHL play-by-play data, normalizes it into PostgreSQL, and keeps it current through one-shot syncs or a long-running daemon.
 
@@ -75,8 +79,13 @@ cp .env.example .env
 
 ```dotenv
 DATABASE_URL=postgresql://user:password@host/database?sslmode=require
+MIGRATION_DATABASE_URL=postgresql://owner:password@host/database?sslmode=require
 SYNC_INTERVAL_SECS=21600
 ```
+
+`MIGRATION_DATABASE_URL` may use the same connection string as `DATABASE_URL`
+for local development. Hosted deployments should use a schema-owner connection
+for migrations and a restricted ingestion connection at runtime.
 
 Apply the schema and build the binary:
 
