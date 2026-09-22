@@ -6,4 +6,5 @@ pub mod official_games;
 pub mod official_stats;
 pub mod players;
 pub mod seasons;
+pub mod shifts;
 pub mod teams;

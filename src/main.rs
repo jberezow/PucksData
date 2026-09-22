@@ -24,6 +24,28 @@ enum Commands {
     Daemon(DaemonArgs),
     /// Check DB health per season: game counts, event coverage %, goals-in-shots, backfill status
     Status(StatusArgs),
+    /// Ingest NHL player-shift rows
+    Shifts {
+        #[command(subcommand)]
+        command: ShiftsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ShiftsCommand {
+    /// Load typed, unnormalized shift-chart rows for one season
+    Backfill(ShiftBackfillArgs),
+}
+
+#[derive(Args)]
+struct ShiftBackfillArgs {
+    /// NHL season in eight-digit form (e.g. 20252026)
+    #[arg(long)]
+    season: i32,
+
+    /// Re-fetch and atomically replace every game in this season
+    #[arg(long)]
+    refresh: bool,
 }
 
 #[derive(Subcommand)]
@@ -404,6 +426,37 @@ async fn main() -> Result<(), pucksdata::AnyError> {
             };
             if !healthy && !args.no_fail {
                 std::process::exit(1);
+            }
+        }
+        Commands::Shifts { command } => {
+            let pool = db::get_pool().await?;
+            let summary = match command {
+                ShiftsCommand::Backfill(args) => {
+                    pucksdata::process::shifts::run_backfill(pool, args.season, args.refresh)
+                        .await?
+                }
+            };
+            println!(
+                "raw shift load: {} candidates, {} attempted, {} succeeded, {} failed, {} shifts",
+                summary.candidates,
+                summary.attempted,
+                summary.succeeded,
+                summary.failed,
+                summary.shifts,
+            );
+            for failure in summary.failures.iter().take(25) {
+                eprintln!("{failure}");
+            }
+            if summary.failures.len() > 25 {
+                eprintln!("... and {} more failures", summary.failures.len() - 25);
+            }
+            if summary.stopped_early {
+                eprintln!(
+                    "stopped after an upstream timeout or server error; rerun later to resume"
+                );
+            }
+            if summary.failed > 0 {
+                return Err(format!("{} shift games failed", summary.failed).into());
             }
         }
     }

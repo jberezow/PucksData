@@ -31,6 +31,7 @@ The pipeline provides:
 - Teams, seasons, player identity and headshot metadata, current roster snapshots,
   games, and play-by-play metadata
 - Typed tables for goals, shots, hits, blocks, penalties, and faceoffs
+- Typed NHL player-shift rows, loaded one season at a time
 - Idempotent bulk upserts and transactional event writes
 - Resumable historical backfills with per-game progress tracking
 - Incremental completed-game synchronization
@@ -205,6 +206,29 @@ Use `--fix` only after reviewing the read-only report:
 ```bash
 pucksdata status --season 20252026 --fix
 ```
+
+### `shifts`
+
+Shift ingestion is intentionally season-scoped. The NHL JSON shift feed begins
+in 2010–11 and includes non-shift goal annotations; PucksData stores only its
+`typeCode = 517` rows in `public.shifts`. Fields are converted to typed columns
+and the complete source object is retained, but ingestion does not correct,
+deduplicate, translate, or classify the intervals.
+
+Load one season:
+
+```bash
+pucksdata shifts backfill --season 20252026
+```
+
+Re-fetch and atomically replace every game in the season:
+
+```bash
+pucksdata shifts backfill --season 20252026 --refresh
+```
+
+The shift backfill does not run from the normal event daemon during its pilot.
+Without `--refresh`, rerunning it resumes at eligible games with no shift rows.
 
 ## Seasonal operation
 
