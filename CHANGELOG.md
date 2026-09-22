@@ -5,10 +5,30 @@ All notable changes to PucksData are documented here. The project follows
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-22
+
 ### Added
 
-- Published official goalie goals and assists in finalized per-game records
-  and the long-form player-game stats view.
+- Added complete current-roster snapshots, preserving roster group and player
+  position at the time each snapshot is observed.
+- Added finalized per-game skater and goalie statistics, including goalie
+  goals and assists, with a long-form player-game analytics view.
+- Added player headshot metadata.
+- Added skater height, weight, age, and draft fields to official season totals.
+- Added indexed event-scope columns and player-season rollups for faster
+  downstream analytics.
+
+### Changed
+
+- Materialized the dataset-health and player-season analytics rollups and made
+  their refresh paths safe for concurrent readers.
+- Batched game upserts to reduce database round trips.
+- Improved project documentation and branding.
+
+### Fixed
+
+- Treat empty historical NHL reports as an absent source instead of attempting
+  to parse them as populated reports.
 
 ## [1.7.0] - 2026-09-04
 
@@ -119,4 +139,5 @@ use three-component semantic versions.
 [1.6.0]: https://github.com/jberezow/pucksdata/compare/v1.5.1...v1.6.0
 [1.6.1]: https://github.com/jberezow/pucksdata/compare/v1.6.0...v1.6.1
 [1.7.0]: https://github.com/jberezow/pucksdata/compare/v1.6.1...v1.7.0
-[Unreleased]: https://github.com/jberezow/pucksdata/compare/v1.7.0...HEAD
+[1.8.0]: https://github.com/jberezow/pucksdata/compare/v1.7.0...v1.8.0
+[Unreleased]: https://github.com/jberezow/pucksdata/compare/v1.8.0...HEAD
