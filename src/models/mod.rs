@@ -104,6 +104,25 @@ pub struct DbEvent {
     pub situation_code: Option<String>,
 }
 
+/// One raw typeCode 517 row converted to typed columns.
+#[derive(Debug, Clone)]
+pub struct DbShift {
+    pub source_shift_id: i64,
+    pub game_id: i64,
+    pub type_code: i32,
+    pub player_id: Option<i64>,
+    pub team_id: Option<i64>,
+    pub period: Option<i16>,
+    pub shift_number: Option<i32>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    pub duration: Option<String>,
+    pub start_time_seconds: Option<i32>,
+    pub end_time_seconds: Option<i32>,
+    pub duration_seconds: Option<i32>,
+    pub source_data: serde_json::Value,
+}
+
 /// NHL source used to determine an event's owner-relative manpower strength.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StrengthSource {

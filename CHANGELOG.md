@@ -5,6 +5,17 @@ All notable changes to PucksData are documented here. The project follows
 
 ## [Unreleased]
 
+### Added
+
+- Added season-scoped ingestion of typed, unnormalized NHL shift-chart rows
+  from 2010–11 onward, retaining each complete source object for later
+  canonicalization.
+
+### Changed
+
+- Pace shift-chart ingestion conservatively to avoid saturating the NHL Stats
+  REST endpoint during season backfills.
+
 ## [1.8.0] - 2026-09-22
 
 ### Added
