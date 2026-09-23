@@ -1,0 +1,8 @@
+{
+  "source_file_sha256": "8620fe48e3c80fa556fcee7c94653c0fe65fe36ca97810c1f7e4dc1331396138",
+  "source_file_bytes": 507306407,
+  "local_source_path": "data/audits/20252026/source.jsonl",
+  "local_html_cache_path": "data/audits/20252026/html",
+  "analysis_input_hash": "d5e316489b5a302e2817ebb845aff35ea34c97df2edbac7735c579c01592603f",
+  "note": "Large source/cache files are retained locally under gitignored data/, not published in this PR. Commands in the audit document reproduce the run on an available database or saved source snapshot."
+}

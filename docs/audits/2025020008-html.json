@@ -1,0 +1,109 @@
+{
+  "by_reconstruction_status": {
+    "ambiguous": {
+      "identity_bounds_compatible": 132,
+      "identity_mismatch": 1
+    },
+    "resolved": {
+      "exact_identity": 187
+    }
+  },
+  "counts": {
+    "exact_identity": 187,
+    "identity_bounds_compatible": 132,
+    "identity_mismatch": 1,
+    "nonunique_key_events_skipped": 8,
+    "report_lineup_missing": 2
+  },
+  "derived_events": 330,
+  "examples": [
+    {
+      "contexts": [
+        "coincident_shift_boundary",
+        "period_boundary",
+        "regular_season_ot"
+      ],
+      "definite": {
+        "away": {
+          "goalies": [],
+          "skaters": [],
+          "unknown": []
+        },
+        "home": {
+          "goalies": [],
+          "skaters": [],
+          "unknown": []
+        }
+      },
+      "event_id_in_game": 378,
+      "key": [
+        4,
+        132,
+        "period-end"
+      ],
+      "observed": {
+        "away": {
+          "goalies": [
+            8482821
+          ],
+          "skaters": [
+            8477987,
+            8482176,
+            8483506
+          ]
+        },
+        "home": {
+          "goalies": [
+            8480280
+          ],
+          "skaters": [
+            8477496,
+            8477507,
+            8477956,
+            8478401,
+            8479369,
+            8479999,
+            8482511,
+            8483489
+          ]
+        }
+      },
+      "possible": {
+        "away": {
+          "goalies": [
+            8482821
+          ],
+          "skaters": [
+            8477444,
+            8477987,
+            8483506
+          ],
+          "unknown": []
+        },
+        "home": {
+          "goalies": [
+            8476914
+          ],
+          "skaters": [
+            8477507,
+            8479987,
+            8483489
+          ],
+          "unknown": []
+        }
+      },
+      "report_event_id": 332,
+      "situation_agreement": "boundary_compatible"
+    }
+  ],
+  "game_id": 2025020008,
+  "limitation": "Purposive sample; shared NHL provenance is not video ground truth. Unique clock/type matches only. No source repairs.",
+  "report_rows": 330,
+  "sources": {
+    "html_sha256": "34e00a9311b816e270c79b37ec0b18a3abcd772e17aa40c86a09cd2ade6feaae",
+    "html_url": "https://www.nhl.com/scores/htmlreports/20252026/PL020008.HTM",
+    "pbp_roster_url": "https://api-web.nhle.com/v1/gamecenter/2025020008/play-by-play",
+    "pbp_sha256": "dd79b9f9aa3bce71d0a96fd1bc1d8f8431bac90a03a7dd472339926d93153e4c",
+    "selected_event_lines_sha256": "d6f182c97dcbb65c53bf47324c1580489725d80813b6c1a8a8ff3a29b2b3a699"
+  }
+}

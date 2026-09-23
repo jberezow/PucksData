@@ -389,8 +389,8 @@ without requiring downstream applications to scan historical games.
 
 The NHL began recording different facts in different eras, so no single season
 range covers every statistic. `analytics.coverage` publishes the first season
-each event type and derived measure is available, and names the concepts the
-schema does not contain at all, such as time on ice and games played. Consumers
+each event type and derived measure is available, and distinguishes available measures from concepts the
+schema does not contain. Consumers
 should consult it before answering a question that spans seasons: shot events
 begin in 1997-98, and hits, faceoffs, blocks, giveaways and takeaways begin in
 2009-10. `analytics.coverage_observed` compares that contract with the seasons
@@ -441,3 +441,17 @@ Apply migration 0032 before running the updated loader. Readers need SELECT on
 to `pucksstudio_read` if that role exists. Other reader roles require an explicit
 grant. The coverage contract now advertises raw shifts from 2010–11, without
 claiming that every game or interval is usable for line reconstruction.
+
+
+### Validated on-ice reconstruction (migration 0033)
+
+`pucksdata shifts reconstruct --game ID` derives event lineups with explicit
+boundary ambiguity, source validation and official TOI reconciliation.
+`pucksdata shifts audit --season 20252026` reports season coverage, count agreement
+and unresolved anomalies; optional exports allow offline replay.
+
+Migration 0033 adds coverage views and metadata only. Existing shifts and events
+stay unchanged, and no backfill needs to be repeated. See the
+[method and commands](docs/on-ice-reconstruction.md) and
+[2025–26 audit](docs/audits/20252026-shifts.md) before treating derived lineups as
+reliable inputs to downstream sequence analysis.
