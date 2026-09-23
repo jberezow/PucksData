@@ -8,11 +8,13 @@ All notable changes to PucksData are documented here. The project follows
 ### Added
 
 - Added season-scoped ingestion of typed, unnormalized NHL shift-chart rows
-  from 2010–11 onward, retaining each complete source object for later
-  canonicalization.
+  from 2010–11 onward.
 
 ### Changed
 
+- Replace stored shift source JSON with typed event number, detail code, and
+  optional description fields, preserving existing rows through a forward migration.
+- Verify shift response completeness and field types before replacement.
 - Pace shift-chart ingestion conservatively to avoid saturating the NHL Stats
   REST endpoint during season backfills.
 

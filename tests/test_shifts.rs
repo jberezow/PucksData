@@ -39,19 +39,6 @@ async fn prepare_game(pool: &sqlx::PgPool) {
 }
 
 fn shift(source_shift_id: i64, duration: &str) -> DbShift {
-    let source_data = serde_json::json!({
-        "id": source_shift_id,
-        "typeCode": 517,
-        "gameId": GAME_ID,
-        "playerId": 8_470_001,
-        "teamId": 13,
-        "period": 1,
-        "shiftNumber": source_shift_id,
-        "startTime": "00:40",
-        "endTime": "00:20",
-        "duration": duration,
-        "unmodeledSourceField": true
-    });
     DbShift {
         source_shift_id,
         game_id: GAME_ID,
@@ -59,26 +46,30 @@ fn shift(source_shift_id: i64, duration: &str) -> DbShift {
         player_id: Some(8_470_001),
         team_id: Some(13),
         period: Some(1),
-        shift_number: Some(source_shift_id as i32),
+        shift_number: Some(1),
         start_time: Some("00:40".to_string()),
         end_time: Some("00:20".to_string()),
         duration: Some(duration.to_string()),
         start_time_seconds: Some(40),
         end_time_seconds: Some(20),
         duration_seconds: None,
-        source_data,
+        event_number: Some(7),
+        detail_code: Some(0),
+        event_description: Some("source description".to_string()),
+        event_details: Some("source details".to_string()),
     }
 }
 
 #[tokio::test]
-async fn raw_shift_snapshot_replacement_is_atomic_and_lossless() {
+async fn typed_shift_snapshot_replacement_preserves_source_fields_and_rolls_back_on_failure() {
     if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
     prepare_game(pool).await;
 
-    let first = vec![shift(1, "not-a-clock"), shift(2, "00:20")];
+    // Distinct source IDs must survive even when every other field is identical.
+    let first = vec![shift(1, "not-a-clock"), shift(2, "not-a-clock")];
     assert_eq!(
         pucksdata::loaders::shifts::replace_game_shifts(pool, GAME_ID, &first)
             .await
@@ -86,20 +77,76 @@ async fn raw_shift_snapshot_replacement_is_atomic_and_lossless() {
         2
     );
 
-    let corrected = vec![shift(3, "still-raw")];
+    let stored_details: Vec<(i64, Option<String>)> = sqlx::query_as(
+        "SELECT source_shift_id, event_details FROM shifts WHERE game_id = $1 ORDER BY source_shift_id",
+    )
+    .bind(GAME_ID)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        stored_details,
+        vec![
+            (1, first[0].event_details.clone()),
+            (2, first[1].event_details.clone())
+        ]
+    );
+
+    // This passes input checks and fails after DELETE, exercising actual rollback.
+    let invalid = vec![shift(3, "00:20"), shift(3, "00:30")];
+    let error = pucksdata::loaders::shifts::replace_game_shifts(pool, GAME_ID, &invalid)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("23505")
+    );
+    let unchanged: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT source_shift_id, duration FROM shifts WHERE game_id = $1 ORDER BY source_shift_id",
+    )
+    .bind(GAME_ID)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        unchanged,
+        vec![
+            (1, "not-a-clock".to_string()),
+            (2, "not-a-clock".to_string())
+        ]
+    );
+
+    let mut corrected = vec![shift(3, "still-raw")];
+    corrected[0].event_details = None;
     pucksdata::loaders::shifts::replace_game_shifts(pool, GAME_ID, &corrected)
         .await
         .unwrap();
 
-    let stored: (i64, String, serde_json::Value) = sqlx::query_as(
-        "SELECT source_shift_id, duration, source_data
+    #[derive(sqlx::FromRow)]
+    struct StoredShift {
+        source_shift_id: i64,
+        duration: String,
+        duration_seconds: Option<i32>,
+        event_number: Option<i32>,
+        detail_code: Option<i32>,
+        event_description: Option<String>,
+        event_details: Option<String>,
+    }
+
+    let stored: StoredShift = sqlx::query_as(
+        "SELECT source_shift_id, duration, duration_seconds, event_number, detail_code,
+                event_description, event_details
          FROM shifts WHERE game_id = $1",
     )
     .bind(GAME_ID)
     .fetch_one(pool)
     .await
     .unwrap();
-    assert_eq!(stored.0, 3);
-    assert_eq!(stored.1, "still-raw");
-    assert_eq!(stored.2, corrected[0].source_data);
+    assert_eq!(stored.source_shift_id, 3);
+    assert_eq!(stored.duration, "still-raw");
+    assert_eq!(stored.duration_seconds, None);
+    assert_eq!(stored.event_number, Some(7));
+    assert_eq!(stored.detail_code, Some(0));
+    assert_eq!(stored.event_description, corrected[0].event_description);
+    assert_eq!(stored.event_details, None);
 }

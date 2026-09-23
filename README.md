@@ -211,8 +211,8 @@ pucksdata status --season 20252026 --fix
 
 Shift ingestion is intentionally season-scoped. The NHL JSON shift feed begins
 in 2010–11 and includes non-shift goal annotations; PucksData stores only its
-`typeCode = 517` rows in `public.shifts`. Fields are converted to typed columns
-and the complete source object is retained, but ingestion does not correct,
+`typeCode = 517` rows in `public.shifts`. Fields are converted to typed columns,
+but ingestion does not correct,
 deduplicate, translate, or classify the intervals.
 
 Load one season:
@@ -229,6 +229,21 @@ pucksdata shifts backfill --season 20252026 --refresh
 
 The shift backfill does not run from the normal event daemon during its pilot.
 Without `--refresh`, rerunning it resumes at eligible games with no shift rows.
+
+The table preserves source IDs, period, shift number, event number, detail code,
+optional descriptions, and the original clock strings alongside nullable parsed
+seconds. NHL team IDs are not translated to franchise IDs. Source event numbers
+are not assumed to identify play-by-play events. Names, team display metadata,
+and the JSON source object are not stored.
+
+Ingestion verifies response completeness, field types, and game identity before
+atomically replacing a game. It preserves inconsistent intervals for later
+analysis; it does not certify time on ice or on-ice reconstruction.
+
+For an existing deployment, stop shift ingestion before applying migration 0031,
+then deploy the updated loader. The migration extracts the additional typed
+fields from stored JSON before dropping it; no API refetch is needed. Dropping
+the column does not immediately reclaim the existing table's disk space.
 
 ## Seasonal operation
 

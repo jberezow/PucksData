@@ -120,7 +120,10 @@ pub struct DbShift {
     pub start_time_seconds: Option<i32>,
     pub end_time_seconds: Option<i32>,
     pub duration_seconds: Option<i32>,
-    pub source_data: serde_json::Value,
+    pub event_number: Option<i32>,
+    pub detail_code: Option<i32>,
+    pub event_description: Option<String>,
+    pub event_details: Option<String>,
 }
 
 /// NHL source used to determine an event's owner-relative manpower strength.

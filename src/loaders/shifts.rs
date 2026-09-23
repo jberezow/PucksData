@@ -45,21 +45,28 @@ pub async fn replace_game_shifts(
     let end_seconds: Vec<Option<i32>> = shifts.iter().map(|row| row.end_time_seconds).collect();
     let duration_seconds: Vec<Option<i32>> =
         shifts.iter().map(|row| row.duration_seconds).collect();
-    let source_data: Vec<sqlx::types::Json<&serde_json::Value>> = shifts
+    let event_numbers: Vec<Option<i32>> = shifts.iter().map(|row| row.event_number).collect();
+    let detail_codes: Vec<Option<i32>> = shifts.iter().map(|row| row.detail_code).collect();
+    let event_descriptions: Vec<Option<&str>> = shifts
         .iter()
-        .map(|row| sqlx::types::Json(&row.source_data))
+        .map(|row| row.event_description.as_deref())
+        .collect();
+    let event_details: Vec<Option<&str>> = shifts
+        .iter()
+        .map(|row| row.event_details.as_deref())
         .collect();
 
     let inserted = sqlx::query(
         r#"INSERT INTO shifts
                (game_id, source_shift_id, type_code, player_id, team_id,
                 period, shift_number, start_time, end_time, duration,
-                start_time_seconds, end_time_seconds, duration_seconds, source_data)
+                start_time_seconds, end_time_seconds, duration_seconds,
+                event_number, detail_code, event_description, event_details)
            SELECT * FROM UNNEST(
                $1::bigint[], $2::bigint[], $3::integer[], $4::bigint[],
                $5::bigint[], $6::smallint[], $7::integer[], $8::text[],
                $9::text[], $10::text[], $11::integer[], $12::integer[],
-               $13::integer[], $14::jsonb[]
+               $13::integer[], $14::integer[], $15::integer[], $16::text[], $17::text[]
            )"#,
     )
     .bind(&game_ids)
@@ -75,7 +82,10 @@ pub async fn replace_game_shifts(
     .bind(&start_seconds)
     .bind(&end_seconds)
     .bind(&duration_seconds)
-    .bind(&source_data)
+    .bind(&event_numbers)
+    .bind(&detail_codes)
+    .bind(&event_descriptions)
+    .bind(&event_details)
     .execute(&mut *tx)
     .await?
     .rows_affected() as usize;
