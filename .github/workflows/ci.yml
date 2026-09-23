@@ -71,3 +71,7 @@ jobs:
 
       - name: Run unit and integration tests
         run: cargo test --all-targets
+
+
+      - name: Test independent HTML audit helper
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'

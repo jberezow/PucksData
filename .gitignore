@@ -24,3 +24,6 @@ hasura/migrations_backup/
 
 # Development test data
 test.json
+
+# Python audit helper bytecode
+__pycache__/
