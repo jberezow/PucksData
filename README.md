@@ -229,6 +229,19 @@ pucksdata shifts backfill --season 20252026 --refresh
 
 The shift backfill does not run from the normal event daemon during its pilot.
 Without `--refresh`, rerunning it resumes at eligible games with no shift rows.
+Valid responses with no shift rows are reported separately as `unavailable`,
+not as successful loads or failures. They never replace stored rows, and games
+without stored shifts remain eligible for retry on the next run. This covers
+gaps in the NHL JSON feed, such as the observed gap for games
+2024021235–2024021291. A run containing only unavailable games exits successfully;
+malformed/incomplete responses and request/database errors still fail the run.
+Shift ingestion uses only the JSON feed.
+
+Backfills load up to five games concurrently and stop starting new requests
+after an upstream timeout, rate limit, or server error. A transaction-scoped
+advisory lock prevents overlapping backfills through transaction poolers;
+heartbeats maintain it during ingestion. Stop older shift loaders before
+upgrading, because the new lock uses a different key.
 
 The table preserves source IDs, period, shift number, event number, detail code,
 optional descriptions, and the original clock strings alongside nullable parsed
