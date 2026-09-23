@@ -27,3 +27,6 @@ test.json
 
 # Python audit helper bytecode
 __pycache__/
+
+# Local generated audit reports and findings
+/docs/audits/

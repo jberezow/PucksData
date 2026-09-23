@@ -452,6 +452,5 @@ and unresolved anomalies; optional exports allow offline replay.
 
 Migration 0033 adds coverage views and metadata only. Existing shifts and events
 stay unchanged, and no backfill needs to be repeated. See the
-[method and commands](docs/on-ice-reconstruction.md) and
-[2025–26 audit](docs/audits/20252026-shifts.md) before treating derived lineups as
-reliable inputs to downstream sequence analysis.
+[method and commands](docs/on-ice-reconstruction.md) before treating derived
+lineups as reliable inputs to downstream sequence analysis.

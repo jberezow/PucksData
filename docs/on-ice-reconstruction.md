@@ -193,7 +193,9 @@ season event to every shift. Source memory is bounded to 32 games, plus one
 game's derived events; the audit retains compact per-game summaries and TOI
 difference statistics. `--profile` captures real EXPLAIN ANALYZE/BUFFERS plans
 for the first batch. Timing fields are milliseconds; network reads and CPU
-analysis are reported separately. See the [2025–26 audit](audits/20252026-shifts.md).
+analysis are reported separately. Keep generated reports and findings under
+`docs/audits/` and source snapshots under `data/`; both directories are ignored
+by Git.
 
 ## Optional independent report sample
 
