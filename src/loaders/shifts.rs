@@ -97,6 +97,30 @@ pub async fn replace_game_shifts(
         )));
     }
 
+    sqlx::query(
+        "INSERT INTO shift_fetch_status (game_id, status) VALUES ($1, 'loaded')
+         ON CONFLICT (game_id) DO UPDATE SET status = 'loaded', attempted_at = NOW()",
+    )
+    .bind(game_id)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(inserted)
+}
+
+/// Record a failed/empty attempt without touching a previously stored snapshot.
+pub async fn record_unsuccessful_attempt(
+    pool: &sqlx::PgPool,
+    game_id: i64,
+    unavailable: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO shift_fetch_status (game_id, status) VALUES ($1, $2)
+         ON CONFLICT (game_id) DO UPDATE SET status = EXCLUDED.status, attempted_at = NOW()",
+    )
+    .bind(game_id)
+    .bind(if unavailable { "unavailable" } else { "failed" })
+    .execute(pool)
+    .await?;
+    Ok(())
 }

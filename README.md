@@ -420,3 +420,24 @@ after migrations that add new views or tables to either schema.
 ## License
 
 PucksData is available under the [MIT License](LICENSE).
+
+### Shift analytics contract (migration 0032)
+
+Migration 0032 adds `nhl_team_identities` and `shift_fetch_status` for read-only
+consumers such as PucksStudio. It does not change `shifts` or require any shift
+backfill to be repeated. The identity table is seeded from the NHL team endpoint;
+`pucksdata fetch teams` refreshes the mapping, including new source identities.
+Raw shift team IDs must be resolved through this table before joining franchise
+IDs in `games` or `teams`.
+
+The latest fetch outcome (`loaded`, `unavailable`, `failed`) is separate from the
+stored snapshot. Successful writes update status in the snapshot transaction;
+empty/failed attempts preserve existing shifts. Older binaries can keep writing
+shifts after this additive migration, but their attempts will not be recorded.
+No historical outcomes are invented. Games without rows remain retryable.
+
+Apply migration 0032 before running the updated loader. Readers need SELECT on
+`shifts`, `nhl_team_identities` and `shift_fetch_status`; the migration grants these
+to `pucksstudio_read` if that role exists. Other reader roles require an explicit
+grant. The coverage contract now advertises raw shifts from 2010–11, without
+claiming that every game or interval is usable for line reconstruction.

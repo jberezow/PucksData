@@ -149,4 +149,32 @@ async fn typed_shift_snapshot_replacement_preserves_source_fields_and_rolls_back
     assert_eq!(stored.detail_code, Some(0));
     assert_eq!(stored.event_description, corrected[0].event_description);
     assert_eq!(stored.event_details, None);
+
+    // An empty refresh records the latest attempt without deleting the snapshot.
+    pucksdata::loaders::shifts::record_unsuccessful_attempt(pool, GAME_ID, true)
+        .await
+        .unwrap();
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM shift_fetch_status WHERE game_id = $1")
+            .bind(GAME_ID)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "unavailable");
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM shifts WHERE game_id = $1")
+        .bind(GAME_ID)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    pucksdata::loaders::shifts::replace_game_shifts(pool, GAME_ID, &corrected)
+        .await
+        .unwrap();
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM shift_fetch_status WHERE game_id = $1")
+            .bind(GAME_ID)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "loaded");
 }

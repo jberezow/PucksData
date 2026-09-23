@@ -190,6 +190,8 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                     .await
                     .inspect_err(|_| pb.finish_and_clear())?;
                 pb.finish_and_clear();
+                let identities = fetchers::teams::fetch_team_identities().await?;
+                loaders::teams::upsert_team_identities(pool, &identities).await?;
             }
             FetchEntity::OfficialStats(args) => {
                 let pool = db::get_pool().await?;
