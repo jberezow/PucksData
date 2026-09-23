@@ -437,13 +437,28 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 }
             };
             println!(
-                "raw shift load: {} candidates, {} attempted, {} succeeded, {} failed, {} shifts",
+                "raw shift load: {} candidates, {} attempted, {} succeeded, {} unavailable, {} failed, {} shifts",
                 summary.candidates,
                 summary.attempted,
                 summary.succeeded,
+                summary.unavailable_games.len(),
                 summary.failed,
                 summary.shifts,
             );
+            if !summary.unavailable_games.is_empty() {
+                eprintln!(
+                    "NHL shift feed returned no shift rows for games: {}",
+                    summary
+                        .unavailable_games
+                        .iter()
+                        .map(i64::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                eprintln!(
+                    "unavailable games were not replaced; games without stored shifts will be retried on the next run"
+                );
+            }
             for failure in summary.failures.iter().take(25) {
                 eprintln!("{failure}");
             }

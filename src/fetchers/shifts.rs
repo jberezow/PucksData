@@ -7,6 +7,24 @@ use crate::{models::DbShift, AnyError};
 
 pub const SHIFT_TYPE_CODE: i32 = 517;
 
+/// The feed responded successfully but has no shift rows for this game.
+#[derive(Debug)]
+pub struct ShiftsUnavailable {
+    pub game_id: i64,
+}
+
+impl std::fmt::Display for ShiftsUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "NHL shift feed has no shift rows for game {}",
+            self.game_id
+        )
+    }
+}
+
+impl std::error::Error for ShiftsUnavailable {}
+
 #[derive(Debug, Deserialize)]
 struct ShiftChartResponse {
     data: Vec<Value>,
@@ -98,6 +116,9 @@ fn parse_shift_chart(body: &str, game_id: i64) -> Result<Vec<DbShift>, AnyError>
             duration: row.duration,
         });
     }
+    if shifts.is_empty() {
+        return Err(ShiftsUnavailable { game_id }.into());
+    }
     Ok(shifts)
 }
 
@@ -162,6 +183,21 @@ mod tests {
             let mut bad = row();
             bad[field] = value;
             assert!(parse_shift_chart(&response(vec![bad]), GAME).is_err());
+        }
+    }
+
+    #[test]
+    fn distinguishes_unavailable_shifts_from_invalid_responses() {
+        for body in [response(vec![]), response(vec![json!({"typeCode":505})])] {
+            let error = parse_shift_chart(&body, GAME).unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<ShiftsUnavailable>().unwrap().game_id,
+                GAME
+            );
+        }
+        for body in [r#"{"total":1,"data":[]}"#, r#"{"total":0}"#] {
+            let error = parse_shift_chart(body, GAME).unwrap_err();
+            assert!(error.downcast_ref::<ShiftsUnavailable>().is_none());
         }
     }
 
