@@ -35,6 +35,38 @@ enum Commands {
 enum ShiftsCommand {
     /// Load typed, unnormalized shift-chart rows for one season
     Backfill(ShiftBackfillArgs),
+    /// Validate and audit a season from a read-only snapshot, or replay an export
+    Audit(ShiftAuditArgs),
+    /// Derive event lineups and diagnostics for one completed game
+    Reconstruct {
+        #[arg(long)]
+        game: i64,
+        #[arg(long)]
+        output: Option<std::path::PathBuf>,
+    },
+}
+
+#[derive(Args)]
+struct ShiftAuditArgs {
+    #[arg(long)]
+    season: i32,
+    /// Replay a source JSONL snapshot without connecting to the database
+    #[arg(long, conflicts_with = "profile")]
+    input: Option<std::path::PathBuf>,
+    #[arg(long)]
+    output: Option<std::path::PathBuf>,
+    /// Export source inputs for reproducible offline replay
+    #[arg(long)]
+    snapshot_out: Option<std::path::PathBuf>,
+    /// Export per-game validation and player TOI details (JSONL)
+    #[arg(long)]
+    games_out: Option<std::path::PathBuf>,
+    /// Export every reconstructed event (JSONL)
+    #[arg(long)]
+    events_out: Option<std::path::PathBuf>,
+    /// Include EXPLAIN ANALYZE for the first batch of source reads
+    #[arg(long)]
+    profile: bool,
 }
 
 #[derive(Args)]
@@ -431,13 +463,39 @@ async fn main() -> Result<(), pucksdata::AnyError> {
             }
         }
         Commands::Shifts { command } => {
-            let pool = db::get_pool().await?;
-            let summary = match command {
-                ShiftsCommand::Backfill(args) => {
-                    pucksdata::process::shifts::run_backfill(pool, args.season, args.refresh)
-                        .await?
+            let args = match command {
+                ShiftsCommand::Audit(args) => {
+                    let pool = if args.input.is_none() {
+                        Some(db::get_pool().await?)
+                    } else {
+                        None
+                    };
+                    let report = pucksdata::on_ice::audit::run(
+                        pool,
+                        pucksdata::on_ice::audit::AuditOptions {
+                            season: args.season,
+                            input: args.input,
+                            snapshot_out: args.snapshot_out,
+                            games_out: args.games_out,
+                            events_out: args.events_out,
+                            profile: args.profile,
+                        },
+                    )
+                    .await?;
+                    pucksdata::on_ice::audit::write_report(args.output.as_deref(), &report)?;
+                    return Ok(());
                 }
+                ShiftsCommand::Reconstruct { game, output } => {
+                    let report =
+                        pucksdata::on_ice::audit::game(db::get_pool().await?, game).await?;
+                    pucksdata::on_ice::audit::write_report(output.as_deref(), &report)?;
+                    return Ok(());
+                }
+                ShiftsCommand::Backfill(args) => args,
             };
+            let pool = db::get_pool().await?;
+            let summary =
+                pucksdata::process::shifts::run_backfill(pool, args.season, args.refresh).await?;
             println!(
                 "raw shift load: {} candidates, {} attempted, {} succeeded, {} unavailable, {} failed, {} shifts",
                 summary.candidates,

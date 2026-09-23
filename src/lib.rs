@@ -4,6 +4,7 @@ pub mod db;
 pub mod fetchers;
 pub mod loaders;
 pub mod models;
+pub mod on_ice;
 pub mod process;
 pub mod ui;
 
