@@ -98,10 +98,30 @@ pub async fn run_backfill(
         let work = load_games(games, |game_id| {
             let pool = pool.clone();
             async move {
-                let shifts = crate::fetchers::shifts::fetch_game_shifts(game_id).await?;
-                crate::loaders::shifts::replace_game_shifts(&pool, game_id, &shifts)
+                let result: Result<usize, crate::AnyError> = async {
+                    let shifts = crate::fetchers::shifts::fetch_game_shifts(game_id).await?;
+                    crate::loaders::shifts::replace_game_shifts(&pool, game_id, &shifts)
+                        .await
+                        .map_err(Into::into)
+                }
+                .await;
+                if let Err(error) = &result {
+                    let unavailable = error
+                        .downcast_ref::<crate::fetchers::shifts::ShiftsUnavailable>()
+                        .is_some();
+                    if let Err(status_error) = crate::loaders::shifts::record_unsuccessful_attempt(
+                        &pool,
+                        game_id,
+                        unavailable,
+                    )
                     .await
-                    .map_err(Into::into)
+                    {
+                        // Preserve the original typed error so upstream failures
+                        // still stop the request window.
+                        eprintln!("game {game_id}: could not record shift attempt: {status_error}");
+                    }
+                }
+                result
             }
         });
         tokio::pin!(work);

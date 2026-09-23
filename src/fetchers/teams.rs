@@ -22,6 +22,25 @@ struct TeamAbbrevRecord {
     tri_code: String,
 }
 
+/// NHL identity as distinct from the franchise key used by `teams`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamIdentity {
+    pub id: i64,
+    pub franchise_id: Option<i64>,
+    pub tri_code: String,
+    pub full_name: String,
+}
+
+pub async fn fetch_team_identities() -> Result<Vec<TeamIdentity>, AnyError> {
+    let body = fetch_api_json("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
+    let response: ApiResponse<TeamIdentity> = serde_json::from_str(&body)?;
+    if response.data.is_empty() {
+        return Err("NHL team identity response is empty".into());
+    }
+    Ok(response.data)
+}
+
 #[derive(serde::Deserialize)]
 struct ApiResponse<T> {
     data: Vec<T>,
