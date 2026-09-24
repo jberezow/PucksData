@@ -52,8 +52,18 @@ pub async fn run_official_stats(
 
     for season in seasons {
         for game_type in OFFICIAL_GAME_TYPES {
-            match fetch_skater_season(season, game_type).await {
-                Ok(rows) => summary.skater_rows += upsert_skater_seasons(pool, &rows).await?,
+            match super::attempts::track(
+                pool,
+                "official_skater_seasons",
+                &format!("{season}:{game_type}"),
+                async {
+                    let rows = fetch_skater_season(season, game_type).await?;
+                    Ok(upsert_skater_seasons(pool, &rows).await?)
+                },
+            )
+            .await
+            {
+                Ok(count) => summary.skater_rows += count,
                 Err(error) => {
                     summary.failures += 1;
                     pb.suspend(|| {
@@ -62,8 +72,18 @@ pub async fn run_official_stats(
                 }
             }
 
-            match fetch_goalie_season(season, game_type).await {
-                Ok(rows) => summary.goalie_rows += upsert_goalie_seasons(pool, &rows).await?,
+            match super::attempts::track(
+                pool,
+                "official_goalie_seasons",
+                &format!("{season}:{game_type}"),
+                async {
+                    let rows = fetch_goalie_season(season, game_type).await?;
+                    Ok(upsert_goalie_seasons(pool, &rows).await?)
+                },
+            )
+            .await
+            {
+                Ok(count) => summary.goalie_rows += count,
                 Err(error) => {
                     summary.failures += 1;
                     pb.suspend(|| {

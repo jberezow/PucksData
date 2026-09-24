@@ -7,6 +7,8 @@ pub async fn upsert_seasons(
     records: &[DbSeason],
     pb: &indicatif::ProgressBar,
 ) -> Result<usize, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    crate::provenance::set_transaction(&mut tx).await?;
     for record in records {
         sqlx::query!(
             r#"
@@ -22,10 +24,11 @@ pub async fn upsert_seasons(
             record.end_date,
             record.regular_season_end_date,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
         pb.suspend(|| println!("{}", record.season_year));
         pb.inc(1);
     }
+    tx.commit().await?;
     Ok(records.len())
 }

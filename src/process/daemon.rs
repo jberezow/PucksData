@@ -6,11 +6,18 @@ pub async fn run_daemon(
     interval_secs: u64,
     backfill_on_start: bool,
 ) -> Result<(), crate::AnyError> {
+    if pool.options().get_max_connections() < 3 {
+        return Err("daemon requires at least three database connections".into());
+    }
     // Retaining the guard enforces a single daemon instance for this database.
     let _lock = crate::process::sync::acquire_daemon_lock(pool).await?;
 
     if backfill_on_start {
-        crate::process::backfill::run_backfill(pool, None).await?;
+        crate::process::attempts::exclusive(
+            pool,
+            crate::process::backfill::run_backfill(pool, None),
+        )
+        .await?;
     }
 
     // A slow sync should skip missed ticks rather than trigger burst catch-up.

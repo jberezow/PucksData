@@ -25,7 +25,7 @@ fn upstream_unavailable(error: &crate::AnyError) -> bool {
         .is_some_and(|error| match error {
             crate::api::ApiError::NetworkError(_) => true,
             crate::api::ApiError::Other(status) => *status == 429 || *status >= 500,
-            crate::api::ApiError::NotFound => false,
+            crate::api::ApiError::NotFound | crate::api::ApiError::Archive(_) => false,
         })
 }
 
@@ -98,13 +98,14 @@ pub async fn run_backfill(
         let work = load_games(games, |game_id| {
             let pool = pool.clone();
             async move {
-                let result: Result<usize, crate::AnyError> = async {
-                    let shifts = crate::fetchers::shifts::fetch_game_shifts(game_id).await?;
-                    crate::loaders::shifts::replace_game_shifts(&pool, game_id, &shifts)
-                        .await
-                        .map_err(Into::into)
-                }
-                .await;
+                let result: Result<usize, crate::AnyError> =
+                    super::attempts::track(&pool, "shifts", &game_id.to_string(), async {
+                        let shifts = crate::fetchers::shifts::fetch_game_shifts(game_id).await?;
+                        crate::loaders::shifts::replace_game_shifts(&pool, game_id, &shifts)
+                            .await
+                            .map_err(Into::into)
+                    })
+                    .await;
                 if let Err(error) = &result {
                     let unavailable = error
                         .downcast_ref::<crate::fetchers::shifts::ShiftsUnavailable>()

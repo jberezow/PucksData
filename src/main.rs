@@ -18,7 +18,7 @@ enum Commands {
     },
     /// Run full historical backfill (events only; entity tables must be pre-populated)
     Backfill(BackfillArgs),
-    /// Sync all completed games (game_state OFF/OVER/FINAL) that have no events in the database
+    /// Fill event gaps and audit recent completed-game corrections
     Sync(SyncArgs),
     /// Run as a long-lived daemon, calling sync on a configurable interval
     Daemon(DaemonArgs),
@@ -211,7 +211,30 @@ async fn main() -> Result<(), pucksdata::AnyError> {
     dotenvy::dotenv().ok();
     let cli = Cli::parse();
 
-    match cli.command {
+    let capture = matches!(
+        &cli.command,
+        Commands::Fetch { .. }
+            | Commands::Backfill(_)
+            | Commands::Shifts {
+                command: ShiftsCommand::Backfill(_)
+            }
+            | Commands::Status(StatusArgs { fix: true, .. })
+    );
+    if capture {
+        let pool = db::get_pool().await?;
+        let key = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
+        pucksdata::process::attempts::exclusive(
+            pool,
+            pucksdata::process::attempts::track(pool, "command", &key, dispatch(cli.command)),
+        )
+        .await
+    } else {
+        dispatch(cli.command).await
+    }
+}
+
+async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
+    match command {
         Commands::Fetch { entity } => match entity {
             FetchEntity::Teams => {
                 let pool = db::get_pool().await?;
@@ -227,7 +250,12 @@ async fn main() -> Result<(), pucksdata::AnyError> {
             }
             FetchEntity::OfficialStats(args) => {
                 let pool = db::get_pool().await?;
-                pucksdata::process::official_stats::run_official_stats(pool, args.season).await?;
+                let summary =
+                    pucksdata::process::official_stats::run_official_stats(pool, args.season)
+                        .await?;
+                if summary.failures > 0 {
+                    return Err(format!("{} official season loads failed", summary.failures).into());
+                }
             }
             FetchEntity::OfficialGameStats(args) => {
                 let pool = db::get_pool().await?;
@@ -282,7 +310,10 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 spinner.finish_and_clear();
                 println!("Wrote {count} players");
 
-                if let Some(rosters) = fetched.current_rosters {
+                let rosters = fetched
+                    .current_rosters
+                    .ok_or("current roster observation unavailable")?;
+                {
                     if rosters.is_complete() {
                         let snapshot_id =
                             loaders::rosters::insert_roster_snapshot(pool, &rosters).await?;
@@ -292,73 +323,20 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                             rosters.memberships.len()
                         );
                     } else {
-                        eprintln!(
-                            "warn: current roster observation was incomplete ({}/{} teams); snapshot not written",
-                            rosters.fetched_team_count, rosters.expected_team_count
+                        return Err(
+                            "current roster observation incomplete; snapshot preserved".into()
                         );
                     }
                 }
             }
             FetchEntity::Events(args) => {
-                use indicatif::{ProgressBar, ProgressStyle};
                 let pool = db::get_pool().await?;
-                let pb = ProgressBar::new(3);
-                pb.set_style(
-                    ProgressStyle::with_template(
-                        "[{elapsed_precise}] [{bar:20.cyan/blue}] {pos}/{len} {msg}",
-                    )
-                    .unwrap()
-                    .progress_chars("=>-"),
-                );
-
-                pb.set_message("fetching team ID map...");
                 let team_id_map = fetchers::games::fetch_team_id_to_franchise_id_map().await?;
-                pb.inc(1);
-
-                pb.set_message(format!(
-                    "fetching play-by-play for game {}...",
-                    args.game_id
-                ));
-                let pbp = fetchers::events::fetch_play_by_play(args.game_id).await?;
-                pb.inc(1);
-
-                pb.set_message("transforming and loading events...");
-                let goal_strengths = if fetchers::events::needs_goal_strengths(&pbp) {
-                    fetchers::events::fetch_goal_strengths(args.game_id).await?
-                } else {
-                    std::collections::HashMap::new()
-                };
-                let report_strengths =
-                    fetchers::historical_reports::fetch_reconciled_strengths(&pbp)
-                        .await?
-                        .strengths;
-                let (events, goals, shots, hits, blocks, penalties, faceoffs, skip_warnings) =
-                    fetchers::events::transform_events_with_strength_sources(
-                        &pbp,
-                        &team_id_map,
-                        &goal_strengths,
-                        &report_strengths,
-                    );
-                for warning in &skip_warnings {
-                    pb.suspend(|| eprintln!("{warning}"));
-                }
-                let (ec, gc, sc, hc, bc, pc, fc) = loaders::events::upsert_game_events(
-                    pool,
-                    args.game_id,
-                    &events,
-                    &goals,
-                    &shots,
-                    &hits,
-                    &blocks,
-                    &penalties,
-                    &faceoffs,
-                )
-                .await?;
-                pb.inc(1);
-                pb.finish_with_message(format!(
-                    "game {}: {} events, {} goals, {} shots, {} hits, {} blocks, {} penalties, {} faceoffs",
-                    args.game_id, ec, gc, sc, hc, bc, pc, fc
-                ));
+                let count =
+                    pucksdata::process::backfill::load_one_game(pool, args.game_id, &team_id_map)
+                        .await?;
+                pucksdata::process::analytics::refresh_derived(pool).await?;
+                println!("game {}: {count} events", args.game_id);
             }
             FetchEntity::Games(args) => {
                 let pool = db::get_pool().await?;
@@ -371,7 +349,7 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 } else if let Some(season) = args.scope.season {
                     let pb_fetch = pucksdata::ui::make_progress_bar(0, "games fetched");
                     let games =
-                        fetchers::games::fetch_games_for_season_enriched(season, &pb_fetch).await;
+                        fetchers::games::fetch_games_for_season_enriched(season, &pb_fetch).await?;
                     let count = games.len();
                     pb_fetch.finish_and_clear();
 
@@ -396,7 +374,7 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                         let pb_fetch = pucksdata::ui::make_progress_bar(0, "games fetched");
                         let games =
                             fetchers::games::fetch_games_for_season_enriched(*season, &pb_fetch)
-                                .await;
+                                .await?;
                         let count = games.len();
                         pb_fetch.finish_and_clear();
 
@@ -459,7 +437,7 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 pucksdata::process::status::run_status(pool, args.season, args.fix).await?
             };
             if !healthy && !args.no_fail {
-                std::process::exit(1);
+                return Err("dataset health requires attention".into());
             }
         }
         Commands::Shifts { command } => {
@@ -494,6 +472,11 @@ async fn main() -> Result<(), pucksdata::AnyError> {
                 ShiftsCommand::Backfill(args) => args,
             };
             let pool = db::get_pool().await?;
+            if pool.options().get_max_connections() < 3 {
+                return Err(
+                    "shift backfill CLI requires at least three database connections".into(),
+                );
+            }
             let summary =
                 pucksdata::process::shifts::run_backfill(pool, args.season, args.refresh).await?;
             println!(

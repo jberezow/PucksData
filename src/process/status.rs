@@ -37,17 +37,30 @@ pub struct DatasetSummary {
     pub actionable_gap_games: i64,
 }
 
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct IngestionIssue {
+    pub dataset: String,
+    pub entity_key: String,
+    pub outcome: String,
+    pub last_attempt_at: time::OffsetDateTime,
+    pub last_success_at: Option<time::OffsetDateTime>,
+    pub error_message: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct HealthReport {
     pub generated_at: time::OffsetDateTime,
     pub season_filter: Option<i32>,
     pub summary: DatasetSummary,
     pub seasons: Vec<SeasonReport>,
+    pub ingestion_issues: Vec<IngestionIssue>,
 }
 
 impl HealthReport {
     pub fn is_healthy(&self) -> bool {
-        !self.seasons.is_empty() && self.seasons.iter().all(|season| season.healthy)
+        !self.seasons.is_empty()
+            && self.seasons.iter().all(|season| season.healthy)
+            && self.ingestion_issues.is_empty()
     }
 }
 
@@ -55,7 +68,7 @@ pub async fn collect_health(
     pool: &sqlx::PgPool,
     season_filter: Option<i32>,
 ) -> Result<HealthReport, crate::AnyError> {
-    let summary = sqlx::query_as::<_, DatasetSummary>(
+    let mut summary = sqlx::query_as::<_, DatasetSummary>(
         "SELECT last_sync_at, last_sync_games, latest_completed_game_date, latest_event_game_date,
                 completed_games, games_with_events, missing_event_games, goals_missing_shots,
                 backfill_failed, backfill_pending, backfill_skipped, healthy,
@@ -78,11 +91,23 @@ pub async fn collect_health(
     .fetch_all(pool)
     .await?;
 
+    let ingestion_issues = sqlx::query_as::<_, IngestionIssue>(
+        "SELECT dataset, entity_key, outcome, last_attempt_at, last_success_at, error_message
+         FROM observability.ingestion_freshness f
+         WHERE (outcome IN ('failed','partial') OR (outcome='running' AND last_attempt_at < NOW() - interval '2 hours'))
+           AND dataset IN ('sync','schedule','players_rosters','player_repair','events','official_games','shifts','derived')
+           AND ($1::integer IS NULL OR (dataset IN ('events','official_games','shifts')
+               AND EXISTS (SELECT 1 FROM games g WHERE g.game_id::text=f.entity_key AND g.season=$1)))
+         ORDER BY last_attempt_at DESC LIMIT 100")
+        .bind(season_filter).fetch_all(pool).await?;
+    summary.healthy &= ingestion_issues.is_empty();
+
     Ok(HealthReport {
         generated_at: time::OffsetDateTime::now_utc(),
         season_filter,
         summary,
         seasons,
+        ingestion_issues,
     })
 }
 
@@ -136,6 +161,10 @@ pub async fn run_status(
         }
     }
 
+    if fix {
+        crate::process::analytics::refresh_derived(pool).await?;
+        return Ok(collect_health(pool, season_filter).await?.is_healthy());
+    }
     Ok(healthy)
 }
 
@@ -155,22 +184,20 @@ async fn backfill_goals_into_shots(
     pool: &sqlx::PgPool,
     season_filter: Option<i32>,
 ) -> Result<(), crate::AnyError> {
-    let rows_inserted: u64 = sqlx::query!(
-        r#"
-        INSERT INTO shots (event_id, shooting_player_id, goalie_in_net_id, shot_type)
-        SELECT go.event_id, go.scorer_player_id, go.goalie_id, go.shot_type
-        FROM goals go
-        JOIN events e ON e.id = go.event_id
-        JOIN games g ON g.game_id = e.game_id
-        WHERE NOT EXISTS (SELECT 1 FROM shots s WHERE s.event_id = go.event_id)
-          AND ($1::integer IS NULL OR g.season = $1)
-        ON CONFLICT (event_id) DO NOTHING
-        "#,
-        season_filter
-    )
-    .execute(pool)
-    .await?
-    .rows_affected();
+    let games: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT e.game_id FROM goals g JOIN events e ON e.id = g.event_id
+        WHERE ($1::integer IS NULL OR e.season = $1) AND NOT EXISTS (SELECT 1 FROM shots s WHERE s.event_id = e.id)")
+        .bind(season_filter).fetch_all(pool).await?;
+    let mut rows_inserted = 0;
+    for game_id in games {
+        let mut tx = pool.begin().await?;
+        crate::loaders::history::lock_game(&mut tx, game_id).await?;
+        rows_inserted += sqlx::query("INSERT INTO shots (event_id, shooting_player_id, goalie_in_net_id, shot_type)
+            SELECT g.event_id, g.scorer_player_id, g.goalie_id, g.shot_type FROM goals g
+            JOIN events e ON e.id = g.event_id WHERE e.game_id = $1 ON CONFLICT (event_id) DO NOTHING")
+            .bind(game_id).execute(&mut *tx).await?.rows_affected();
+        crate::loaders::history::events(&mut tx, game_id).await?;
+        tx.commit().await?;
+    }
 
     println!("--fix: inserted {rows_inserted} shots row(s) for previously orphaned goals.");
     Ok(())
@@ -179,7 +206,7 @@ async fn backfill_goals_into_shots(
 /// Fetch game metadata and run backfill for a single season.
 async fn fix_season(pool: &sqlx::PgPool, season: i32) -> Result<(), crate::AnyError> {
     let pb_fetch = crate::ui::make_progress_bar(0, "games fetched");
-    let games = crate::fetchers::games::fetch_games_for_season_enriched(season, &pb_fetch).await;
+    let games = crate::fetchers::games::fetch_games_for_season_enriched(season, &pb_fetch).await?;
     let count = games.len();
     pb_fetch.finish_and_clear();
 
@@ -194,6 +221,18 @@ async fn fix_season(pool: &sqlx::PgPool, season: i32) -> Result<(), crate::AnyEr
 
 /// Print the per-season health table to stdout.
 fn print_status(report: &HealthReport, season_filter: Option<i32>) {
+    for issue in &report.ingestion_issues {
+        println!(
+            "ingestion {} {}: {} ({})",
+            issue.dataset,
+            issue.entity_key,
+            issue.outcome,
+            issue
+                .error_message
+                .as_deref()
+                .unwrap_or("unfinished for more than two hours")
+        );
+    }
     if report.seasons.is_empty() {
         if let Some(s) = season_filter {
             println!("No completed (OFF/OVER/FINAL) games found for season {s}.");

@@ -20,11 +20,7 @@ pub async fn replace_game_shifts(
     }
 
     let mut tx = pool.begin().await?;
-    let lock_name = format!("pucksdata:shifts:{game_id}");
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-        .bind(lock_name)
-        .execute(&mut *tx)
-        .await?;
+    super::history::lock_game(&mut tx, game_id).await?;
 
     sqlx::query("DELETE FROM shifts WHERE game_id = $1")
         .bind(game_id)
@@ -104,6 +100,7 @@ pub async fn replace_game_shifts(
     .bind(game_id)
     .execute(&mut *tx)
     .await?;
+    super::history::shifts(&mut tx, game_id).await?;
     tx.commit().await?;
     Ok(inserted)
 }

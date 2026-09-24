@@ -46,6 +46,8 @@ pub async fn upsert_players(
         draft_overall_picks.push(r.draft_overall_pick);
     }
 
+    let mut tx = pool.begin().await?;
+    crate::provenance::set_transaction(&mut tx).await?;
     sqlx::query!(
         r#"
         INSERT INTO players
@@ -105,8 +107,9 @@ pub async fn upsert_players(
         &draft_overall_picks as &[Option<i16>],
         &headshot_urls as &[Option<String>],
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(records.len())
 }

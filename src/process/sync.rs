@@ -48,13 +48,18 @@ pub fn current_season() -> i32 {
 }
 
 async fn refresh_current_season_games(pool: &sqlx::PgPool) -> Result<usize, crate::AnyError> {
-    let season = current_season();
-    println!("[sync 0/5] refreshing game metadata for season {season}...");
-    let progress = indicatif::ProgressBar::hidden();
-    let games = crate::fetchers::games::fetch_games_for_season_enriched(season, &progress).await;
-    let count = games.len();
-    crate::loaders::games::upsert_games(pool, &games, &progress).await?;
-    println!("[sync 0/5] {count} games upserted for season {season}");
+    let mut seasons = vec![current_season()];
+    let now = chrono::Utc::now();
+    if now.month() == 9 {
+        seasons.push(now.year() * 10_000 + now.year() + 1);
+    }
+    let mut count = 0;
+    for season in seasons {
+        let progress = indicatif::ProgressBar::hidden();
+        let games =
+            crate::fetchers::games::fetch_games_for_season_enriched(season, &progress).await?;
+        count += crate::loaders::games::upsert_games(pool, &games, &progress).await?;
+    }
     Ok(count)
 }
 
@@ -85,33 +90,111 @@ pub async fn query_sync_candidates(
     pool: &sqlx::PgPool,
     from_date: Option<time::Date>,
 ) -> Result<Vec<(i64, Option<String>)>, sqlx::Error> {
-    let rows = sqlx::query!(
-        r#"SELECT g.game_id, g.game_state
-           FROM games g
-           WHERE g.game_date < CURRENT_DATE
-             AND ($1::date IS NULL OR g.game_date >= $1)
-             AND g.game_type != 1
-             AND NOT EXISTS (
-               SELECT 1 FROM events e WHERE e.game_id = g.game_id
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM backfill_progress bp
-               WHERE bp.game_id = g.game_id
-                 AND bp.status IN ('done', 'skipped')
-             )
-           ORDER BY g.game_date ASC, g.game_id ASC"#,
-        from_date
+    query_sync_candidates_with_window(pool, from_date, 0).await
+}
+
+/// Include recent completed games and unsuccessful attempts even when rows exist.
+pub async fn query_sync_candidates_with_window(
+    pool: &sqlx::PgPool,
+    from_date: Option<time::Date>,
+    audit_days: i32,
+) -> Result<Vec<(i64, Option<String>)>, sqlx::Error> {
+    sqlx::query_as(r#"SELECT g.game_id, g.game_state FROM games g
+        WHERE g.game_date <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+          AND ($1::date IS NULL OR g.game_date >= $1)
+          AND g.game_type IN (2,3)
+          AND (
+            ($1::date IS NOT NULL)
+            OR ($2 > 0 AND g.game_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - $2)
+            OR (NOT EXISTS (SELECT 1 FROM events e WHERE e.game_id = g.game_id)
+                AND NOT EXISTS (SELECT 1 FROM backfill_progress bp WHERE bp.game_id = g.game_id AND bp.status IN ('done','skipped')))
+            OR (SELECT a.outcome FROM ingestion.attempts a WHERE a.dataset = 'events'
+                AND a.entity_key = g.game_id::text ORDER BY a.attempt_id DESC LIMIT 1) IN ('failed','running')
+          ) ORDER BY g.game_date, g.game_id"#)
+        .bind(from_date).bind(audit_days).fetch_all(pool).await
+}
+
+/// Daily recent corrections, with a wider Sunday audit. Override explicitly for
+/// older corrections; invalid configuration is never silently ignored.
+pub fn correction_days() -> Result<i32, crate::AnyError> {
+    let default = if chrono::Utc::now().weekday() == chrono::Weekday::Sun {
+        14
+    } else {
+        3
+    };
+    let days = match std::env::var("PUCKSDATA_CORRECTION_DAYS") {
+        Ok(value) => value.parse::<i32>()?,
+        Err(std::env::VarError::NotPresent) => default,
+        Err(error) => return Err(error.into()),
+    };
+    if !(1..=366).contains(&days) {
+        return Err("PUCKSDATA_CORRECTION_DAYS must be 1..366".into());
+    }
+    Ok(days)
+}
+
+/// A complete run alone advances the legacy last-success field. Attempts retain
+/// partial/failure information separately, including interrupted runs.
+pub async fn run_sync(
+    pool: &sqlx::PgPool,
+    from_date: Option<time::Date>,
+) -> Result<SyncSummary, crate::AnyError> {
+    super::attempts::exclusive(pool, run_sync_exclusive(pool, from_date)).await
+}
+
+async fn run_sync_exclusive(
+    pool: &sqlx::PgPool,
+    from_date: Option<time::Date>,
+) -> Result<SyncSummary, crate::AnyError> {
+    let id = super::attempts::start(pool, "sync", "singleton").await?;
+    let result = crate::provenance::scope(
+        crate::provenance::Context {
+            pool: pool.clone(),
+            attempt_id: id,
+        },
+        run_sync_inner(pool, from_date),
     )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| (r.game_id, r.game_state))
-        .collect())
+    .await;
+    record_sync_result(pool, id, &result).await?;
+    match result {
+        Ok(summary) if summary.failed > 0 => {
+            Err(format!("{} game loads failed", summary.failed).into())
+        }
+        other => other,
+    }
+}
+
+/// Finish a sync attempt and advance the success watermark atomically.
+pub async fn record_sync_result(
+    pool: &sqlx::PgPool,
+    id: i64,
+    result: &Result<SyncSummary, crate::AnyError>,
+) -> Result<(), crate::AnyError> {
+    let (outcome, error) = match result {
+        Ok(summary) if summary.failed > 0 => (
+            "partial",
+            Some(format!("{} game loads failed", summary.failed)),
+        ),
+        Ok(_) => ("complete", None),
+        Err(error) => ("failed", Some(error.to_string())),
+    };
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE ingestion.attempts SET outcome=$2, error_message=$3, finished_at=clock_timestamp() WHERE attempt_id=$1")
+        .bind(id).bind(outcome).bind(error).execute(&mut *tx).await?;
+    if let Ok(summary) = result {
+        if summary.failed == 0 {
+            sqlx::query("INSERT INTO sync_state(key, last_sync_at, last_sync_games, updated_at)
+                VALUES ('singleton', clock_timestamp(), $1, clock_timestamp())
+                ON CONFLICT(key) DO UPDATE SET last_sync_at=EXCLUDED.last_sync_at, last_sync_games=EXCLUDED.last_sync_games, updated_at=EXCLUDED.updated_at")
+                .bind(summary.processed as i32).execute(&mut *tx).await?;
+        }
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Refresh entities and ingest completed games that have no events.
-pub async fn run_sync(
+async fn run_sync_inner(
     pool: &sqlx::PgPool,
     from_date: Option<time::Date>,
 ) -> Result<SyncSummary, crate::AnyError> {
@@ -121,8 +204,7 @@ pub async fn run_sync(
     use tokio::task::JoinSet;
 
     let started_at = Instant::now();
-
-    refresh_current_season_games(pool).await?;
+    let audit_days = correction_days()?;
 
     // Refresh teams before building the team-to-franchise map.
     println!("[sync 1/5] refreshing teams...");
@@ -130,36 +212,47 @@ pub async fn run_sync(
     crate::loaders::teams::upsert_teams(pool, &teams, &indicatif::ProgressBar::hidden()).await?;
     println!("[sync 1/5] {} teams upserted", teams.len());
 
+    super::attempts::track(
+        pool,
+        "schedule",
+        "current",
+        refresh_current_season_games(pool),
+    )
+    .await?;
+
     println!("[sync 2/5] enumerating and refreshing players (rosters + stats pages — this takes ~30s)...");
-    let fetched_players = crate::fetchers::players::fetch_players(pool).await?;
-    crate::loaders::players::upsert_players(pool, &fetched_players.players).await?;
-    println!(
-        "[sync 2/5] {} players upserted",
-        fetched_players.players.len()
-    );
-    if let Some(rosters) = fetched_players.current_rosters {
-        if rosters.is_complete() {
-            let snapshot_id =
-                crate::loaders::rosters::insert_roster_snapshot(pool, &rosters).await?;
-            println!(
-                "[sync 2/5] roster snapshot {snapshot_id} written ({} teams, {} memberships)",
-                rosters.fetched_team_count,
-                rosters.memberships.len()
-            );
+    super::attempts::track(pool, "players_rosters", "current", async {
+        let fetched_players = crate::fetchers::players::fetch_players(pool).await?;
+        crate::loaders::players::upsert_players(pool, &fetched_players.players).await?;
+        println!(
+            "[sync 2/5] {} players upserted",
+            fetched_players.players.len()
+        );
+        if let Some(rosters) = fetched_players.current_rosters {
+            if rosters.is_complete() {
+                let snapshot_id =
+                    crate::loaders::rosters::insert_roster_snapshot(pool, &rosters).await?;
+                println!(
+                    "[sync 2/5] roster snapshot {snapshot_id} written ({} teams, {} memberships)",
+                    rosters.fetched_team_count,
+                    rosters.memberships.len()
+                );
+            } else {
+                return Err("current roster observation incomplete; snapshot preserved".into());
+            }
         } else {
-            eprintln!(
-                "warn: current roster observation was incomplete ({}/{} teams); snapshot not written",
-                rosters.fetched_team_count, rosters.expected_team_count
-            );
+            return Err("current roster observation unavailable".into());
         }
-    }
+        Ok(())
+    })
+    .await?;
 
     let team_id_map = Arc::new(crate::fetchers::games::fetch_team_id_to_franchise_id_map().await?);
 
     println!("[sync 3/5] detecting games with missing events...");
-    let candidates = query_sync_candidates(pool, from_date).await?;
+    let candidates = query_sync_candidates_with_window(pool, from_date, audit_days).await?;
     let candidates_count = candidates.len(); // all gap-detected candidates, before game_state filter
-    println!("[sync 3/5] {candidates_count} candidate games found (regular season + playoffs, no events yet)");
+    println!("[sync 3/5] {candidates_count} candidate games found (regular season + playoffs, gaps or correction audit)");
 
     let mut games_to_process: Vec<i64> = Vec::new();
     for (game_id, state) in &candidates {
@@ -225,42 +318,32 @@ pub async fn run_sync(
     let elapsed = started_at.elapsed();
     let duration_secs = elapsed.as_secs_f64();
     println!(
-        "[sync 5/5] complete:\n  candidates:  {candidates_count}\n  processed:   {processed}\n  failed:      {failed}\n  events:      {events_written}\n  duration:    {duration_secs:.1}s",
+        "[sync] event phase finished:\n  candidates:  {candidates_count}\n  processed:   {processed}\n  failed:      {failed}\n  events:      {events_written}\n  duration:    {duration_secs:.1}s",
     );
 
     // Repair player references after all new event rows are visible.
-    match crate::fetchers::players::repair_missing_players(pool).await {
-        Ok(0) => {}
-        Ok(n) => println!("repair: inserted {n} previously-missing players"),
-        Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {e}"),
-    }
-
-    // Record successful zero-work syncs as well as runs that ingested games.
-    let now = time::OffsetDateTime::now_utc();
-    sqlx::query!(
-        r#"INSERT INTO sync_state (key, last_sync_at, last_sync_games, updated_at)
-       VALUES ('singleton', $1, $2, $1)
-       ON CONFLICT (key) DO UPDATE
-         SET last_sync_at    = EXCLUDED.last_sync_at,
-             last_sync_games = EXCLUDED.last_sync_games,
-             updated_at      = EXCLUDED.updated_at"#,
-        now,
-        processed as i32
+    let repair_result = super::attempts::track(
+        pool,
+        "player_repair",
+        "archive",
+        crate::fetchers::players::repair_missing_players(pool),
     )
-    .execute(pool)
-    .await?;
+    .await;
 
-    // Only when the picture changed. Most daemon ticks find no candidates, and
-    // the refresh is far more expensive than the sync that triggered it. A
-    // failed game changes the health snapshot even though it wrote no events.
-    if processed > 0 || failed > 0 {
-        crate::process::analytics::refresh_derived(pool).await;
-    }
+    // The daemon and workflow run precisely the same official correction policy.
+    let audit_from =
+        time::OffsetDateTime::now_utc().date() - time::Duration::days(audit_days as i64);
+    let official_result =
+        super::official_games::sync_official_games(pool, from_date.unwrap_or(audit_from)).await;
+    let refresh_result = super::analytics::refresh_derived(pool).await;
+    repair_result?;
+    official_result?;
+    refresh_result?;
 
     Ok(SyncSummary {
         processed,
         failed,
-        elapsed,
+        elapsed: started_at.elapsed(),
         candidates: candidates_count,
         events_written,
     })

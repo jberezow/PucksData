@@ -238,7 +238,28 @@ pub fn strength_for_owner(
 pub async fn fetch_play_by_play(game_id: i64) -> Result<PlayByPlay, AnyError> {
     let url = format!("https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play");
     let json = fetch_api_json(&url).await?;
-    let pbp: PlayByPlay = serde_json::from_str(&json)?;
+    parse_play_by_play(game_id, &json)
+}
+
+fn parse_play_by_play(game_id: i64, json: &str) -> Result<PlayByPlay, AnyError> {
+    let pbp: PlayByPlay = serde_json::from_str(json)?;
+    if pbp.id != game_id || pbp.plays.is_empty() {
+        return Err("empty or foreign play-by-play response".into());
+    }
+    let ids: std::collections::HashSet<_> = pbp.plays.iter().map(|p| p.event_id).collect();
+    if ids.len() != pbp.plays.len() {
+        return Err("duplicate play-by-play event IDs".into());
+    }
+    if game_id / 1_000_000 >= 2009 {
+        let raw: serde_json::Value = serde_json::from_str(json)?;
+        if !raw["gameState"]
+            .as_str()
+            .is_some_and(crate::process::sync::is_game_completed)
+            || !pbp.plays.iter().any(|p| p.type_desc_key == "game-end")
+        {
+            return Err("modern play-by-play is not a complete final-game response".into());
+        }
+    }
     Ok(pbp)
 }
 
@@ -562,4 +583,24 @@ pub fn transform_events_with_strength_sources(
         faceoffs,
         skip_warnings,
     )
+}
+
+#[cfg(test)]
+mod completeness_tests {
+    use super::parse_play_by_play;
+
+    #[test]
+    fn final_response_requires_identity_unique_events_and_terminal_marker() {
+        let complete = r#"{"id":2025020001,"gameState":"OFF","homeTeam":{"id":1},"awayTeam":{"id":2},"plays":[{"eventId":1,"periodDescriptor":{"number":3,"periodType":"REG"},"timeInPeriod":"20:00","typeDescKey":"game-end"}]}"#;
+        assert!(parse_play_by_play(2025020001, complete).is_ok());
+        assert!(parse_play_by_play(2025020002, complete).is_err());
+        assert!(parse_play_by_play(2025020001, &complete.replace("OFF", "LIVE")).is_err());
+        assert!(parse_play_by_play(2025020001, &complete.replace("game-end", "stoppage")).is_err());
+        let mut value: serde_json::Value = serde_json::from_str(complete).unwrap();
+        let duplicate = value["plays"][0].clone();
+        value["plays"].as_array_mut().unwrap().push(duplicate);
+        assert!(parse_play_by_play(2025020001, &value.to_string()).is_err());
+        value["plays"] = serde_json::json!([]);
+        assert!(parse_play_by_play(2025020001, &value.to_string()).is_err());
+    }
 }
