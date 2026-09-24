@@ -11,8 +11,21 @@ pub async fn replace_official_game_stats(
     pool: &sqlx::PgPool,
     stats: &OfficialGameStats,
 ) -> Result<(usize, usize), sqlx::Error> {
+    stats.validate().map_err(sqlx::Error::Protocol)?;
     let game_id = stats.game_id;
     let mut transaction = pool.begin().await?;
+    super::history::lock_game(&mut transaction, game_id).await?;
+    let (season, game_type): (i32, i16) =
+        sqlx::query_as("SELECT season, game_type FROM games WHERE game_id=$1")
+            .bind(game_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+    if stats.skaters[0].season != season || stats.skaters[0].game_type != game_type {
+        return Err(sqlx::Error::Protocol(
+            "official snapshot scope disagrees with stored game".into(),
+        ));
+    }
+    super::history::official_baseline(&mut transaction, game_id).await?;
 
     for row in &stats.skaters {
         sqlx::query(
@@ -22,10 +35,10 @@ pub async fn replace_official_game_stats(
                  position_code, goals, assists, points, plus_minus, penalty_minutes,
                  shots, ev_goals, ev_points, pp_goals, pp_points, sh_goals, sh_points,
                  ot_goals, game_winning_goals, hits, blocked_shots, giveaways,
-                 takeaways, time_on_ice_seconds)
+                 takeaways, time_on_ice_seconds, source_revision)
             VALUES
                 ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-                 $18,$19,$20,$21,$22,$23,$24,$25,$26)
+                 $18,$19,$20,$21,$22,$23,$24,$25,$26,history.next_official_revision($1,$2,'skaters'))
             ON CONFLICT (game_id, player_id) DO UPDATE SET
                 season = EXCLUDED.season,
                 game_type = EXCLUDED.game_type,
@@ -72,14 +85,14 @@ pub async fn replace_official_game_stats(
                     THEN 1 ELSE 0 END,
                 source_observed_at = NOW(),
                 updated_at = CASE WHEN
-                    ROW(current.goals, current.assists, current.points, current.plus_minus,
+                    ROW(current.season, current.game_type, current.team_abbrev, current.full_name, current.position_code, current.goals, current.assists, current.points, current.plus_minus,
                         current.penalty_minutes, current.shots, current.ev_goals,
                         current.ev_points, current.pp_goals, current.pp_points,
                         current.sh_goals, current.sh_points, current.ot_goals,
                         current.game_winning_goals, current.hits, current.blocked_shots,
                         current.giveaways, current.takeaways, current.time_on_ice_seconds)
                     IS DISTINCT FROM
-                    ROW(EXCLUDED.goals, EXCLUDED.assists, EXCLUDED.points, EXCLUDED.plus_minus,
+                    ROW(EXCLUDED.season, EXCLUDED.game_type, EXCLUDED.team_abbrev, EXCLUDED.full_name, EXCLUDED.position_code, EXCLUDED.goals, EXCLUDED.assists, EXCLUDED.points, EXCLUDED.plus_minus,
                         EXCLUDED.penalty_minutes, EXCLUDED.shots, EXCLUDED.ev_goals,
                         EXCLUDED.ev_points, EXCLUDED.pp_goals, EXCLUDED.pp_points,
                         EXCLUDED.sh_goals, EXCLUDED.sh_points, EXCLUDED.ot_goals,
@@ -124,8 +137,8 @@ pub async fn replace_official_game_stats(
             INSERT INTO analytics.official_goalie_games AS current
                 (game_id, player_id, season, game_type, team_abbrev, full_name,
                  goals, assists, games_started, wins, losses, ties, ot_losses, shutouts,
-                 shots_against, saves, goals_against, save_pct, time_on_ice_seconds)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+                 shots_against, saves, goals_against, save_pct, time_on_ice_seconds, source_revision)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,history.next_official_revision($1,$2,'goalies'))
             ON CONFLICT (game_id, player_id) DO UPDATE SET
                 season = EXCLUDED.season,
                 game_type = EXCLUDED.game_type,
@@ -161,13 +174,13 @@ pub async fn replace_official_game_stats(
                     THEN 1 ELSE 0 END,
                 source_observed_at = NOW(),
                 updated_at = CASE WHEN
-                    ROW(current.goals, current.assists, current.games_started,
+                    ROW(current.season, current.game_type, current.team_abbrev, current.full_name, current.goals, current.assists, current.games_started,
                         current.wins, current.losses, current.ties,
                         current.ot_losses, current.shutouts, current.shots_against,
                         current.saves, current.goals_against, current.save_pct,
                         current.time_on_ice_seconds)
                     IS DISTINCT FROM
-                    ROW(EXCLUDED.goals, EXCLUDED.assists, EXCLUDED.games_started,
+                    ROW(EXCLUDED.season, EXCLUDED.game_type, EXCLUDED.team_abbrev, EXCLUDED.full_name, EXCLUDED.goals, EXCLUDED.assists, EXCLUDED.games_started,
                         EXCLUDED.wins, EXCLUDED.losses, EXCLUDED.ties,
                         EXCLUDED.ot_losses, EXCLUDED.shutouts, EXCLUDED.shots_against,
                         EXCLUDED.saves, EXCLUDED.goals_against, EXCLUDED.save_pct,
@@ -215,6 +228,7 @@ pub async fn replace_official_game_stats(
     .execute(&mut *transaction)
     .await?;
 
+    super::history::official_games(&mut transaction, game_id).await?;
     transaction.commit().await?;
     Ok((stats.skaters.len(), stats.goalies.len()))
 }

@@ -10,7 +10,7 @@ pub struct OfficialGamesSummary {
     pub goalies: usize,
 }
 
-async fn load_one(
+async fn load_one_inner(
     pool: &sqlx::PgPool,
     game_id: i64,
     game_type: i16,
@@ -23,6 +23,20 @@ async fn load_one(
     Ok(crate::loaders::official_games::replace_official_game_stats(pool, &stats).await?)
 }
 
+async fn load_one(
+    pool: &sqlx::PgPool,
+    game_id: i64,
+    game_type: i16,
+) -> Result<(usize, usize), crate::AnyError> {
+    super::attempts::track(
+        pool,
+        "official_games",
+        &game_id.to_string(),
+        load_one_inner(pool, game_id, game_type),
+    )
+    .await
+}
+
 /// Load one game, or every completed game in an inclusive calendar-date range.
 pub async fn run_official_games(
     pool: &sqlx::PgPool,
@@ -30,9 +44,12 @@ pub async fn run_official_games(
     from: Option<time::Date>,
     to: Option<time::Date>,
 ) -> Result<OfficialGamesSummary, crate::AnyError> {
+    if from.zip(to).is_some_and(|(start, end)| start > end) {
+        return Err("official audit start date must not follow end date".into());
+    }
     let candidates: Vec<(i64, i16)> = if let Some(game_id) = game_id {
         sqlx::query_as::<_, (i64, i16)>(
-            "SELECT game_id, game_type FROM games WHERE game_id = $1 AND game_state IN ('OFF','OVER','FINAL')",
+            "SELECT game_id, game_type FROM games WHERE game_id = $1 AND game_state IN ('OFF','OVER','FINAL') AND game_type IN (2,3)",
         )
         .bind(game_id)
         .fetch_all(pool)
@@ -56,6 +73,33 @@ pub async fn run_official_games(
         return Err("game does not exist or is not complete".into());
     }
 
+    load_candidates(pool, candidates).await
+}
+
+/// Sync retries unsuccessful observations even after they leave the audit window.
+pub async fn query_sync_candidates(
+    pool: &sqlx::PgPool,
+    from: time::Date,
+) -> Result<Vec<(i64, i16)>, sqlx::Error> {
+    sqlx::query_as(r#"SELECT g.game_id, g.game_type FROM games g
+        WHERE g.game_state IN ('OFF','OVER','FINAL') AND g.game_type IN (2,3)
+        AND (g.game_date >= $1 OR
+            (SELECT a.outcome FROM ingestion.attempts a WHERE a.dataset = 'official_games'
+             AND a.entity_key = g.game_id::text ORDER BY a.attempt_id DESC LIMIT 1) IN ('failed','running'))
+        ORDER BY g.game_date, g.game_id"#).bind(from).fetch_all(pool).await
+}
+
+pub async fn sync_official_games(
+    pool: &sqlx::PgPool,
+    from: time::Date,
+) -> Result<OfficialGamesSummary, crate::AnyError> {
+    load_candidates(pool, query_sync_candidates(pool, from).await?).await
+}
+
+async fn load_candidates(
+    pool: &sqlx::PgPool,
+    candidates: Vec<(i64, i16)>,
+) -> Result<OfficialGamesSummary, crate::AnyError> {
     let semaphore = Arc::new(Semaphore::new(5));
     let mut tasks = JoinSet::new();
     for (game_id, game_type) in candidates.iter().copied() {

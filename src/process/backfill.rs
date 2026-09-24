@@ -22,7 +22,7 @@ pub async fn seed_backfill_progress_with_refresh(
          SELECT game_id, season, 'pending'
          FROM games
          WHERE ($1::integer IS NULL OR season = $1::integer)
-           AND game_state NOT IN ('FUT', 'PRE')
+           AND game_state IN ('OFF', 'OVER', 'FINAL')
          ON CONFLICT (game_id) DO UPDATE
          SET status = CASE WHEN $2::boolean THEN 'pending' ELSE backfill_progress.status END,
              error_message = CASE WHEN $2::boolean THEN NULL ELSE backfill_progress.error_message END,
@@ -113,7 +113,7 @@ pub async fn query_pending_games(
          JOIN teams at_ ON at_.team_id = g.away_team_id
          WHERE ($1::integer IS NULL OR bp.season = $1)
            AND bp.status NOT IN ('done', 'skipped')
-           AND g.game_state NOT IN ('FUT', 'PRE')
+           AND g.game_state IN ('OFF', 'OVER', 'FINAL')
          ORDER BY bp.season ASC, bp.game_id ASC",
         season_filter
     )
@@ -124,13 +124,26 @@ pub async fn query_pending_games(
 
 /// Fetch, transform, and load all events for one game.
 /// Called inside a JoinSet task — errors are captured, not propagated.
-/// Returns the total event count (sum of all event type counts) on success.
-pub async fn load_one_game(
+/// Returns the number of parent events written.
+async fn load_one_game_inner(
     pool: &sqlx::PgPool,
     game_id: i64,
     team_id_map: &std::collections::HashMap<i64, i64>,
 ) -> Result<usize, crate::AnyError> {
     let pbp = crate::fetchers::events::fetch_play_by_play(game_id).await?;
+    if pbp.plays.is_empty() {
+        return Err("empty play-by-play response; previous snapshot preserved".into());
+    }
+    let (home, away): (i64, i64) =
+        sqlx::query_as("SELECT home_team_id, away_team_id FROM games WHERE game_id=$1")
+            .bind(game_id)
+            .fetch_one(pool)
+            .await?;
+    if team_id_map.get(&pbp.home_team.id) != Some(&home)
+        || team_id_map.get(&pbp.away_team.id) != Some(&away)
+    {
+        return Err("play-by-play matchup disagrees with stored game".into());
+    }
     let goal_strengths = if crate::fetchers::events::needs_goal_strengths(&pbp) {
         crate::fetchers::events::fetch_goal_strengths(game_id).await?
     } else {
@@ -146,13 +159,43 @@ pub async fn load_one_game(
             &goal_strengths,
             &report_strengths,
         );
-    // skip_warnings are swallowed in batch mode (volume too high for per-game warnings)
-    let _ = skip_warnings;
-    let (ec, gc, sc, hc, bc, pc, fc) = crate::loaders::events::upsert_game_events(
+    crate::provenance::record_warnings("event_normalization", &skip_warnings).await?;
+    if game_id / 1_000_000 >= 2009 && !skip_warnings.is_empty() {
+        return Err(format!(
+            "game {game_id}: {} normalization warnings; snapshot rejected: {}",
+            skip_warnings.len(),
+            skip_warnings
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("; ")
+        )
+        .into());
+    }
+    if pbp.id != game_id {
+        return Err("play-by-play game identity mismatch".into());
+    }
+    let (ec, _, _, _, _, _, _) = crate::loaders::events::upsert_game_events(
         pool, game_id, &events, &goals, &shots, &hits, &blocks, &penalties, &faceoffs,
     )
     .await?;
-    Ok(ec + gc + sc + hc + bc + pc + fc)
+    Ok(ec)
+}
+
+/// Fetch and replace one game while recording failures independently of data writes.
+pub async fn load_one_game(
+    pool: &sqlx::PgPool,
+    game_id: i64,
+    team_id_map: &std::collections::HashMap<i64, i64>,
+) -> Result<usize, crate::AnyError> {
+    super::attempts::track(
+        pool,
+        "events",
+        &game_id.to_string(),
+        load_one_game_inner(pool, game_id, team_id_map),
+    )
+    .await
 }
 
 /// Result type for a single backfill game task spawned in the JoinSet.
@@ -236,6 +279,7 @@ pub async fn run_backfill_with_refresh(
 
     let mut total_done = 0usize;
     let mut total_failed = 0usize;
+    let mut checkpoint_errors = Vec::new();
     let mut total_skipped = 0usize;
 
     let backfill_start = std::time::Instant::now();
@@ -270,6 +314,7 @@ pub async fn run_backfill_with_refresh(
                 update_progress_status(pool, game_id, "done")
                     .await
                     .unwrap_or_else(|e| {
+                        checkpoint_errors.push(format!("game {game_id}: {e}"));
                         pb.suspend(|| {
                             eprintln!("warn: checkpoint update failed for game {game_id}: {e}")
                         })
@@ -287,6 +332,7 @@ pub async fn run_backfill_with_refresh(
                     update_progress_with_error(pool, game_id, "skipped", &e.to_string())
                         .await
                         .unwrap_or_else(|e2| {
+                            checkpoint_errors.push(format!("game {game_id}: {e2}"));
                             pb.suspend(|| {
                                 eprintln!("warn: checkpoint update failed for game {game_id}: {e2}")
                             })
@@ -301,6 +347,7 @@ pub async fn run_backfill_with_refresh(
                     update_progress_with_error(pool, game_id, "failed", &e.to_string())
                         .await
                         .unwrap_or_else(|e2| {
+                            checkpoint_errors.push(format!("game {game_id}: {e2}"));
                             pb.suspend(|| {
                                 eprintln!("warn: checkpoint update failed for game {game_id}: {e2}")
                             })
@@ -347,20 +394,30 @@ pub async fn run_backfill_with_refresh(
         elapsed.as_secs_f64()
     );
 
-    // Gap repair: fetch any player IDs present in event tables but absent from players.
-    // Catches retired/AHL players that slipped through enumerate_player_ids, including
-    // historical players like Sergei Kostitsyn (20072008-20122013) already written to goals.
-    match crate::fetchers::players::repair_missing_players(pool).await {
-        Ok(0) => {}
-        Ok(n) => println!("repair: inserted {n} previously-missing players"),
-        Err(e) => eprintln!("warn: repair_missing_players failed (non-fatal): {e}"),
-    }
+    let repair_result = super::attempts::track(
+        pool,
+        "player_repair",
+        "archive",
+        crate::fetchers::players::repair_missing_players(pool),
+    )
+    .await;
 
     // Any game touched moves the health snapshot, including one that only
     // recorded a failure.
     if total_processed > 0 {
-        crate::process::analytics::refresh_derived(pool).await;
+        crate::process::analytics::refresh_derived(pool).await?;
     }
 
+    repair_result?;
+    if !checkpoint_errors.is_empty() {
+        return Err(format!(
+            "checkpoint updates failed: {}",
+            checkpoint_errors.join("; ")
+        )
+        .into());
+    }
+    if total_failed > 0 {
+        return Err(format!("{total_failed} event backfills failed").into());
+    }
     Ok(())
 }

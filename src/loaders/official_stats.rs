@@ -45,6 +45,8 @@ pub async fn upsert_skater_seasons(
     let faceoff: Vec<Option<f64>> = records.iter().map(|r| r.faceoff_win_pct).collect();
     let toi: Vec<Option<f64>> = records.iter().map(|r| r.time_on_ice_per_game).collect();
 
+    let mut tx = pool.begin().await?;
+    crate::provenance::set_transaction(&mut tx).await?;
     sqlx::query(
         r#"
         INSERT INTO analytics.official_skater_seasons
@@ -112,9 +114,10 @@ pub async fn upsert_skater_seasons(
     .bind(&ppg)
     .bind(&faceoff)
     .bind(&toi)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(records.len())
 }
 
@@ -154,6 +157,8 @@ pub async fn upsert_goalie_seasons(
     let points: Vec<Option<i32>> = records.iter().map(|r| r.points).collect();
     let pim: Vec<Option<i32>> = records.iter().map(|r| r.penalty_minutes).collect();
 
+    let mut tx = pool.begin().await?;
+    crate::provenance::set_transaction(&mut tx).await?;
     sqlx::query(
         r#"
         INSERT INTO analytics.official_goalie_seasons
@@ -213,8 +218,9 @@ pub async fn upsert_goalie_seasons(
     .bind(&assists)
     .bind(&points)
     .bind(&pim)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(records.len())
 }

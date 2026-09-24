@@ -1,5 +1,6 @@
 //! High-level ETL process orchestrators: backfill, sync, daemon, and status.
 pub mod analytics;
+pub mod attempts;
 pub mod backfill;
 pub mod daemon;
 pub mod official_games;

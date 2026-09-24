@@ -275,10 +275,7 @@ async fn enumerate_player_ids_and_rosters(
             );
             Some(observation)
         }
-        Err(error) => {
-            eprintln!("warn: active team fetch failed, skipping roster source: {error}");
-            None
-        }
+        Err(error) => return Err(error),
     };
 
     // Source 2: stats summaries for all seasons that have game data (regular season + playoffs).
@@ -297,10 +294,10 @@ async fn enumerate_player_ids_and_rosters(
             for entity in ["skater", "goalie"] {
                 for game_type in [2u8, 3u8] {
                     match fetch_stats_player_ids(entity, game_type, season_id).await {
-                        Ok(ids) => { all_ids.extend(ids); }
-                        Err(e) => eprintln!(
-                            "warn: stats player ids failed for {entity} type {game_type} season {season_id}: {e}"
-                        ),
+                        Ok(ids) => {
+                            all_ids.extend(ids);
+                        }
+                        Err(e) => return Err(e),
                     }
                     stats_done += 1;
                     if stats_done.is_multiple_of(8) || stats_done == stats_total {
@@ -376,36 +373,36 @@ fn landing_to_db(landing: PlayerLanding) -> DbPlayer {
 }
 
 /// Concurrently fetch all player landing pages (bounded at MAX_CONCURRENT_PLAYERS).
-pub async fn fetch_all_players(player_ids: Vec<i64>, pb: &ProgressBar) -> Vec<DbPlayer> {
+pub async fn fetch_all_players(
+    player_ids: Vec<i64>,
+    pb: &ProgressBar,
+) -> Result<Vec<DbPlayer>, AnyError> {
     let sem = Arc::new(Semaphore::new(MAX_CONCURRENT_PLAYERS));
-    let mut join_set: JoinSet<Option<DbPlayer>> = JoinSet::new();
+    let mut join_set: JoinSet<Result<Option<DbPlayer>, ApiError>> = JoinSet::new();
 
     for id in player_ids {
         let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
-        join_set.spawn(async move {
+        join_set.spawn(crate::provenance::inherit(async move {
             let _permit = permit; // released when task completes
             match fetch_player_landing(id).await {
-                Ok(landing) => Some(landing_to_db(landing)),
+                Ok(landing) => Ok(Some(landing_to_db(landing))),
                 Err(ApiError::NotFound) => {
                     eprintln!("warn: player {id} not found, skipping");
-                    None
+                    Ok(None)
                 }
-                Err(e) => {
-                    eprintln!("warn: player {id} error: {e}, skipping");
-                    None
-                }
+                Err(e) => Err(e),
             }
-        });
+        }));
     }
 
     let mut results = Vec::new();
     while let Some(outcome) = join_set.join_next().await {
         pb.inc(1);
-        if let Ok(Some(player)) = outcome {
+        if let Some(player) = outcome?? {
             results.push(player);
         }
     }
-    results
+    Ok(results)
 }
 
 /// Find all player IDs referenced in any event child table but absent from the players table,
@@ -473,7 +470,7 @@ pub async fn repair_missing_players(pool: &sqlx::PgPool) -> Result<usize, AnyErr
     eprintln!("repair: found {count} player IDs in event tables with no players row — fetching");
 
     let pb = crate::ui::make_progress_bar(count as u64, "missing players");
-    let records = fetch_all_players(missing_ids, &pb).await;
+    let records = fetch_all_players(missing_ids, &pb).await?;
     pb.finish_with_message(format!("Repaired {} missing players", records.len()));
 
     crate::loaders::players::upsert_players(pool, &records).await?;
@@ -492,20 +489,14 @@ pub struct PlayerFetchResult {
 }
 
 pub async fn fetch_players(pool: &sqlx::PgPool) -> Result<PlayerFetchResult, AnyError> {
-    let seasons = match query_seasons_in_db(pool).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("warn: could not query seasons from DB, player enumeration will use roster-only source: {e}");
-            vec![]
-        }
-    };
+    let seasons = query_seasons_in_db(pool).await?;
 
     let (player_ids, current_rosters) = enumerate_player_ids_and_rosters(&seasons).await?;
     let total = player_ids.len() as u64;
 
     let pb = crate::ui::make_progress_bar(total, "players");
 
-    let records = fetch_all_players(player_ids, &pb).await;
+    let records = fetch_all_players(player_ids, &pb).await?;
     pb.finish_with_message(format!("Fetched {} players", records.len()));
 
     Ok(PlayerFetchResult {

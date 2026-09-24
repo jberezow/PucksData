@@ -7,6 +7,7 @@ pub async fn upsert_team_identities(
     records: &[crate::fetchers::teams::TeamIdentity],
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
+    crate::provenance::set_transaction(&mut tx).await?;
     for row in records {
         let Some(franchise_id) = row.franchise_id else {
             continue;
@@ -34,6 +35,8 @@ pub async fn upsert_teams(
     records: &[DbTeam],
     pb: &indicatif::ProgressBar,
 ) -> Result<usize, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    crate::provenance::set_transaction(&mut tx).await?;
     for record in records {
         sqlx::query!(
             r#"
@@ -51,10 +54,11 @@ pub async fn upsert_teams(
             record.place_name,
             record.abbrev,
         )
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
         pb.suspend(|| println!("{}", record.abbrev));
         pb.inc(1);
     }
+    tx.commit().await?;
     Ok(records.len())
 }

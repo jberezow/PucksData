@@ -60,6 +60,8 @@ pub async fn upsert_games(
     let home_scores: Vec<Option<i16>> = games.iter().map(|g| g.home_score).collect();
     let away_scores: Vec<Option<i16>> = games.iter().map(|g| g.away_score).collect();
 
+    let mut tx = pool.begin().await?;
+    crate::provenance::set_transaction(&mut tx).await?;
     sqlx::query!(
         r#"
             INSERT INTO games
@@ -73,15 +75,15 @@ pub async fn upsert_games(
             ON CONFLICT (game_id) DO UPDATE SET
                 season         = EXCLUDED.season,
                 game_date      = EXCLUDED.game_date,
-                start_time_utc = EXCLUDED.start_time_utc,
+                start_time_utc = COALESCE(EXCLUDED.start_time_utc, games.start_time_utc),
                 home_team_id   = EXCLUDED.home_team_id,
                 away_team_id   = EXCLUDED.away_team_id,
                 game_type      = EXCLUDED.game_type,
-                venue          = EXCLUDED.venue,
-                venue_location = EXCLUDED.venue_location,
-                game_state     = EXCLUDED.game_state,
-                home_score     = EXCLUDED.home_score,
-                away_score     = EXCLUDED.away_score
+                venue          = COALESCE(EXCLUDED.venue, games.venue),
+                venue_location = COALESCE(EXCLUDED.venue_location, games.venue_location),
+                game_state     = COALESCE(EXCLUDED.game_state, games.game_state),
+                home_score     = COALESCE(EXCLUDED.home_score, games.home_score),
+                away_score     = COALESCE(EXCLUDED.away_score, games.away_score)
             "#,
         &game_ids,
         &seasons,
@@ -96,12 +98,13 @@ pub async fn upsert_games(
         &home_scores as &[Option<i16>],
         &away_scores as &[Option<i16>],
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     for g in records {
         pb.suspend(|| println!("{}  game {}", g.game_date, g.game_id));
         pb.inc(1);
     }
+    tx.commit().await?;
     Ok(records.len())
 }

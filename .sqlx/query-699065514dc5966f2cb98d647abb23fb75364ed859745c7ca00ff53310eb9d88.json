@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bp.game_id, bp.season,\n                g.game_date,\n                ht.abbrev AS home_abbrev,\n                at_.abbrev AS away_abbrev\n         FROM backfill_progress bp\n         JOIN games g ON g.game_id = bp.game_id\n         JOIN teams ht ON ht.team_id = g.home_team_id\n         JOIN teams at_ ON at_.team_id = g.away_team_id\n         WHERE ($1::integer IS NULL OR bp.season = $1)\n           AND bp.status NOT IN ('done', 'skipped')\n           AND g.game_state IN ('OFF', 'OVER', 'FINAL')\n         ORDER BY bp.season ASC, bp.game_id ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "game_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "backfill_progress",
+            "name": "game_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "season",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "backfill_progress",
+            "name": "season"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "game_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "games",
+            "name": "game_date"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "home_abbrev",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teams",
+            "name": "abbrev"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "away_abbrev",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "teams",
+            "name": "abbrev"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "699065514dc5966f2cb98d647abb23fb75364ed859745c7ca00ff53310eb9d88"
+}

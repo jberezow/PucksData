@@ -6,6 +6,7 @@ pub mod loaders;
 pub mod models;
 pub mod on_ice;
 pub mod process;
+pub mod provenance;
 pub mod ui;
 
 /// Convenience alias for a heap-allocated thread-safe error type.

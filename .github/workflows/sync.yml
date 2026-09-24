@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       audit_days:
-        description: Days of completed official game stats to reload
+        description: Days of completed events and official game stats to audit
         required: false
         default: "3"
 
@@ -42,20 +42,14 @@ jobs:
         id: build
         run: cargo build --release --bin pucksdata
 
-      - name: Synchronize database
-        run: target/release/pucksdata sync
-
-      - name: Load and audit official player-game statistics
+      - name: Synchronize and audit recent corrections
         env:
-          REQUESTED_AUDIT_DAYS: ${{ inputs.audit_days }}
+          PUCKSDATA_CORRECTION_DAYS: ${{ inputs.audit_days }}
         run: |
-          audit_days="${REQUESTED_AUDIT_DAYS:-3}"
-          if [[ -z "$REQUESTED_AUDIT_DAYS" && "$(date -u +%u)" == "7" ]]; then
-            audit_days=14
+          if [[ -z "$PUCKSDATA_CORRECTION_DAYS" ]]; then
+            unset PUCKSDATA_CORRECTION_DAYS
           fi
-          from_date="$(date -u -d "${audit_days} days ago" +%F)"
-          target/release/pucksdata fetch official-game-stats --from "$from_date"
-          echo "Official player-game audit window: ${from_date} through today" >> "$GITHUB_STEP_SUMMARY"
+          target/release/pucksdata sync
 
       - name: Collect database health
         id: health
@@ -69,7 +63,8 @@ jobs:
         if: always() && steps.health.outputs.report == 'true'
         run: |
           status=$(jq -r '
-            if .summary.healthy then "healthy"
+            if (.ingestion_issues | length) > 0 then "attention required"
+            elif .summary.healthy then "healthy"
             elif .summary.actionable_gap_games == 0
               and .summary.goals_missing_shots == 0
               and .summary.backfill_failed == 0

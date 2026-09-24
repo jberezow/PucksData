@@ -34,22 +34,19 @@ The pipeline provides:
 - Typed NHL player-shift rows, loaded one season at a time
 - Idempotent bulk upserts and transactional event writes
 - Resumable historical backfills with per-game progress tracking
-- Incremental completed-game synchronization
+- Completed-game gap repair and recent correction audits
+- Prospective source capture, normalized revisions, and recorded ingestion outcomes
 - Scheduled daemon mode with advisory locking and graceful shutdown
 - Per-season health reporting and automated gap remediation
 - SQLx offline metadata and a non-root Docker runtime
 
-## Validated dataset
+## Coverage
 
-A populated PucksData database was audited in August 2026 against the NHL API:
-
-- Complete 2025–26 NHL club inventory: 104 preseason, 1,312 regular-season, and 105 playoff records
-- 100% event coverage for every completed 2025–26 regular-season and playoff game
-- 470,142 play-by-play events across 1,498 played club games
-- Exact reconciliation between event types and typed child tables
-- Zero goals missing their corresponding shots row
-
-The API also lists 30 `game_type = 9` international games for February 2026. Those national-team games are intentionally outside the NHL-franchise schema.
+Coverage depends on the statistic, season, and source. Scheduled game inventory
+includes unplayed games, so it is not a denominator for completed-game event
+coverage. Use `pucksdata status` and `analytics.coverage_observed` against your
+database for current counts; consult `analytics.coverage` for known source limits.
+International and national-team games are outside the NHL-franchise schema.
 
 ## Prerequisites
 
@@ -88,7 +85,8 @@ SYNC_INTERVAL_SECS=21600
 for local development. Hosted deployments should use a schema-owner connection
 for migrations and a restricted ingestion connection at runtime.
 
-Apply the schema and build the binary:
+For existing deployments, follow the [migration 0034 rollout](docs/ingestion-history.md#rollout)
+before starting the updated runtime. For a new database, apply the schema and build:
 
 ```bash
 ./scripts/run-migrations.sh
@@ -169,12 +167,23 @@ ingested event snapshots. A season is required for this operation.
 
 ### `sync`
 
-Refresh entity metadata, find completed games without events, and ingest the gaps:
+Refresh entity metadata, fill completed-game event gaps, and re-fetch recent
+events and official player/game statistics for corrections:
 
 ```bash
 pucksdata sync
 pucksdata sync --from 2026-01-01
 ```
+
+Both one-shot sync and the daemon use a trailing three-day correction window,
+expanded to fourteen days on Sundays (UTC). `PUCKSDATA_CORRECTION_DAYS` overrides
+this with a value from 1 to 366. `--from` explicitly replays eligible completed
+games from that date, including games that already have events. Failed event
+attempts remain eligible for retry. Partial or failed syncs exit unsuccessfully
+and do not advance the last-success timestamp.
+
+See [ingestion history](docs/ingestion-history.md) for rollout, freshness queries,
+historical snapshots, and the downstream correction contract.
 
 ### `daemon`
 
@@ -186,11 +195,16 @@ pucksdata daemon --interval-secs 3600
 pucksdata daemon --backfill-on-start
 ```
 
-Only one daemon can hold the PostgreSQL advisory lock at a time. SIGTERM and Ctrl-C abort the current idempotent operation and exit cleanly.
+Only one daemon can hold its PostgreSQL advisory lock at a time. All mutating
+commands also share a pooler-safe writer lease through fetch and commit. Runtime
+pools need at least two connections for CLI writes and three for the daemon
+(default: five). SIGTERM and Ctrl-C abort the current idempotent operation and
+exit cleanly.
 
 ### `status`
 
-Report game counts, event coverage, goals-in-shots consistency, and backfill state by season. An unhealthy result exits with status code 1, making this command suitable for monitoring.
+Report game counts, event coverage, goals-in-shots consistency, backfill state,
+and recent ingestion issues. An unhealthy result exits with status code 1, making this command suitable for monitoring.
 
 ```bash
 pucksdata status
@@ -247,7 +261,8 @@ The table preserves source IDs, period, shift number, event number, detail code,
 optional descriptions, and the original clock strings alongside nullable parsed
 seconds. NHL team IDs are not translated to franchise IDs. Source event numbers
 are not assumed to identify play-by-play events. Names, team display metadata,
-and the JSON source object are not stored.
+and the JSON source object are not stored in `public.shifts`. Successful HTTP
+response bodies are retained separately by the ingestion history layer.
 
 Ingestion verifies response completeness, field types, and game identity before
 atomically replacing a game. It preserves inconsistent intervals for later
@@ -262,16 +277,16 @@ the column does not immediately reclaim the existing table's disk space.
 
 PucksData does not need to run continuously during the offseason.
 
-1. During September, load the upcoming schedule explicitly because automatic season rollover occurs in October:
+1. Sync refreshes both the current and upcoming season schedules during September.
+   To load another season explicitly:
 
    ```bash
    pucksdata fetch games --season 20262027
    ```
 
 2. Run the daemon during the season. Six-hour intervals suit current-data applications; daily syncs are sufficient for general analysis.
-   The scheduled workflow also reloads official player/game statistics for the
-   last three days. On Sundays it audits the trailing fourteen days so later
-   NHL corrections advance each affected row's source revision.
+   The daemon and scheduled workflow share the same event and official-stat
+   correction policy described above. Shift backfills remain separately operated.
 3. After the Stanley Cup Final, run one final sync and health check:
 
    ```bash
@@ -345,7 +360,8 @@ The migrations create:
 - Current roster observations: `roster_snapshots`, `roster_memberships`, and `analytics.current_rosters`
 - A shared `events` parent table
 - Event detail tables: `goals`, `shots`, `hits`, `blocks`, `penalties`, and `faceoffs`
-- Operational tables: `backfill_progress` and `sync_state`
+- Operational tables: `backfill_progress`, `sync_state`, and `ingestion.attempts`
+- Prospective normalized revisions and source documents in `history`, with source observations in `ingestion`
 - Read-only health views in the `observability` schema
 - Dataset coverage metadata and official NHL season totals in the `analytics` schema
 - Official skater and goalie game totals, plus a long-form downstream scoring view, in the `analytics` schema
@@ -381,6 +397,8 @@ decisions, and shutouts. Re-observing an identical row updates its observation
 time without changing `source_revision`; a changed published value advances the
 revision. `analytics.official_player_game_stats` exposes the supported scoring
 facts as a stable long-form contract for downstream applications.
+`analytics.official_player_game_changes` additionally exposes revision-scoped
+changes and retractions; see the [consumer contract](docs/ingestion-history.md#consuming-corrections).
 
 `analytics.skater_physical_season_totals` aggregates hits and blocked shots
 from the event archive. These categories are absent from the NHL season-total
@@ -417,11 +435,7 @@ after migrations that add new views or tables to either schema.
 - Live-game polling is not implemented; synchronization targets completed games.
 - Derived metrics such as expected goals, WAR, and fantasy scoring belong in downstream consumers.
 
-## License
-
-PucksData is available under the [MIT License](LICENSE).
-
-### Shift analytics contract (migration 0032)
+## Shift analytics contract
 
 Migration 0032 adds `nhl_team_identities` and `shift_fetch_status` for read-only
 consumers such as PucksStudio. It does not change `shifts` or require any shift
@@ -432,9 +446,8 @@ IDs in `games` or `teams`.
 
 The latest fetch outcome (`loaded`, `unavailable`, `failed`) is separate from the
 stored snapshot. Successful writes update status in the snapshot transaction;
-empty/failed attempts preserve existing shifts. Older binaries can keep writing
-shifts after this additive migration, but their attempts will not be recorded.
-No historical outcomes are invented. Games without rows remain retryable.
+empty/failed attempts preserve existing shifts. No historical outcomes are
+invented. Games without rows remain retryable.
 
 Apply migration 0032 before running the updated loader. Readers need SELECT on
 `shifts`, `nhl_team_identities` and `shift_fetch_status`; the migration grants these
@@ -442,8 +455,7 @@ to `pucksstudio_read` if that role exists. Other reader roles require an explici
 grant. The coverage contract now advertises raw shifts from 2010–11, without
 claiming that every game or interval is usable for line reconstruction.
 
-
-### Validated on-ice reconstruction (migration 0033)
+## On-ice reconstruction
 
 `pucksdata shifts reconstruct --game ID` derives event lineups with explicit
 boundary ambiguity, source validation and official TOI reconciliation.
@@ -454,3 +466,7 @@ Migration 0033 adds coverage views and metadata only. Existing shifts and events
 stay unchanged, and no backfill needs to be repeated. See the
 [method and commands](docs/on-ice-reconstruction.md) before treating derived
 lineups as reliable inputs to downstream sequence analysis.
+
+## License
+
+PucksData is available under the [MIT License](LICENSE).

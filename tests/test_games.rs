@@ -155,7 +155,10 @@ async fn test_games_batch_upsert() {
     .await
     .unwrap();
     assert_eq!(rows.len(), 3);
-    for (row, expected) in rows.iter().zip([&records[3], &records[1], &records[2]]) {
+    for (row, expected) in rows
+        .iter()
+        .zip([&records[3], &game(9910000002), &records[2]])
+    {
         assert_eq!(row.get::<i64, _>("game_id"), expected.game_id);
         assert_eq!(row.get::<i32, _>("season"), expected.season);
         assert_eq!(row.get::<time::Date, _>("game_date"), expected.game_date);
@@ -236,8 +239,9 @@ async fn test_fetch_idempotency() {
             .progress_chars("=>-"),
     );
 
-    let games_run1 =
-        pucksdata::fetchers::games::fetch_games_for_season_enriched(test_season, &pb).await;
+    let games_run1 = pucksdata::fetchers::games::fetch_games_for_season_enriched(test_season, &pb)
+        .await
+        .unwrap();
     assert!(
         !games_run1.is_empty(),
         "expected at least one game for season {test_season}"
@@ -253,8 +257,9 @@ async fn test_fetch_idempotency() {
             .unwrap()
             .unwrap_or(0);
 
-    let games_run2 =
-        pucksdata::fetchers::games::fetch_games_for_season_enriched(test_season, &pb).await;
+    let games_run2 = pucksdata::fetchers::games::fetch_games_for_season_enriched(test_season, &pb)
+        .await
+        .unwrap();
     pucksdata::loaders::games::upsert_games(pool, &games_run2, &pb)
         .await
         .unwrap();

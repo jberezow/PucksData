@@ -29,7 +29,13 @@ pub async fn upsert_game_events(
     penalties: &[DbPenalty],
     faceoffs: &[DbFaceoff],
 ) -> Result<(usize, usize, usize, usize, usize, usize, usize), sqlx::Error> {
+    if events.iter().any(|event| event.game_id != game_id) {
+        return Err(sqlx::Error::Protocol(
+            "event snapshot contains a foreign game".into(),
+        ));
+    }
     let mut tx = pool.begin().await?;
+    super::history::lock_game(&mut tx, game_id).await?;
 
     if !events.is_empty() {
         sqlx::query(
@@ -432,6 +438,9 @@ pub async fn upsert_game_events(
     let faceoffs_inserted = faceoffs_matched.len();
 
     // Single commit — all events for the game or none (atomic guarantee)
+    if !events.is_empty() {
+        super::history::events(&mut tx, game_id).await?;
+    }
     tx.commit().await?;
 
     Ok((

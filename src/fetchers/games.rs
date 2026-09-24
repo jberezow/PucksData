@@ -105,18 +105,33 @@ pub async fn fetch_games_for_season(season_year: i32) -> Result<Vec<StatsGameRec
     let mut all_games: Vec<StatsGameRecord> = Vec::new();
     let mut start: usize = 0;
     let limit: usize = 500;
+    let mut expected_total = None;
     loop {
         let url = format!(
             "https://api.nhle.com/stats/rest/en/game?limit={limit}&start={start}&sort=id&dir=asc&cayenneExp=season%3D{season_year}"
         );
         let json = fetch_api_json(&url).await?;
         let resp: StatsApiResponse<StatsGameRecord> = serde_json::from_str(&json)?;
+        if resp.total < 0 || expected_total.is_some_and(|total| total != resp.total) {
+            return Err("game catalog changed during pagination; retry required".into());
+        }
+        expected_total = Some(resp.total);
         let batch_len = resp.data.len();
+        if batch_len == 0 && all_games.len() < resp.total as usize {
+            return Err("truncated game catalog".into());
+        }
         all_games.extend(resp.data);
         if batch_len == 0 || all_games.len() >= resp.total as usize {
             break;
         }
         start += limit;
+    }
+    let unique: std::collections::HashSet<_> = all_games.iter().map(|g| g.id).collect();
+    if unique.len() != all_games.len()
+        || all_games.iter().any(|g| g.season != season_year)
+        || all_games.len() != expected_total.unwrap_or(0) as usize
+    {
+        return Err("inconsistent game catalog identity/count".into());
     }
     Ok(all_games)
 }
@@ -155,6 +170,12 @@ pub fn transform_game(
 
     let (start_time_utc, venue, venue_location, game_state) = match boxscore {
         Some(bs) => {
+            if bs.id != stats.id
+                || bs.home_team.id != stats.home_team_id
+                || bs.away_team.id != stats.away_team_id
+            {
+                return Err("boxscore game/team identity mismatch".into());
+            }
             let ts = bs
                 .start_time_utc
                 .as_deref()
@@ -218,27 +239,13 @@ fn is_supported_game_type(game_type: i16) -> bool {
 }
 
 /// Enumerate all games for a season, concurrently fetch their boxscores (10-permit semaphore),
-/// transform and return DbGame records. Individual game errors skip + warn.
+/// transform and return game records. Unexpected failures abort the catalog refresh.
 pub async fn fetch_games_for_season_enriched(
     season_year: i32,
     pb: &indicatif::ProgressBar,
-) -> Vec<DbGame> {
-    let team_id_map = match fetch_team_id_to_franchise_id_map().await {
-        Ok(m) => m,
-        Err(e) => {
-            pb.suspend(|| eprintln!("warn: failed to fetch team ID map: {e}"));
-            return Vec::new();
-        }
-    };
-
-    let mut stats_records = match fetch_games_for_season(season_year).await {
-        Ok(r) => r,
-        Err(e) => {
-            pb.suspend(|| eprintln!("warn: failed to fetch games for season {season_year}: {e}"));
-            return Vec::new();
-        }
-    };
-
+) -> Result<Vec<DbGame>, AnyError> {
+    let team_id_map = fetch_team_id_to_franchise_id_map().await?;
+    let mut stats_records = fetch_games_for_season(season_year).await?;
     let fetched_count = stats_records.len();
     stats_records.retain(|game| is_supported_game_type(game.game_type));
     let unsupported_count = fetched_count - stats_records.len();
@@ -255,44 +262,41 @@ pub async fn fetch_games_for_season_enriched(
 
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_BOXSCORES));
     let team_id_map = std::sync::Arc::new(team_id_map);
-    let mut join_set: tokio::task::JoinSet<(StatsGameRecord, Option<BoxscoreGame>)> =
-        tokio::task::JoinSet::new();
+    let mut join_set: tokio::task::JoinSet<
+        Result<(StatsGameRecord, Option<BoxscoreGame>), ApiError>,
+    > = tokio::task::JoinSet::new();
 
     for stats in stats_records {
         let sem = semaphore.clone();
-        join_set.spawn(async move {
+        join_set.spawn(crate::provenance::inherit(async move {
             let _permit = sem.acquire_owned().await.unwrap();
             let bs = match fetch_game_boxscore(stats.id).await {
                 Ok(b) => Some(b),
                 // 404 is expected for unplayed games (e.g. playoff series that ended
                 // before game 6 or 7). Silently use stats-only data — no warning needed.
                 Err(crate::api::ApiError::NotFound) => None,
-                Err(e) => {
-                    eprintln!(
-                        "warn: boxscore fetch failed for game {}: {e:?}, using stats-only data",
-                        stats.id
-                    );
-                    None
-                }
+                Err(e) => return Err(e),
             };
-            (stats, bs)
-        });
+            Ok((stats, bs))
+        }));
     }
 
     let mut games = Vec::new();
     while let Some(res) = join_set.join_next().await {
         pb.inc(1);
         match res {
-            Ok((stats, bs)) => match transform_game(&stats, bs.as_ref(), &team_id_map) {
+            Ok(Ok((stats, bs))) => match transform_game(&stats, bs.as_ref(), &team_id_map) {
                 Ok(game) => games.push(game),
-                Err(e) => {
-                    pb.suspend(|| eprintln!("warn: transform failed for game {}: {e}", stats.id))
-                }
+                Err(e) if stats.game_type == 1 => pb.suspend(|| {
+                    eprintln!("excluded out-of-scope exhibition game {}: {e}", stats.id)
+                }),
+                Err(e) => return Err(e),
             },
-            Err(e) => pb.suspend(|| eprintln!("warn: task join error: {e}")),
+            Ok(Err(e)) => return Err(e.into()),
+            Err(e) => return Err(e.into()),
         }
     }
-    games
+    Ok(games)
 }
 
 // ── Single game fetch ─────────────────────────────────────────────────────────
@@ -308,7 +312,14 @@ pub async fn fetch_single_game(game_id: i64) -> Result<DbGame, AnyError> {
         .into_iter()
         .next()
         .ok_or_else(|| format!("game {game_id} not found in stats API"))?;
-    let bs = fetch_game_boxscore(game_id).await.ok();
+    if stats.id != game_id {
+        return Err("game catalog returned a different game".into());
+    }
+    let bs = match fetch_game_boxscore(game_id).await {
+        Ok(value) => Some(value),
+        Err(ApiError::NotFound) => None,
+        Err(error) => return Err(error.into()),
+    };
     transform_game(&stats, bs.as_ref(), &team_id_map)
 }
 

@@ -37,30 +37,33 @@ pub async fn refresh_season_health(pool: &sqlx::PgPool) -> Result<(), sqlx::Erro
         .map(|_| ())
 }
 
-/// Rebuild every derived object, reporting failure without failing the caller.
-///
-/// Stale rollups show out-of-date player seasons, physical totals, or dataset
-/// health. Each is worth a warning, but none is a reason to fail a backfill or
-/// sync whose events are already written. Every refresh is attempted even when
-/// an earlier one fails.
-pub async fn refresh_derived(pool: &sqlx::PgPool) {
-    for (label, result) in [
-        (
-            "analytics.player_event_seasons",
-            refresh_player_event_seasons(pool).await,
-        ),
-        (
-            "analytics.skater_physical_season_totals",
-            refresh_skater_physical_season_totals(pool).await,
-        ),
-        (
-            "observability.season_health",
-            refresh_season_health(pool).await,
-        ),
+/// Attempt every refresh and persist each outcome; stale products are a partial
+/// ingestion outcome even though their underlying source writes remain valid.
+pub async fn refresh_derived(pool: &sqlx::PgPool) -> Result<(), crate::AnyError> {
+    let mut failures = Vec::new();
+    for label in [
+        "analytics.player_event_seasons",
+        "analytics.skater_physical_season_totals",
+        "observability.season_health",
     ] {
-        match result {
-            Ok(()) => println!("refreshed {label}"),
-            Err(error) => eprintln!("warn: {label} refresh failed (non-fatal): {error}"),
+        let result = super::attempts::track(pool, "derived", label, async {
+            match label {
+                "analytics.player_event_seasons" => refresh_player_event_seasons(pool).await?,
+                "analytics.skater_physical_season_totals" => {
+                    refresh_skater_physical_season_totals(pool).await?
+                }
+                _ => refresh_season_health(pool).await?,
+            }
+            Ok(())
+        })
+        .await;
+        if let Err(error) = result {
+            failures.push(format!("{label}: {error}"));
         }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; ").into())
     }
 }

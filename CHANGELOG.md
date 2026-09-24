@@ -7,16 +7,36 @@ All notable changes to PucksData are documented here. The project follows
 
 ### Added
 
+- Prospective normalized history for entity records, events, shifts, and official
+  game/season statistics, with content hashes and repeat observations.
+- Source response capture and ingestion attempt outcomes, plus a freshness view.
+- Official player/game correction feed with explicit retractions.
+- Durable transformation diagnostics and ingestion issues in status reports.
 - Added season-scoped ingestion of typed, unnormalized NHL shift-chart rows
   from 2010–11 onward.
 
 ### Changed
 
+- Share recent event and official-stat correction audits between sync and daemon:
+  three days normally, fourteen on Sundays, with configurable and explicit replay windows.
+- Preserve known game metadata when an observation omits enrichment fields.
+- Reject incomplete official game reports before replacing stored snapshots.
+- Propagate partial sync failures and retain the last successful sync timestamp.
+- Retry transient HTTP failures with bounded backoff and `Retry-After` handling.
+- Serialize mutating commands through a pooler-safe writer lease and reject
+  detectably incomplete modern play-by-play snapshots.
 - Replace stored shift source JSON with typed event number, detail code, and
   optional description fields, preserving existing rows through a forward migration.
 - Verify shift response completeness and field types before replacement.
 - Pace shift-chart ingestion conservatively to avoid saturating the NHL Stats
   REST endpoint during season backfills.
+
+### Upgrade notes
+
+Stop old ingestion writers before applying migration 0034, grant the runtime
+access to the new schemas, and deploy the updated binary. History begins with
+new observations; the migration does not manufacture historical knowledge.
+See [ingestion history](docs/ingestion-history.md) for the rollout and contracts.
 
 ## [1.8.0] - 2026-09-22
 
