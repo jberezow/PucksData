@@ -49,8 +49,23 @@ pub async fn fetch_api_text(url: &str) -> Result<String, ApiError> {
     fetch_text_with_client(&CLIENT, url).await
 }
 
+struct RequestTimer {
+    started: std::time::Instant,
+    retry: bool,
+}
+
+impl Drop for RequestTimer {
+    fn drop(&mut self) {
+        crate::provenance::record_http(self.started.elapsed(), self.retry);
+    }
+}
+
 async fn fetch_text_with_client(client: &reqwest::Client, url: &str) -> Result<String, ApiError> {
     for attempt in 0..3u32 {
+        let timer = RequestTimer {
+            started: std::time::Instant::now(),
+            retry: attempt > 0,
+        };
         let response = client.get(url).send().await;
         let mut delay = std::time::Duration::from_millis(500 * (1 << attempt));
         let result = match response {
@@ -95,6 +110,7 @@ async fn fetch_text_with_client(client: &reqwest::Client, url: &str) -> Result<S
             }
             Err(error) => Err(ApiError::NetworkError(error)),
         };
+        drop(timer);
         match result {
             Ok(body) => {
                 crate::provenance::record_response(url, &body)

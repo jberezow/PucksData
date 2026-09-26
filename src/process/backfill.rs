@@ -264,6 +264,7 @@ pub async fn run_backfill_with_refresh(
 
     if total == 0 {
         println!("Backfill complete: 0 games pending (all already done)");
+        crate::process::analytics::refresh_derived(pool).await?;
         return Ok(());
     }
 
@@ -402,11 +403,8 @@ pub async fn run_backfill_with_refresh(
     )
     .await;
 
-    // Any game touched moves the health snapshot, including one that only
-    // recorded a failure.
-    if total_processed > 0 {
-        crate::process::analytics::refresh_derived(pool).await?;
-    }
+    // Also recover refreshes left pending by a previous interrupted command.
+    crate::process::analytics::refresh_derived(pool).await?;
 
     repair_result?;
     if !checkpoint_errors.is_empty() {

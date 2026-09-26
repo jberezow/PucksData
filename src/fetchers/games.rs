@@ -257,8 +257,16 @@ pub async fn fetch_games_for_season_enriched(
         });
     }
 
+    enrich_games(stats_records, team_id_map, pb).await
+}
+
+async fn enrich_games(
+    stats_records: Vec<StatsGameRecord>,
+    team_id_map: HashMap<i64, i64>,
+    pb: &indicatif::ProgressBar,
+) -> Result<Vec<DbGame>, AnyError> {
     pb.set_length(stats_records.len() as u64);
-    pb.set_message(format!("games (season {season_year:08})"));
+    pb.set_message("game enrichment");
 
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_BOXSCORES));
     let team_id_map = std::sync::Arc::new(team_id_map);
@@ -299,6 +307,132 @@ pub async fn fetch_games_for_season_enriched(
     Ok(games)
 }
 
+#[derive(sqlx::FromRow)]
+struct StoredSchedule {
+    game_id: i64,
+    season: i32,
+    game_date: time::Date,
+    home_team_id: i64,
+    away_team_id: i64,
+    game_type: i16,
+    home_score: Option<i16>,
+    away_score: Option<i16>,
+    game_state: Option<String>,
+    checked_at: Option<time::OffsetDateTime>,
+}
+
+fn needs_enrichment(
+    fresh: &DbGame,
+    stored: Option<&StoredSchedule>,
+    audit_from: time::Date,
+    today: time::Date,
+) -> bool {
+    let Some(old) = stored else {
+        return true;
+    };
+    let catalog_changed = (
+        fresh.season,
+        fresh.game_date,
+        fresh.home_team_id,
+        fresh.away_team_id,
+        fresh.game_type,
+        fresh.home_score,
+        fresh.away_score,
+    ) != (
+        old.season,
+        old.game_date,
+        old.home_team_id,
+        old.away_team_id,
+        old.game_type,
+        old.home_score,
+        old.away_score,
+    );
+    let near_game =
+        fresh.game_date >= audit_from && fresh.game_date <= today + time::Duration::days(14);
+    let unresolved = fresh.game_date <= today
+        && !old
+            .game_state
+            .as_deref()
+            .is_some_and(crate::process::sync::is_game_completed)
+        && old.checked_at.is_none_or(|checked| checked.date() < today);
+    catalog_changed || near_game || unresolved
+}
+
+/// Discover the entire catalog, but enrich only changed/new/nearby/unresolved
+/// games plus at most 100 older checks per season. Periodic checks cover fields
+/// absent from the catalog (start time, venue, state), including distant games.
+/// Checkpoints are persisted by the caller only after accepted game writes.
+pub async fn fetch_incremental_games(
+    pool: &sqlx::PgPool,
+    season: i32,
+    audit_from: time::Date,
+    today: time::Date,
+) -> Result<Vec<DbGame>, AnyError> {
+    let map = fetch_team_id_to_franchise_id_map().await?;
+    let stats = fetch_games_for_season(season).await?;
+    let stored: Vec<StoredSchedule> = sqlx::query_as(
+        "SELECT g.game_id,g.season,g.game_date,g.home_team_id,g.away_team_id,
+                g.game_type,g.home_score,g.away_score,g.game_state,c.checked_at
+         FROM games g LEFT JOIN ingestion.schedule_checks c USING(game_id) WHERE g.season=$1",
+    )
+    .bind(season)
+    .fetch_all(pool)
+    .await?;
+    let stored: HashMap<_, _> = stored
+        .into_iter()
+        .map(|game| (game.game_id, game))
+        .collect();
+    let selected = select_enrichment(stats, &map, &stored, audit_from, today)?;
+    enrich_games(selected, map, &indicatif::ProgressBar::hidden()).await
+}
+
+fn select_enrichment(
+    stats: Vec<StatsGameRecord>,
+    map: &HashMap<i64, i64>,
+    stored: &HashMap<i64, StoredSchedule>,
+    audit_from: time::Date,
+    today: time::Date,
+) -> Result<Vec<StatsGameRecord>, AnyError> {
+    let mut immediate = Vec::new();
+    let mut periodic = Vec::new();
+    let catalog_count = stats.len();
+    for record in stats
+        .into_iter()
+        .filter(|s| is_supported_game_type(s.game_type))
+    {
+        let fresh = match transform_game(&record, None, map) {
+            Ok(game) => game,
+            Err(error) if record.game_type == 1 => {
+                eprintln!(
+                    "excluded out-of-scope exhibition game {}: {error}",
+                    record.id
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let old = stored.get(&record.id);
+        if needs_enrichment(&fresh, old, audit_from, today) {
+            immediate.push(record);
+        } else {
+            let checked = old.and_then(|old| old.checked_at);
+            if checked.is_none_or(|checked| checked.date() <= today - time::Duration::days(7)) {
+                periodic.push((checked, record));
+            }
+        }
+    }
+    periodic.sort_by_key(|(checked, record)| (*checked, record.id));
+    let urgent_count = immediate.len();
+    immediate.extend(periodic.into_iter().take(100).map(|(_, record)| record));
+    println!(
+        "[schedule] catalog={catalog_count} immediate={} periodic={} boxscores={}",
+        urgent_count,
+        immediate.len() - urgent_count,
+        immediate.len()
+    );
+    Ok(immediate)
+}
+
 // ── Single game fetch ─────────────────────────────────────────────────────────
 
 /// Fetch a single game by ID (for --game mode). Fetches stats + boxscore and transforms.
@@ -325,7 +459,92 @@ pub async fn fetch_single_game(game_id: i64) -> Result<DbGame, AnyError> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_supported_game_type;
+    use super::*;
+    use time::macros::{date, datetime};
+
+    fn catalog(id: i64, day: &str) -> StatsGameRecord {
+        StatsGameRecord {
+            id,
+            season: 20252026,
+            game_date: day.into(),
+            game_type: 2,
+            home_team_id: 1,
+            away_team_id: 2,
+            home_score: Some(3),
+            away_score: Some(2),
+        }
+    }
+
+    fn stored(stats: &StatsGameRecord) -> StoredSchedule {
+        StoredSchedule {
+            game_id: stats.id,
+            season: stats.season,
+            game_date: time::Date::parse(
+                &stats.game_date,
+                time::macros::format_description!("[year]-[month]-[day]"),
+            )
+            .unwrap(),
+            home_team_id: 11,
+            away_team_id: 22,
+            game_type: stats.game_type,
+            home_score: stats.home_score,
+            away_score: stats.away_score,
+            game_state: Some("OFF".into()),
+            checked_at: Some(datetime!(2026-09-25 12:00 UTC)),
+        }
+    }
+
+    #[test]
+    fn enrichment_keeps_new_changed_recent_upcoming_and_unresolved_games() {
+        let map = HashMap::from([(1, 11), (2, 22)]);
+        let stats = catalog(1, "2026-06-01");
+        let fresh = transform_game(&stats, None, &map).unwrap();
+        let mut old = stored(&stats);
+        let from = date!(2026 - 09 - 23);
+        let today = date!(2026 - 09 - 26);
+        assert!(needs_enrichment(&fresh, None, from, today));
+        assert!(!needs_enrichment(&fresh, Some(&old), from, today));
+        old.home_score = Some(4);
+        assert!(needs_enrichment(&fresh, Some(&old), from, today));
+        old.home_score = fresh.home_score;
+        old.game_state = Some("PPD".into());
+        assert!(needs_enrichment(&fresh, Some(&old), from, today));
+        old.checked_at = Some(datetime!(2026-09-26 01:00 UTC));
+        assert!(!needs_enrichment(&fresh, Some(&old), from, today));
+        for day in ["2026-09-23", "2026-09-26", "2026-10-10"] {
+            let stats = catalog(2, day);
+            let fresh = transform_game(&stats, None, &map).unwrap();
+            assert!(needs_enrichment(&fresh, Some(&stored(&stats)), from, today));
+        }
+    }
+
+    #[test]
+    fn periodic_enrichment_is_bounded_oldest_first_and_does_not_limit_urgent_games() {
+        let map = HashMap::from([(1, 11), (2, 22)]);
+        let mut stats: Vec<_> = (1..=105).map(|id| catalog(id, "2026-12-01")).collect();
+        let mut existing: HashMap<_, _> = stats
+            .iter()
+            .map(|s| {
+                let mut old = stored(s);
+                old.checked_at = None;
+                (s.id, old)
+            })
+            .collect();
+        existing.get_mut(&1).unwrap().checked_at = Some(datetime!(2026-09-01 12:00 UTC));
+        stats.push(catalog(200, "2026-12-01")); // New: does not consume audit budget.
+        let selected = select_enrichment(
+            stats,
+            &map,
+            &existing,
+            date!(2026 - 09 - 23),
+            date!(2026 - 09 - 26),
+        )
+        .unwrap();
+        assert_eq!(selected.len(), 101);
+        assert_eq!(selected[0].id, 200);
+        assert_eq!(selected[1].id, 2); // Never checked precedes even an old check.
+        assert_eq!(selected[100].id, 101);
+    }
 
     #[test]
     fn supported_game_types_exclude_international_games() {

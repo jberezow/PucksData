@@ -285,7 +285,7 @@ async fn enumerate_player_ids_and_rosters(
         // 2 entity types × 2 game types × N seasons
         let stats_total = seasons.len() * 4;
         println!(
-            "  enumerating players: fetching stats pages for {} seasons ({} requests)...",
+            "  enumerating players: fetching stats pages for {} seasons ({} paginated queries)...",
             seasons.len(),
             stats_total
         );
@@ -491,7 +491,13 @@ pub struct PlayerFetchResult {
 pub async fn fetch_players(pool: &sqlx::PgPool) -> Result<PlayerFetchResult, AnyError> {
     let seasons = query_seasons_in_db(pool).await?;
 
-    let (player_ids, current_rosters) = enumerate_player_ids_and_rosters(&seasons).await?;
+    fetch_players_for_seasons(&seasons).await
+}
+
+/// Refresh only the supplied seasons, plus every current roster member.
+/// The full-archive fetch command retains its original behavior.
+pub async fn fetch_players_for_seasons(seasons: &[i32]) -> Result<PlayerFetchResult, AnyError> {
+    let (player_ids, current_rosters) = enumerate_player_ids_and_rosters(seasons).await?;
     let total = player_ids.len() as u64;
 
     let pb = crate::ui::make_progress_bar(total, "players");
