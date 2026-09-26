@@ -41,6 +41,84 @@ and commit, with a heartbeat. Read-only commands remain available. Allow at leas
 two database connections for most CLI ingestion, and three for the daemon or
 CLI shift backfills. The default pool allows five.
 
+## Incremental sync upgrade
+
+Stop ingestion writers, apply migrations 0035 and 0036, grant the following
+permissions to the runtime role, and then deploy the new binary. This also
+applies to an installation that has already completed the 0034 rollout.
+No production migration is applied by the PR or by the scheduled workflow.
+
+```sql
+GRANT SELECT, INSERT, UPDATE ON ingestion.player_audits,
+    ingestion.schedule_checks TO ingestion_role;
+GRANT SELECT, INSERT, DELETE ON ingestion.derived_invalidations TO ingestion_role;
+GRANT USAGE, SELECT ON SEQUENCE ingestion.derived_invalidations_invalidation_id_seq
+    TO ingestion_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ingestion TO ingestion_role;
+```
+
+Dependency triggers execute with the writer's permissions. Apply these grants
+before resuming any writer, including an older binary. Existing history, source
+capture, schema-usage and materialized-view refresh permissions remain required.
+The new migration seeds all three derived products as pending, so the first sync
+rebuilds them once even when it finds no new events.
+
+Daily and daemon syncs now use the following policy:
+
+- Player discovery includes current rosters and current-season regular/playoff
+  stats, with both outgoing and incoming seasons in September. Each run also
+  audits up to four historical seasons, oldest successful audit first, excluding
+  seasons audited in the last 30 days. IDs are deduplicated before profile fetches.
+  At one successful run per day the existing archive is audited in roughly a
+  month. Failed player/roster refreshes do not advance audit checkpoints; a completed
+  player phase can checkpoint even if a later sync phase fails. The explicit
+  `fetch players` command still refreshes the entire archive, and event-based
+  missing-player repair remains part of sync.
+- Schedule discovery still reads the complete active-season catalogs. Boxscores
+  are fetched for new games, changed catalog fields, games in the correction
+  window through 14 days ahead, and past games with unresolved states (at most
+  once per UTC day when their catalog is unchanged). Up to 100 additional games
+  per season are audited per run, oldest check first, when unchecked or last
+  checked at least seven days ago. The budget means this is not a seven-day
+  freshness guarantee: a 1,500-game season takes about 15 daily runs to sweep.
+  These checks catch venue, start-time and state changes absent from the catalog.
+  An empty checkpoint table does not force a full refresh of existing games;
+  genuinely new catalogs still require initial enrichment. Explicit game fetches
+  retain full enrichment. Checkpoints follow accepted game writes, so crashes
+  can repeat work but cannot skip an uncommitted replacement.
+- Derived products refresh only after relevant committed dependency writes or
+  a failed/interrupted refresh. Dependency invalidations are recorded in the
+  same transaction as those writes. Rollbacks leave no invalidation, and only
+  invalidations visible before a successful refresh are acknowledged. This
+  preserves newer or late-committing writes, and allows a later zero-work sync
+  or backfill to repair an interrupted refresh. No-op schedule updates and
+  unrelated player/shift writes do not invalidate the three existing products.
+- Event and official-game correction windows, failed-game retries, complete
+  roster requirements, source observations and normalized history guarantees
+  are unchanged. Source capture uses one atomic SQL statement per response;
+  duplicate bodies still produce separate timestamped observations.
+
+The scheduled job has a 60-minute limit for rollout headroom. This is a safety
+margin, not a runtime target. Compare several normal and Sunday runs before
+reducing it again. Source capture concurrency and the database pool size are
+unchanged; tune them only if timing evidence shows sustained contention.
+
+### Runtime measurements
+
+`[phase]` lines identify dataset, entity and attempt. `[timing]` lines report
+elapsed seconds, actual HTTP request/retry counts, HTTP worker milliseconds,
+source-capture SQL worker milliseconds and source-capture pool-wait milliseconds.
+Worker times sum concurrent operations and can exceed wall time. Each attempt
+reports its own work; a parent does not double-count nested attempt metrics.
+Player upserts and schedule writes also log elapsed seconds. Schedule logs show
+catalog size, immediate selections, periodic selections and boxscore requests;
+derived logs explicitly report skipped products.
+
+Compare these phase measurements with the September 24 timeout and subsequent
+successful runs. Do not treat the reduced request counts as a measured runtime
+speedup: NHL and database latency still vary, initial catalogs need more work,
+and Sundays audit more completed games.
+
 ## Failure and refresh behavior
 
 `sync`, daemon syncs, and the scheduled workflow use one correction policy:

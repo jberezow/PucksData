@@ -17,6 +17,16 @@ All notable changes to PucksData are documented here. The project follows
 
 ### Changed
 
+- Bound daily player discovery to active seasons plus four rotating historical
+  audits, while retaining the explicit full-archive player fetch.
+- Selectively enrich schedules with a bounded audit for older metadata changes.
+- Persist derived-product invalidations transactionally and recover interrupted
+  refreshes even when a later sync has no new games.
+- Capture source documents and observations in one atomic SQL statement, and
+  log HTTP, capture, pool-wait and phase timings.
+- Select correction retries from the latest attempts in one set-based query.
+- Temporarily allow 60 minutes for the scheduled sync during rollout.
+
 - Share recent event and official-stat correction audits between sync and daemon:
   three days normally, fourteen on Sundays, with configurable and explicit replay windows.
 - Preserve known game metadata when an observation omits enrichment fields.
@@ -36,7 +46,9 @@ All notable changes to PucksData are documented here. The project follows
 Stop old ingestion writers before applying migration 0034, grant the runtime
 access to the new schemas, and deploy the updated binary. History begins with
 new observations; the migration does not manufacture historical knowledge.
-See [ingestion history](docs/ingestion-history.md) for the rollout and contracts.
+Then apply migrations 0035–0036 and their runtime grants before deploying the
+incremental sync. See [ingestion history](docs/ingestion-history.md) for both
+rollout steps, audit cadences and recovery guarantees.
 
 ## [1.8.0] - 2026-09-22
 
