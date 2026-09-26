@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ingestion.backfill_progress WHERE game_id = 9992000010",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "5733405cac4f733c40b7686af720db9c4aa8a5c93babd09a79e71c1d01eb510d"
+}

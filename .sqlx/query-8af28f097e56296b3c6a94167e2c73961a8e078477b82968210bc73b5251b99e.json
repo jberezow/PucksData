@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ingestion.backfill_progress (game_id, season, status)\n         VALUES (9992000010, 99986, 'done')\n         ON CONFLICT (game_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "8af28f097e56296b3c6a94167e2c73961a8e078477b82968210bc73b5251b99e"
+}

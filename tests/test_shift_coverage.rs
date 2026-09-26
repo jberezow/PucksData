@@ -38,7 +38,7 @@ async fn shift_coverage_preserves_zero_counts_status_precedence_and_unsupported_
         (4, "failed"),
         (5, "loaded"),
     ] {
-        sqlx::query("INSERT INTO shift_fetch_status (game_id,status) VALUES ($1,$2)")
+        sqlx::query("INSERT INTO ingestion.shift_fetch_status (game_id,status) VALUES ($1,$2)")
             .bind(ids[index])
             .bind(status)
             .execute(pool)

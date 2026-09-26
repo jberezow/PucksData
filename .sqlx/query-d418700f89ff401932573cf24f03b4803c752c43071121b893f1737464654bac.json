@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ingestion.backfill_progress\n         SET status = $1, updated_at = NOW()\n         WHERE game_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d418700f89ff401932573cf24f03b4803c752c43071121b893f1737464654bac"
+}

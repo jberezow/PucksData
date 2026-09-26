@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT status FROM backfill_progress WHERE game_id = 9992000010",
+  "query": "SELECT status FROM ingestion.backfill_progress WHERE game_id = 9990000006",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "backfill_progress",
+            "table": "ingestion.backfill_progress",
             "name": "status"
           }
         }
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "0da6cb6bb110489fb2da3ecafa7c868c7fa618717805a7840490454a1f980c5d"
+  "hash": "c2b9e2ab3679915bc584dfc22a182bd1b9a60e649dcd527b7a519b5d281d622f"
 }

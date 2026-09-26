@@ -30,23 +30,25 @@ async fn test_backfill_progress_seed_idempotent() {
     pucksdata::process::backfill::seed_backfill_progress(pool, Some(99991))
         .await
         .unwrap();
-    let count1: i64 =
-        sqlx::query_scalar!("SELECT COUNT(*) FROM backfill_progress WHERE season = 99991")
-            .fetch_one(pool)
-            .await
-            .unwrap()
-            .unwrap_or(0);
+    let count1: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM ingestion.backfill_progress WHERE season = 99991"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+    .unwrap_or(0);
     assert_eq!(count1, 2, "first seed should insert 2 rows");
 
     pucksdata::process::backfill::seed_backfill_progress(pool, Some(99991))
         .await
         .unwrap();
-    let count2: i64 =
-        sqlx::query_scalar!("SELECT COUNT(*) FROM backfill_progress WHERE season = 99991")
-            .fetch_one(pool)
-            .await
-            .unwrap()
-            .unwrap_or(0);
+    let count2: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM ingestion.backfill_progress WHERE season = 99991"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+    .unwrap_or(0);
     assert_eq!(count2, 2, "second seed must not duplicate rows");
 
     pucksdata::process::backfill::update_progress_status(pool, 9990000001, "done")
@@ -64,7 +66,7 @@ async fn test_backfill_progress_seed_idempotent() {
         .await
         .unwrap();
     let refreshed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM backfill_progress
+        "SELECT COUNT(*) FROM ingestion.backfill_progress
          WHERE season = 99991 AND status = 'pending' AND error_message IS NULL",
     )
     .fetch_one(pool)
@@ -72,7 +74,7 @@ async fn test_backfill_progress_seed_idempotent() {
     .unwrap();
     assert_eq!(refreshed, 2, "refresh must re-queue the complete season");
 
-    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99991")
+    sqlx::query!("DELETE FROM ingestion.backfill_progress WHERE season = 99991")
         .execute(pool)
         .await
         .unwrap();
@@ -143,7 +145,7 @@ async fn test_backfill_resume_skips_done() {
     );
     assert_eq!(pending_ids.len(), 2, "exactly 2 non-done games expected");
 
-    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99992")
+    sqlx::query!("DELETE FROM ingestion.backfill_progress WHERE season = 99992")
         .execute(pool)
         .await
         .unwrap();
@@ -187,24 +189,26 @@ async fn test_backfill_status_transitions() {
         .await
         .unwrap();
 
-    let status1: String =
-        sqlx::query_scalar!("SELECT status FROM backfill_progress WHERE game_id = 9990000006")
-            .fetch_one(pool)
-            .await
-            .unwrap();
+    let status1: String = sqlx::query_scalar!(
+        "SELECT status FROM ingestion.backfill_progress WHERE game_id = 9990000006"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
     assert_eq!(status1, "pending");
 
     pucksdata::process::backfill::update_progress_status(pool, 9990000006, "done")
         .await
         .unwrap();
-    let status2: String =
-        sqlx::query_scalar!("SELECT status FROM backfill_progress WHERE game_id = 9990000006")
-            .fetch_one(pool)
-            .await
-            .unwrap();
+    let status2: String = sqlx::query_scalar!(
+        "SELECT status FROM ingestion.backfill_progress WHERE game_id = 9990000006"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
     assert_eq!(status2, "done");
 
-    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99993")
+    sqlx::query!("DELETE FROM ingestion.backfill_progress WHERE season = 99993")
         .execute(pool)
         .await
         .unwrap();
@@ -277,7 +281,7 @@ async fn test_query_pending_games_enriched() {
     assert_eq!(second.home_abbrev, "ENH");
     assert_eq!(second.away_abbrev, "ENA");
 
-    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99998")
+    sqlx::query!("DELETE FROM ingestion.backfill_progress WHERE season = 99998")
         .execute(pool)
         .await
         .unwrap();
@@ -331,7 +335,7 @@ async fn test_failed_game_records_error_message() {
     .unwrap();
 
     let row = sqlx::query!(
-        "SELECT status, error_message FROM backfill_progress WHERE game_id = 9990000030"
+        "SELECT status, error_message FROM ingestion.backfill_progress WHERE game_id = 9990000030"
     )
     .fetch_one(pool)
     .await
@@ -344,7 +348,7 @@ async fn test_failed_game_records_error_message() {
         "error_message must be 'HTTP error: 500'"
     );
 
-    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99996")
+    sqlx::query!("DELETE FROM ingestion.backfill_progress WHERE season = 99996")
         .execute(pool)
         .await
         .unwrap();
@@ -435,7 +439,7 @@ async fn test_skipped_game_excluded_from_pending() {
     );
     assert_eq!(pending_ids.len(), 1, "exactly 1 non-terminal game expected");
 
-    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99997")
+    sqlx::query!("DELETE FROM ingestion.backfill_progress WHERE season = 99997")
         .execute(pool)
         .await
         .unwrap();
@@ -524,7 +528,7 @@ async fn test_checkpoint_kill_resume() {
         "exactly 2 games should be pending after checkpoint resume"
     );
 
-    sqlx::query!("DELETE FROM backfill_progress WHERE season = 99999")
+    sqlx::query!("DELETE FROM ingestion.backfill_progress WHERE season = 99999")
         .execute(pool)
         .await
         .unwrap();
@@ -572,23 +576,25 @@ async fn test_backfill_season_scope() {
         .await
         .unwrap();
 
-    let count_94: i64 =
-        sqlx::query_scalar!("SELECT COUNT(*) FROM backfill_progress WHERE season = 99994")
-            .fetch_one(pool)
-            .await
-            .unwrap()
-            .unwrap_or(0);
+    let count_94: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM ingestion.backfill_progress WHERE season = 99994"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+    .unwrap_or(0);
     assert_eq!(count_94, 2, "season 99994 should have 2 rows");
 
-    let count_95: i64 =
-        sqlx::query_scalar!("SELECT COUNT(*) FROM backfill_progress WHERE season = 99995")
-            .fetch_one(pool)
-            .await
-            .unwrap()
-            .unwrap_or(0);
+    let count_95: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM ingestion.backfill_progress WHERE season = 99995"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+    .unwrap_or(0);
     assert_eq!(count_95, 0, "season 99995 should not be seeded");
 
-    sqlx::query!("DELETE FROM backfill_progress WHERE season IN (99994, 99995)")
+    sqlx::query!("DELETE FROM ingestion.backfill_progress WHERE season IN (99994, 99995)")
         .execute(pool)
         .await
         .unwrap();

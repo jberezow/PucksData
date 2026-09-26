@@ -259,3 +259,12 @@ or overlapping polling with idempotency.
 
 PucksPool must adopt this contract downstream to act on retractions. Publishing
 the view does not change its scoring consumer automatically.
+
+## Stable dataset identifiers
+
+Migration 0037 passes an explicit logical dataset name to each entity history
+trigger. Existing dataset names, entity keys and payloads are unchanged, so a
+physical table rename or schema move no longer starts a new revision stream.
+Column renames still require an explicit payload mapping to preserve hashes and
+consumer semantics. See [schema conventions](schema-conventions.md) for the
+0037–0038 rollout and future migration direction.

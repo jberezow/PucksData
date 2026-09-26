@@ -18,7 +18,7 @@ pub async fn seed_backfill_progress_with_refresh(
     refresh: bool,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO backfill_progress (game_id, season, status)
+        "INSERT INTO ingestion.backfill_progress (game_id, season, status)
          SELECT game_id, season, 'pending'
          FROM games
          WHERE ($1::integer IS NULL OR season = $1::integer)
@@ -43,7 +43,7 @@ pub async fn update_progress_status(
     status: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "UPDATE backfill_progress
+        "UPDATE ingestion.backfill_progress
          SET status = $1, updated_at = NOW()
          WHERE game_id = $2",
         status,
@@ -63,7 +63,7 @@ pub async fn update_progress_with_error(
     error_message: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "UPDATE backfill_progress
+        "UPDATE ingestion.backfill_progress
          SET status = $1, error_message = $2, updated_at = NOW()
          WHERE game_id = $3",
         status,
@@ -107,7 +107,7 @@ pub async fn query_pending_games(
                 g.game_date,
                 ht.abbrev AS home_abbrev,
                 at_.abbrev AS away_abbrev
-         FROM backfill_progress bp
+         FROM ingestion.backfill_progress bp
          JOIN games g ON g.game_id = bp.game_id
          JOIN teams ht ON ht.team_id = g.home_team_id
          JOIN teams at_ ON at_.team_id = g.away_team_id

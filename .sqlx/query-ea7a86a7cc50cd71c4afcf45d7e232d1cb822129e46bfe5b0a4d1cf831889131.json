@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT last_sync_games FROM sync_state WHERE key = 'singleton'",
+  "query": "SELECT last_sync_games FROM ingestion.sync_state WHERE key = 'singleton'",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Int4",
         "origin": {
           "Table": {
-            "table": "sync_state",
+            "table": "ingestion.sync_state",
             "name": "last_sync_games"
           }
         }
@@ -22,5 +22,5 @@
       true
     ]
   },
-  "hash": "e1bc99472a600de3fd582ee916fa150697a2903202857d56faf031d97d01a317"
+  "hash": "ea7a86a7cc50cd71c4afcf45d7e232d1cb822129e46bfe5b0a4d1cf831889131"
 }

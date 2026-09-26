@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(*) FROM backfill_progress WHERE season = 99991",
+  "query": "SELECT COUNT(*) FROM ingestion.backfill_progress WHERE season = 99995",
   "describe": {
     "columns": [
       {
@@ -17,5 +17,5 @@
       null
     ]
   },
-  "hash": "34ba3095719b0f0ce4616198eb4418092efca5a8f132d1a03ff70a8ce261f5f9"
+  "hash": "39218aaf9ab01de3ecf29a28d127ed565b83aa0cd2298e7723699056d68d32ad"
 }

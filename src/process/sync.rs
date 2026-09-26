@@ -157,7 +157,7 @@ pub async fn query_sync_candidates_with_window(
             SELECT g.game_id FROM games g
             WHERE $1::date IS NULL
               AND NOT EXISTS (SELECT 1 FROM events e WHERE e.game_id=g.game_id)
-              AND NOT EXISTS (SELECT 1 FROM backfill_progress bp
+              AND NOT EXISTS (SELECT 1 FROM ingestion.backfill_progress bp
                   WHERE bp.game_id=g.game_id AND bp.status IN ('done','skipped'))
             UNION
             SELECT g.game_id FROM games g JOIN latest a ON a.entity_key=g.game_id::text
@@ -245,7 +245,7 @@ pub async fn record_sync_result(
         .bind(id).bind(outcome).bind(error).execute(&mut *tx).await?;
     if let Ok(summary) = result {
         if summary.failed == 0 {
-            sqlx::query("INSERT INTO sync_state(key, last_sync_at, last_sync_games, updated_at)
+            sqlx::query("INSERT INTO ingestion.sync_state(key, last_sync_at, last_sync_games, updated_at)
                 VALUES ('singleton', clock_timestamp(), $1, clock_timestamp())
                 ON CONFLICT(key) DO UPDATE SET last_sync_at=EXCLUDED.last_sync_at, last_sync_games=EXCLUDED.last_sync_games, updated_at=EXCLUDED.updated_at")
                 .bind(summary.processed as i32).execute(&mut *tx).await?;

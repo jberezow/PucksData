@@ -155,7 +155,7 @@ async fn typed_shift_snapshot_replacement_preserves_source_fields_and_rolls_back
         .await
         .unwrap();
     let status: String =
-        sqlx::query_scalar("SELECT status FROM shift_fetch_status WHERE game_id = $1")
+        sqlx::query_scalar("SELECT status FROM ingestion.shift_fetch_status WHERE game_id = $1")
             .bind(GAME_ID)
             .fetch_one(pool)
             .await
@@ -171,7 +171,7 @@ async fn typed_shift_snapshot_replacement_preserves_source_fields_and_rolls_back
         .await
         .unwrap();
     let status: String =
-        sqlx::query_scalar("SELECT status FROM shift_fetch_status WHERE game_id = $1")
+        sqlx::query_scalar("SELECT status FROM ingestion.shift_fetch_status WHERE game_id = $1")
             .bind(GAME_ID)
             .fetch_one(pool)
             .await
