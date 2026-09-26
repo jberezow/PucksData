@@ -442,7 +442,7 @@ after migrations that add new views or tables to either schema.
 ## Shift analytics contract
 
 Migration 0032 adds `nhl_team_identities` and `shift_fetch_status` for read-only
-consumers such as PucksStudio. It does not change `shifts` or require any shift
+consumers. It does not change `shifts` or require any shift
 backfill to be repeated. The identity table is seeded from the NHL team endpoint;
 `pucksdata fetch teams` refreshes the mapping, including new source identities.
 Raw shift team IDs must be resolved through this table before joining franchise
@@ -455,8 +455,9 @@ invented. Games without rows remain retryable.
 
 Apply migration 0032 before running the updated loader. Readers need SELECT on
 `shifts`, `nhl_team_identities` and `shift_fetch_status`; the migration grants these
-to `pucksstudio_read` if that role exists. Other reader roles require an explicit
-grant. The coverage contract now advertises raw shifts from 2010–11, without
+to the legacy reader role if it exists. Other reader roles require an explicit
+grant; verify privileges for the actual role used by each consumer. The coverage
+contract now advertises raw shifts from 2010–11, without
 claiming that every game or interval is usable for line reconstruction.
 
 ## On-ice reconstruction

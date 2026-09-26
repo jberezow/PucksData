@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the 0036 -> latest upgrade and PucksPool reads in a disposable database.
+"""Verify the 0036 -> latest upgrade and Consumer reads in a disposable database.
 
 Uses TEST_DATABASE_URL only as the maintenance connection. Creates its own
 random database/roles, and removes only those resources. Requires createdb,
@@ -15,7 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = json.loads((ROOT / "tests/contracts/puckspool.json").read_text())
+CONTRACT = json.loads((ROOT / "tests/contracts/consumer.json").read_text())
 OPERATIONS = ["backfill_progress", "sync_state", "shift_fetch_status"]
 
 
@@ -62,18 +62,18 @@ def main() -> None:
             "schedule": ["20252026", "'2026-01-01 00:00Z'::timestamptz", "20252026"],
         }
         for name, values in parameters.items():
-            query = (ROOT / f"tests/contracts/puckspool_{name}.sql").read_text()
+            query = (ROOT / f"tests/contracts/consumer_{name}.sql").read_text()
             for value in values:
                 query = query.replace("%s", value, 1)
             if "%s" in query:
-                raise AssertionError(f"Unbound PucksPool query parameter: {name}")
+                raise AssertionError(f"Unbound Consumer query parameter: {name}")
             rows = json.loads(sql(
                 f'SET ROLE "{roles["reader_role"]}"; '
                 "SELECT COALESCE(jsonb_agg(to_jsonb(q) ORDER BY to_jsonb(q)::text),'[]'::jsonb) FROM (\n"
                 + query + "\n) q"
             ))
             if not rows:
-                raise AssertionError(f"PucksPool query fixture returned no rows: {name}")
+                raise AssertionError(f"Consumer query fixture returned no rows: {name}")
             snapshot[f"query:{name}"] = rows
         return snapshot
 
@@ -94,12 +94,12 @@ def main() -> None:
             if int(migration.name.split("_", 1)[0]) > 36:
                 apply(migration, atomic=True)
         if before != reader_snapshot():
-            raise AssertionError("Existing PucksPool or legacy operational read results changed")
+            raise AssertionError("Existing Consumer or legacy operational read results changed")
         for name, oid in oids.items():
             if oid != sql(f"SELECT 'ingestion.{name}'::regclass::oid"):
                 raise AssertionError(f"Operational table identity changed: {name}")
         apply(ROOT / "tests/schema_upgrade/after.sql")
-        print("Schema upgrade passed: PucksPool rows, legacy reader grants, canonical upserts, history continuity, triggers and FK cascades.")
+        print("Schema upgrade passed: Consumer rows, legacy reader grants, canonical upserts, history continuity, triggers and FK cascades.")
     finally:
         if created_database:
             run("dropdb", "--maintenance-db", maintenance, "--force", database)

@@ -1,4 +1,4 @@
--- PucksPool e8edeb9fb7415a7a3c72ad017d3b42ca1e779a9f: api/routes/pools.py
+-- Consumer e8edeb9fb7415a7a3c72ad017d3b42ca1e779a9f: api/routes/pools.py
 SELECT rosters.snapshot_id, rosters.observed_at, rosters.player_id,
        rosters.first_name, rosters.last_name, rosters.team_abbrev,
        rosters.roster_group, rosters.position_code,
