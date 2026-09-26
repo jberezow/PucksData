@@ -126,7 +126,7 @@ async fn test_query_sync_candidates_respects_acknowledged_gaps() {
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO backfill_progress (game_id, season, status)
+        "INSERT INTO ingestion.backfill_progress (game_id, season, status)
          VALUES (9991000006, 99995, 'done')
          ON CONFLICT (game_id) DO UPDATE SET status = EXCLUDED.status",
     )
@@ -139,7 +139,7 @@ async fn test_query_sync_candidates_respects_acknowledged_gaps() {
         .unwrap();
     assert!(!candidates.iter().any(|(id, _)| *id == 9991000006));
 
-    sqlx::query("DELETE FROM backfill_progress WHERE game_id = 9991000006")
+    sqlx::query("DELETE FROM ingestion.backfill_progress WHERE game_id = 9991000006")
         .execute(pool)
         .await
         .unwrap();
@@ -263,7 +263,7 @@ async fn test_sync_state_upsert() {
     }
     let pool = common::test_pool().await;
 
-    sqlx::query!("DELETE FROM sync_state WHERE key = 'singleton'")
+    sqlx::query!("DELETE FROM ingestion.sync_state WHERE key = 'singleton'")
         .execute(pool)
         .await
         .unwrap();
@@ -282,7 +282,7 @@ async fn test_sync_state_upsert() {
     let now = time::OffsetDateTime::now_utc();
     let processed_count: i32 = 3;
     sqlx::query!(
-        r#"INSERT INTO sync_state (key, last_sync_at, last_sync_games, updated_at)
+        r#"INSERT INTO ingestion.sync_state (key, last_sync_at, last_sync_games, updated_at)
        VALUES ('singleton', $1, $2, $1)
        ON CONFLICT (key) DO UPDATE
          SET last_sync_at    = EXCLUDED.last_sync_at,
@@ -296,7 +296,7 @@ async fn test_sync_state_upsert() {
     .unwrap();
 
     let row = sqlx::query!(
-        "SELECT key, last_sync_games, last_sync_at FROM sync_state WHERE key = 'singleton'"
+        "SELECT key, last_sync_games, last_sync_at FROM ingestion.sync_state WHERE key = 'singleton'"
     )
     .fetch_one(pool)
     .await
@@ -316,7 +316,7 @@ async fn test_sync_state_upsert() {
     let now2 = time::OffsetDateTime::now_utc();
     let processed_count2: i32 = 7;
     sqlx::query!(
-        r#"INSERT INTO sync_state (key, last_sync_at, last_sync_games, updated_at)
+        r#"INSERT INTO ingestion.sync_state (key, last_sync_at, last_sync_games, updated_at)
        VALUES ('singleton', $1, $2, $1)
        ON CONFLICT (key) DO UPDATE
          SET last_sync_at    = EXCLUDED.last_sync_at,
@@ -329,17 +329,18 @@ async fn test_sync_state_upsert() {
     .await
     .unwrap();
 
-    let row2 = sqlx::query!("SELECT last_sync_games FROM sync_state WHERE key = 'singleton'")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let row2 =
+        sqlx::query!("SELECT last_sync_games FROM ingestion.sync_state WHERE key = 'singleton'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     assert_eq!(
         row2.last_sync_games,
         Some(7),
         "second upsert must update last_sync_games to 7"
     );
 
-    sqlx::query!("DELETE FROM sync_state WHERE key = 'singleton'")
+    sqlx::query!("DELETE FROM ingestion.sync_state WHERE key = 'singleton'")
         .execute(pool)
         .await
         .unwrap();

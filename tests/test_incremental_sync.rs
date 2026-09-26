@@ -317,7 +317,7 @@ async fn invalidations_follow_committed_dependencies_and_ignore_unchanged_schedu
     .unwrap();
     assert_eq!(count, 0, "zero-row statements leave clean products alone");
     sqlx::query(
-        "INSERT INTO backfill_progress(game_id,season,status) VALUES(9978300000,20252026,'failed')",
+        "INSERT INTO ingestion.backfill_progress(game_id,season,status) VALUES(9978300000,20252026,'failed')",
     )
     .execute(&mut *tx)
     .await

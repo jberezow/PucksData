@@ -10,7 +10,7 @@ type Watermark = (Option<OffsetDateTime>, Option<i32>, OffsetDateTime);
 
 async fn watermark(pool: &PgPool) -> Option<Watermark> {
     sqlx::query_as(
-        "SELECT last_sync_at, last_sync_games, updated_at FROM sync_state WHERE key='singleton'",
+        "SELECT last_sync_at, last_sync_games, updated_at FROM ingestion.sync_state WHERE key='singleton'",
     )
     .fetch_optional(pool)
     .await
@@ -49,7 +49,7 @@ async fn sync_watermark_and_correction_candidates_follow_attempt_outcomes() {
     let pool = common::test_pool().await;
     let previous_watermark = watermark(pool).await;
     sqlx::query(
-        "INSERT INTO sync_state(key,last_sync_at,last_sync_games,updated_at)
+        "INSERT INTO ingestion.sync_state(key,last_sync_at,last_sync_games,updated_at)
          VALUES ('singleton','2000-01-01',0,'2000-01-01')
          ON CONFLICT(key) DO UPDATE SET last_sync_at=EXCLUDED.last_sync_at,
          last_sync_games=EXCLUDED.last_sync_games, updated_at=EXCLUDED.updated_at",
@@ -197,10 +197,10 @@ async fn sync_watermark_and_correction_candidates_follow_attempt_outcomes() {
         .await
         .unwrap();
     if let Some((last_sync_at, last_sync_games, updated_at)) = previous_watermark {
-        sqlx::query("UPDATE sync_state SET last_sync_at=$1,last_sync_games=$2,updated_at=$3 WHERE key='singleton'")
+        sqlx::query("UPDATE ingestion.sync_state SET last_sync_at=$1,last_sync_games=$2,updated_at=$3 WHERE key='singleton'")
             .bind(last_sync_at).bind(last_sync_games).bind(updated_at).execute(pool).await.unwrap();
     } else {
-        sqlx::query("DELETE FROM sync_state WHERE key='singleton'")
+        sqlx::query("DELETE FROM ingestion.sync_state WHERE key='singleton'")
             .execute(pool)
             .await
             .unwrap();

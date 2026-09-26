@@ -94,7 +94,7 @@ pub async fn replace_game_shifts(
     }
 
     sqlx::query(
-        "INSERT INTO shift_fetch_status (game_id, status) VALUES ($1, 'loaded')
+        "INSERT INTO ingestion.shift_fetch_status (game_id, status) VALUES ($1, 'loaded')
          ON CONFLICT (game_id) DO UPDATE SET status = 'loaded', attempted_at = NOW()",
     )
     .bind(game_id)
@@ -112,7 +112,7 @@ pub async fn record_unsuccessful_attempt(
     unavailable: bool,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO shift_fetch_status (game_id, status) VALUES ($1, $2)
+        "INSERT INTO ingestion.shift_fetch_status (game_id, status) VALUES ($1, $2)
          ON CONFLICT (game_id) DO UPDATE SET status = EXCLUDED.status, attempted_at = NOW()",
     )
     .bind(game_id)

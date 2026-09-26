@@ -175,7 +175,7 @@ async fn test_status_classifies_acknowledged_gap() {
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO backfill_progress (game_id, season, status)
+        "INSERT INTO ingestion.backfill_progress (game_id, season, status)
          VALUES (9992000011, 99987, 'done')
          ON CONFLICT (game_id) DO NOTHING",
     )
@@ -197,14 +197,15 @@ async fn test_status_classifies_acknowledged_gap() {
     assert_eq!(season.actionable_gap_games, 0);
     assert!(!season.healthy);
 
-    let status: String =
-        sqlx::query_scalar("SELECT status FROM backfill_progress WHERE game_id = 9992000011")
-            .fetch_one(pool)
-            .await
-            .unwrap();
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM ingestion.backfill_progress WHERE game_id = 9992000011",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
     assert_eq!(status, "done", "--fix must not requeue acknowledged gaps");
 
-    sqlx::query("DELETE FROM backfill_progress WHERE game_id = 9992000011")
+    sqlx::query("DELETE FROM ingestion.backfill_progress WHERE game_id = 9992000011")
         .execute(pool)
         .await
         .unwrap();
@@ -378,7 +379,7 @@ async fn test_fix_idempotent() {
     .unwrap();
 
     sqlx::query!(
-        "INSERT INTO backfill_progress (game_id, season, status)
+        "INSERT INTO ingestion.backfill_progress (game_id, season, status)
          VALUES (9992000010, 99986, 'done')
          ON CONFLICT (game_id) DO NOTHING"
     )
@@ -395,18 +396,19 @@ async fn test_fix_idempotent() {
         "already-healthy season with fix=true must still return healthy=true"
     );
 
-    let bp_status: Option<String> =
-        sqlx::query_scalar!("SELECT status FROM backfill_progress WHERE game_id = 9992000010")
-            .fetch_optional(pool)
-            .await
-            .unwrap();
+    let bp_status: Option<String> = sqlx::query_scalar!(
+        "SELECT status FROM ingestion.backfill_progress WHERE game_id = 9992000010"
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap();
     assert_eq!(
         bp_status.as_deref(),
         Some("done"),
         "backfill_progress must remain 'done' after no-op fix"
     );
 
-    sqlx::query!("DELETE FROM backfill_progress WHERE game_id = 9992000010")
+    sqlx::query!("DELETE FROM ingestion.backfill_progress WHERE game_id = 9992000010")
         .execute(pool)
         .await
         .unwrap();
