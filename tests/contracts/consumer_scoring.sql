@@ -1,4 +1,4 @@
--- PucksPool e8edeb9fb7415a7a3c72ad017d3b42ca1e779a9f: scoring.py
+-- Consumer e8edeb9fb7415a7a3c72ad017d3b42ca1e779a9f: scoring.py
 WITH eligible_games AS MATERIALIZED (
     SELECT game_id, season, game_type, start_time_utc AS scheduled_start,
            game_state

@@ -257,8 +257,8 @@ values are allocated before commit, so a global `snapshot_id > last_seen`
 cursor alone can miss concurrently committing work; use per-game reconciliation
 or overlapping polling with idempotency.
 
-PucksPool must adopt this contract downstream to act on retractions. Publishing
-the view does not change its scoring consumer automatically.
+Consumers must adopt this contract downstream to act on retractions. Publishing
+the view does not change their scoring implementations automatically.
 
 ## Stable dataset identifiers
 

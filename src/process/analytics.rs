@@ -2,7 +2,7 @@
 
 /// Refresh the player season rollup that backs the player season selector.
 ///
-/// Refreshed concurrently: PucksStudio reads this view while a sync is
+/// Refreshed concurrently: downstream consumers read this view while a sync is
 /// running, and a plain refresh would lock it out for the duration. The
 /// concurrent form needs the unique index the migration creates, and needs the
 /// view to be populated already, which it is from creation.
