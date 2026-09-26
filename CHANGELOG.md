@@ -7,6 +7,10 @@ All notable changes to PucksData are documented here. The project follows
 
 ### Added
 
+- Explicit franchise, season, game and raw-shift read contracts in `analytics`.
+- PucksPool relation contracts and populated upgrade regression checks, including
+  its scoring, draft and schedule queries.
+
 - Prospective normalized history for entity records, events, shifts, and official
   game/season statistics, with content hashes and repeat observations.
 - Source response capture and ingestion attempt outcomes, plus a freshness view.
@@ -16,6 +20,11 @@ All notable changes to PucksData are documented here. The project follows
   from 2010–11 onward.
 
 ### Changed
+
+- Move ingestion checkpoints and shift-fetch state to `ingestion`, preserving
+  existing public read interfaces and their SELECT permissions.
+- Give entity history triggers stable logical dataset names independent of
+  physical table names.
 
 - Bound daily player discovery to active seasons plus four rotating historical
   audits, while retaining the explicit full-archive player fetch.
@@ -42,6 +51,11 @@ All notable changes to PucksData are documented here. The project follows
   REST endpoint during season backfills.
 
 ### Upgrade notes
+
+Migrations 0037–0038 require pausing ingestion writers and deploying the updated
+binary before resuming. Legacy public operational views support reads only; old
+upserts will fail. PucksPool interfaces remain unchanged. Follow the
+[schema rollout](docs/schema-conventions.md#rollout-for-00370038).
 
 Stop old ingestion writers before applying migration 0034, grant the runtime
 access to the new schemas, and deploy the updated binary. History begins with

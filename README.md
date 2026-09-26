@@ -354,6 +354,9 @@ The `Scheduled database sync` workflow runs `sync` against the configured databa
 
 ## Data model
 
+See [schema conventions and migration direction](docs/schema-conventions.md) for
+identifier meanings, schema boundaries, consumer contracts and the 0037–0038 rollout.
+
 The migrations create:
 
 - Entity tables: `teams`, `seasons`, `players` (including optional NHL headshot
