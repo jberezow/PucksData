@@ -37,8 +37,50 @@ pub async fn refresh_season_health(pool: &sqlx::PgPool) -> Result<(), sqlx::Erro
         .map(|_| ())
 }
 
-/// Attempt every refresh and persist each outcome; stale products are a partial
-/// ingestion outcome even though their underlying source writes remain valid.
+/// Refresh only when a committed dependency change is pending, or a prior
+/// refresh failed/interrupted. Acknowledge precisely the invalidations visible
+/// before the refresh; concurrent or late-committing writes stay pending.
+/// The future is never polled for a clean product.
+pub async fn refresh_pending_product<F>(
+    pool: &sqlx::PgPool,
+    label: &str,
+    refresh: F,
+) -> Result<bool, crate::AnyError>
+where
+    F: std::future::Future<Output = Result<(), sqlx::Error>>,
+{
+    let invalidations: Vec<i64> = sqlx::query_scalar(
+        "SELECT invalidation_id FROM ingestion.derived_invalidations WHERE product=$1",
+    )
+    .bind(label)
+    .fetch_all(pool)
+    .await?;
+    let unfinished: bool = sqlx::query_scalar(
+        "SELECT COALESCE((SELECT outcome <> 'complete' FROM ingestion.attempts
+         WHERE dataset='derived' AND entity_key=$1 ORDER BY attempt_id DESC LIMIT 1), false)",
+    )
+    .bind(label)
+    .fetch_one(pool)
+    .await?;
+    if invalidations.is_empty() && !unfinished {
+        println!("[derived] {label} unchanged; skipped");
+        return Ok(false);
+    }
+    super::attempts::track(pool, "derived", label, async {
+        refresh.await?;
+        sqlx::query("DELETE FROM ingestion.derived_invalidations WHERE invalidation_id=ANY($1)")
+            .bind(&invalidations)
+            .execute(pool)
+            .await?;
+        Ok(())
+    })
+    .await?;
+    Ok(true)
+}
+
+/// Attempt every dirty product and persist each outcome. Invalidations are
+/// transactional with dependency writes, so a later zero-work run repairs
+/// products left stale by interruption. All ingestion entry points use this.
 pub async fn refresh_derived(pool: &sqlx::PgPool) -> Result<(), crate::AnyError> {
     let mut failures = Vec::new();
     for label in [
@@ -46,15 +88,14 @@ pub async fn refresh_derived(pool: &sqlx::PgPool) -> Result<(), crate::AnyError>
         "analytics.skater_physical_season_totals",
         "observability.season_health",
     ] {
-        let result = super::attempts::track(pool, "derived", label, async {
+        let result = refresh_pending_product(pool, label, async {
             match label {
-                "analytics.player_event_seasons" => refresh_player_event_seasons(pool).await?,
+                "analytics.player_event_seasons" => refresh_player_event_seasons(pool).await,
                 "analytics.skater_physical_season_totals" => {
-                    refresh_skater_physical_season_totals(pool).await?
+                    refresh_skater_physical_season_totals(pool).await
                 }
-                _ => refresh_season_health(pool).await?,
+                _ => refresh_season_health(pool).await,
             }
-            Ok(())
         })
         .await;
         if let Err(error) = result {

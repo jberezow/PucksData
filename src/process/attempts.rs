@@ -30,10 +30,12 @@ pub async fn track<T>(
     operation: impl Future<Output = Result<T, crate::AnyError>>,
 ) -> Result<T, crate::AnyError> {
     let id = start(pool, dataset, key).await?;
+    println!("[phase] dataset={dataset} entity={key} attempt={id} started");
     let result = crate::provenance::scope(
         crate::provenance::Context {
             pool: pool.clone(),
             attempt_id: id,
+            metrics: Default::default(),
         },
         operation,
     )

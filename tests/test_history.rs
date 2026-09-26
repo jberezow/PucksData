@@ -223,3 +223,64 @@ async fn failed_validation_retains_raw_source_and_rejects_normalized_state() {
     .unwrap();
     assert_eq!(accepted, 0);
 }
+
+#[tokio::test]
+async fn concurrent_source_capture_deduplicates_bodies_but_retains_every_observation() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+    let key = entity_key("source_dedup");
+    let body = format!("{{\"key\":\"{key}\"}}");
+    let capture = || {
+        attempts::track(pool, "history_test", &key, async {
+            provenance::record_response("https://example.invalid/source", &body).await?;
+            Ok(())
+        })
+    };
+    let (one, two) = tokio::join!(capture(), capture());
+    one.unwrap();
+    two.unwrap();
+    let counts: (i64, i64) = sqlx::query_as(
+        "SELECT count(DISTINCT d.content_sha256), count(*)
+         FROM history.source_documents d JOIN ingestion.source_observations o USING(content_sha256)
+         WHERE d.body=$1",
+    )
+    .bind(&body)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(counts, (1, 2));
+}
+
+#[tokio::test]
+async fn failed_source_observation_cannot_leave_an_orphan_document() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+    let body = entity_key("capture_rollback");
+    let result = provenance::scope(
+        provenance::Context {
+            pool: pool.clone(),
+            attempt_id: -1,
+            metrics: Default::default(),
+        },
+        provenance::record_response("https://example.invalid/source", &body),
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "nonexistent attempt must reject the observation"
+    );
+    let documents: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM history.source_documents WHERE body=$1")
+            .bind(&body)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        documents, 0,
+        "document and observation must commit atomically"
+    );
+}

@@ -85,7 +85,8 @@ SYNC_INTERVAL_SECS=21600
 for local development. Hosted deployments should use a schema-owner connection
 for migrations and a restricted ingestion connection at runtime.
 
-For existing deployments, follow the [migration 0034 rollout](docs/ingestion-history.md#rollout)
+For existing deployments, follow the [ingestion history rollout](docs/ingestion-history.md#rollout)
+and the [incremental sync upgrade](docs/ingestion-history.md#incremental-sync-upgrade)
 before starting the updated runtime. For a new database, apply the schema and build:
 
 ```bash

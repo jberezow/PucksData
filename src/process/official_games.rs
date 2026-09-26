@@ -81,12 +81,24 @@ pub async fn query_sync_candidates(
     pool: &sqlx::PgPool,
     from: time::Date,
 ) -> Result<Vec<(i64, i16)>, sqlx::Error> {
-    sqlx::query_as(r#"SELECT g.game_id, g.game_type FROM games g
+    sqlx::query_as(
+        r#"WITH latest AS MATERIALIZED (
+            SELECT DISTINCT ON(entity_key) entity_key, outcome
+            FROM ingestion.attempts WHERE dataset='official_games'
+            ORDER BY entity_key, attempt_id DESC
+        ), candidates AS (
+            SELECT game_id FROM games WHERE game_date >= $1
+            UNION
+            SELECT g.game_id FROM games g JOIN latest a ON a.entity_key=g.game_id::text
+            WHERE a.outcome IN ('failed','running')
+        )
+        SELECT g.game_id, g.game_type FROM games g JOIN candidates c USING(game_id)
         WHERE g.game_state IN ('OFF','OVER','FINAL') AND g.game_type IN (2,3)
-        AND (g.game_date >= $1 OR
-            (SELECT a.outcome FROM ingestion.attempts a WHERE a.dataset = 'official_games'
-             AND a.entity_key = g.game_id::text ORDER BY a.attempt_id DESC LIMIT 1) IN ('failed','running'))
-        ORDER BY g.game_date, g.game_id"#).bind(from).fetch_all(pool).await
+        ORDER BY g.game_date, g.game_id"#,
+    )
+    .bind(from)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn sync_official_games(
