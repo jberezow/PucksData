@@ -61,7 +61,7 @@ pub async fn fetch_game_shifts(game_id: i64) -> Result<Vec<DbShift>, AnyError> {
         if delay_ms > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
-        match crate::api::fetch_api_json(&url).await {
+        match crate::api::fetch_api_text(&url).await {
             Ok(body) => return parse_shift_chart(&body, game_id),
             Err(error @ crate::api::ApiError::NotFound) => return Err(error.into()),
             Err(error) => last_error = Some(error),

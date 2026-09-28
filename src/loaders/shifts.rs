@@ -1,5 +1,6 @@
 //! Transactional loading of typed, unnormalized shift-chart rows.
 
+use crate::error::LoadError;
 use crate::models::DbShift;
 
 /// Atomically replace the source rows returned for one game.
@@ -7,14 +8,14 @@ pub async fn replace_game_shifts(
     pool: &sqlx::PgPool,
     game_id: i64,
     shifts: &[DbShift],
-) -> Result<usize, sqlx::Error> {
+) -> Result<usize, LoadError> {
     if shifts.is_empty() {
-        return Err(sqlx::Error::Protocol(
+        return Err(LoadError::Validation(
             "a successful shift response cannot be empty".to_string(),
         ));
     }
     if shifts.iter().any(|shift| shift.game_id != game_id) {
-        return Err(sqlx::Error::Protocol(format!(
+        return Err(LoadError::Validation(format!(
             "shift response for game {game_id} contains a different gameId"
         )));
     }
@@ -87,7 +88,7 @@ pub async fn replace_game_shifts(
     .rows_affected() as usize;
 
     if inserted != shifts.len() {
-        return Err(sqlx::Error::Protocol(format!(
+        return Err(LoadError::Validation(format!(
             "inserted {inserted} of {} raw shifts for game {game_id}",
             shifts.len()
         )));

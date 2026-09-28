@@ -1,5 +1,5 @@
 //! Fetches franchise records and abbreviations from the NHL stats API.
-use crate::{api::fetch_api_json, models::DbTeam, AnyError};
+use crate::{api::fetch_api_text, models::DbTeam, AnyError};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 
@@ -33,7 +33,7 @@ pub struct TeamIdentity {
 }
 
 pub async fn fetch_team_identities() -> Result<Vec<TeamIdentity>, AnyError> {
-    let body = fetch_api_json("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
+    let body = fetch_api_text("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
     let response: ApiResponse<TeamIdentity> = serde_json::from_str(&body)?;
     if response.data.is_empty() {
         return Err("NHL team identity response is empty".into());
@@ -58,12 +58,12 @@ pub async fn fetch_teams() -> Result<Vec<DbTeam>, AnyError> {
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
     let franchise_json =
-        fetch_api_json("https://api.nhle.com/stats/rest/en/franchise?limit=-1").await?;
+        fetch_api_text("https://api.nhle.com/stats/rest/en/franchise?limit=-1").await?;
     let franchise_resp: ApiResponse<FranchiseRecord> = serde_json::from_str(&franchise_json)?;
 
     pb.set_message("Fetching team abbreviations...");
 
-    let abbrev_json = fetch_api_json("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
+    let abbrev_json = fetch_api_text("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
     let abbrev_resp: ApiResponse<TeamAbbrevRecord> = serde_json::from_str(&abbrev_json)?;
 
     // The team endpoint contains one row per franchise era. Matching the current
@@ -87,9 +87,10 @@ pub async fn fetch_teams() -> Result<Vec<DbTeam>, AnyError> {
                 });
             }
             None => {
-                eprintln!(
+                tracing::warn!(
                     "Warning: franchise id={} '{}' has no triCode match — skipping",
-                    franchise.id, franchise.full_name
+                    franchise.id,
+                    franchise.full_name
                 );
             }
         }

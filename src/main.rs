@@ -209,10 +209,20 @@ struct GamesScope {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), pucksdata::AnyError> {
+async fn main() {
     dotenvy::dotenv().ok();
     let cli = Cli::parse();
+    if let Err(error) = pucksdata::logging::init() {
+        eprintln!("Cannot initialize logging: {error}");
+        std::process::exit(1);
+    }
+    if let Err(error) = run(cli).await {
+        tracing::error!(error = %error, "command failed");
+        std::process::exit(1);
+    }
+}
 
+async fn run(cli: Cli) -> Result<(), pucksdata::AnyError> {
     let capture = matches!(
         &cli.command,
         Commands::RefreshDerived
@@ -227,19 +237,7 @@ async fn main() -> Result<(), pucksdata::AnyError> {
     if capture {
         let pool = db::get_pool().await?;
         let key = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
-        pucksdata::process::attempts::exclusive(
-            pool,
-            pucksdata::process::attempts::track(
-                pool,
-                "command",
-                &key,
-                pucksdata::process::team_attribution::with_current_mapping(
-                    pool,
-                    Box::pin(dispatch(cli.command)),
-                ),
-            ),
-        )
-        .await
+        pucksdata::process::attempts::command(pool, &key, Box::pin(dispatch(cli.command))).await
     } else {
         Box::pin(dispatch(cli.command)).await
     }
@@ -296,52 +294,7 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
                 pb.finish_and_clear();
             }
             FetchEntity::Players => {
-                use std::time::Duration;
-                let pool = db::get_pool().await?;
-
-                let fetched = fetchers::players::fetch_players(pool).await?;
-                let count = fetched.players.len();
-
-                // The bulk upsert has no meaningful per-record progress.
-                let spinner = {
-                    use indicatif::{ProgressBar, ProgressStyle};
-                    let s = ProgressBar::new_spinner();
-                    s.set_style(
-                        ProgressStyle::with_template("{spinner} {msg}")
-                            .unwrap()
-                            .tick_strings(&[
-                                "\u{29fe}", "\u{29fd}", "\u{29fb}", "\u{23bf}", "\u{23bf}",
-                                "\u{29df}", "\u{29af}", "\u{29b7}", "",
-                            ]),
-                    );
-                    s.enable_steady_tick(Duration::from_millis(80));
-                    s.set_message(format!("Writing {count} players to DB..."));
-                    s
-                };
-                loaders::players::upsert_players(pool, &fetched.players)
-                    .await
-                    .inspect_err(|_| spinner.finish_and_clear())?;
-                spinner.finish_and_clear();
-                println!("Wrote {count} players");
-
-                let rosters = fetched
-                    .current_rosters
-                    .ok_or("current roster observation unavailable")?;
-                {
-                    if rosters.is_complete() {
-                        let snapshot_id =
-                            loaders::rosters::insert_roster_snapshot(pool, &rosters).await?;
-                        println!(
-                            "Wrote roster snapshot {snapshot_id} ({} teams, {} memberships)",
-                            rosters.fetched_team_count,
-                            rosters.memberships.len()
-                        );
-                    } else {
-                        return Err(
-                            "current roster observation incomplete; snapshot preserved".into()
-                        );
-                    }
-                }
+                pucksdata::process::players::refresh(db::get_pool().await?).await?;
             }
             FetchEntity::Events(args) => {
                 let pool = db::get_pool().await?;
@@ -373,36 +326,7 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
                         .inspect_err(|_| pb_upsert.finish_and_clear())?;
                     pb_upsert.finish_and_clear();
                 } else {
-                    let seasons = fetchers::games::fetch_seasons_list().await?;
-                    let total_seasons = seasons.len();
-                    let mut total_games = 0usize;
-
-                    for (i, season) in seasons.iter().enumerate() {
-                        println!(
-                            "[{}/{}] Fetching season {}...",
-                            i + 1,
-                            total_seasons,
-                            season
-                        );
-
-                        let pb_fetch = pucksdata::ui::make_progress_bar(0, "games fetched");
-                        let games =
-                            fetchers::games::fetch_games_for_season_enriched(*season, &pb_fetch)
-                                .await?;
-                        let count = games.len();
-                        pb_fetch.finish_and_clear();
-
-                        if count > 0 {
-                            let pb_upsert =
-                                pucksdata::ui::make_progress_bar(count as u64, "games written");
-                            loaders::games::upsert_games(pool, &games, &pb_upsert)
-                                .await
-                                .inspect_err(|_| pb_upsert.finish_and_clear())?;
-                            pb_upsert.finish_and_clear();
-                        }
-                        total_games += count;
-                    }
-                    println!("Fetched {total_games} total games across {total_seasons} seasons, upserted {total_games}");
+                    pucksdata::process::games::refresh_all(pool).await?;
                 }
             }
         },
@@ -417,17 +341,7 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
         }
         Commands::Sync(args) => {
             let pool = db::get_pool().await?;
-            let from_date = args
-                .from
-                .as_deref()
-                .map(|s| {
-                    time::Date::parse(
-                        s,
-                        &time::macros::format_description!("[year]-[month]-[day]"),
-                    )
-                    .map_err(|e| format!("invalid --from date '{s}': {e}"))
-                })
-                .transpose()?;
+            let from_date = parse_date(args.from)?;
             pucksdata::process::sync::run_sync(pool, from_date).await?;
         }
         Commands::Daemon(args) => {
@@ -486,11 +400,7 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
                 ShiftsCommand::Backfill(args) => args,
             };
             let pool = db::get_pool().await?;
-            if pool.options().get_max_connections() < 3 {
-                return Err(
-                    "shift backfill CLI requires at least three database connections".into(),
-                );
-            }
+            db::require_connections(pool, 2, "shift backfill")?;
             let summary =
                 pucksdata::process::shifts::run_backfill(pool, args.season, args.refresh).await?;
             println!(
@@ -503,7 +413,7 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
                 summary.shifts,
             );
             if !summary.unavailable_games.is_empty() {
-                eprintln!(
+                tracing::warn!(
                     "NHL shift feed returned no shift rows for games: {}",
                     summary
                         .unavailable_games
@@ -512,18 +422,18 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
-                eprintln!(
+                tracing::warn!(
                     "unavailable games were not replaced; games without stored shifts will be retried on the next run"
                 );
             }
             for failure in summary.failures.iter().take(25) {
-                eprintln!("{failure}");
+                tracing::warn!("{failure}");
             }
             if summary.failures.len() > 25 {
-                eprintln!("... and {} more failures", summary.failures.len() - 25);
+                tracing::warn!("... and {} more failures", summary.failures.len() - 25);
             }
             if summary.stopped_early {
-                eprintln!(
+                tracing::warn!(
                     "stopped after an upstream timeout or server error; rerun later to resume"
                 );
             }

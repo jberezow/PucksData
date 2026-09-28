@@ -351,19 +351,91 @@ async fn test_sync_state_upsert() {
 }
 
 #[tokio::test]
-async fn test_advisory_lock_single_instance() {
+async fn daemon_lease_excludes_overlap_and_cancels_on_connection_loss() {
     if !common::test_database_configured() {
         return;
     }
-    let pool = common::test_pool().await;
+    use pucksdata::process::{attempts, sync::acquire_daemon_lock};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    use std::time::Duration;
 
-    let guard = pucksdata::process::sync::acquire_daemon_lock(pool).await;
-    assert!(guard.is_ok(), "first acquire_daemon_lock() must succeed");
-    let _guard = guard.unwrap();
+    let shared = common::test_pool().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect_with((*shared.connect_options()).clone())
+        .await
+        .unwrap();
 
-    let guard2 = pucksdata::process::sync::acquire_daemon_lock(pool).await;
+    let old_lock = sqlx::postgres::PgAdvisoryLock::new("pucksdata_daemon");
+    let old_guard = old_lock
+        .acquire(pool.acquire().await.unwrap())
+        .await
+        .unwrap();
     assert!(
-        guard2.is_err(),
-        "second acquire_daemon_lock() on same pool must return Err (lock already held)"
+        acquire_daemon_lock(&pool).await.is_err(),
+        "exclude older daemons too"
     );
+    drop(old_guard.release_now().await.unwrap());
+
+    let lease = acquire_daemon_lock(&pool).await.unwrap();
+    assert!(acquire_daemon_lock(&pool).await.is_err());
+    lease
+        .run(attempts::exclusive(&pool, async {
+            let value: i32 = sqlx::query_scalar("SELECT 1").fetch_one(&pool).await?;
+            Ok(value)
+        }))
+        .await
+        .unwrap();
+
+    let lease = acquire_daemon_lock(&pool).await.unwrap();
+    let sqlx::postgres::PgAdvisoryLockKey::BigInt(key) = old_lock.key() else {
+        panic!("daemon lock should use the bigint keyspace");
+    };
+    let backend: i32 = sqlx::query_scalar(
+        "SELECT pid FROM pg_locks WHERE locktype = 'advisory'
+         AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+         AND classid = $1::bigint::oid AND objid = $2::bigint::oid AND objsubid = 1",
+    )
+    .bind(((*key as u64) >> 32) as i64)
+    .bind(((*key as u64) & 0xffff_ffff) as i64)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    struct Cancelled(Arc<AtomicBool>);
+    impl Drop for Cancelled {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let result = tokio::time::timeout(
+        Duration::from_secs(15),
+        lease.run(async {
+            let _cancelled = Cancelled(cancelled.clone());
+            let terminated: bool = sqlx::query_scalar("SELECT pg_terminate_backend($1)")
+                .bind(backend)
+                .fetch_one(&pool)
+                .await?;
+            assert!(terminated);
+            std::future::pending::<Result<(), pucksdata::AnyError>>().await
+        }),
+    )
+    .await
+    .expect("heartbeat must notice the lost lease");
+    assert!(result.is_err());
+    assert!(
+        cancelled.load(Ordering::SeqCst),
+        "lease loss must cancel active work"
+    );
+    acquire_daemon_lock(&pool)
+        .await
+        .unwrap()
+        .run(async { Ok(()) })
+        .await
+        .unwrap();
+    pool.close().await;
 }

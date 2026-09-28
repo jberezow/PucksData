@@ -1,8 +1,10 @@
 //! Crate root — re-exports all public modules and the [`AnyError`] type alias.
 pub mod api;
 pub mod db;
+pub mod error;
 pub mod fetchers;
 pub mod loaders;
+pub mod logging;
 pub mod models;
 pub mod on_ice;
 pub mod process;

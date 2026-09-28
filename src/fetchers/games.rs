@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::{
-    api::{fetch_api_json, ApiError},
+    api::{fetch_api_text, ApiError},
     models::DbGame,
     AnyError,
 };
@@ -90,7 +90,7 @@ pub async fn fetch_team_id_to_franchise_id_map() -> Result<HashMap<i64, i64>, An
     struct TeamListResponse {
         data: Vec<TeamIdRecord>,
     }
-    let json = fetch_api_json("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
+    let json = fetch_api_text("https://api.nhle.com/stats/rest/en/team?limit=-1").await?;
     let resp: TeamListResponse = serde_json::from_str(&json)?;
     let map = resp
         .data
@@ -113,7 +113,7 @@ pub async fn fetch_games_for_season(season_year: i32) -> Result<Vec<StatsGameRec
         let url = format!(
             "https://api.nhle.com/stats/rest/en/game?limit={limit}&start={start}&sort=id&dir=asc&cayenneExp=season%3D{season_year}"
         );
-        let json = fetch_api_json(&url).await?;
+        let json = fetch_api_text(&url).await?;
         let resp: StatsApiResponse<StatsGameRecord> = serde_json::from_str(&json)?;
         if resp.total < 0 || expected_total.is_some_and(|total| total != resp.total) {
             return Err("game catalog changed during pagination; retry required".into());
@@ -142,13 +142,13 @@ pub async fn fetch_games_for_season(season_year: i32) -> Result<Vec<StatsGameRec
 /// Fetch the boxscore for a single game. On serde parse failure returns ApiError::Other(0).
 pub async fn fetch_game_boxscore(game_id: i64) -> Result<BoxscoreGame, ApiError> {
     let url = format!("https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore");
-    let json = fetch_api_json(&url).await?;
+    let json = fetch_api_text(&url).await?;
     serde_json::from_str(&json).map_err(|_e| ApiError::Other(0))
 }
 
 /// Fetch the list of all season year integers from the seasons endpoint (for --all mode).
 pub async fn fetch_seasons_list() -> Result<Vec<i32>, AnyError> {
-    let json = fetch_api_json("https://api-web.nhle.com/v1/season").await?;
+    let json = fetch_api_text("https://api-web.nhle.com/v1/season").await?;
     let years: Vec<i32> = serde_json::from_str(&json)?;
     Ok(years)
 }
@@ -179,10 +179,9 @@ pub fn transform_game(
             {
                 return Err("boxscore game/team identity mismatch".into());
             }
-            let ts = bs
-                .start_time_utc
-                .as_deref()
-                .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+            let ts = bs.start_time_utc.as_deref().and_then(|s| {
+                time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+            });
             let v = bs.venue.as_ref().map(|v| v.default.clone());
             let vl = bs.venue_location.as_ref().map(|v| v.default.clone());
             let gs = bs.game_state.clone();
@@ -254,7 +253,7 @@ pub async fn fetch_games_for_season_enriched(
     let unsupported_count = fetched_count - stats_records.len();
     if unsupported_count > 0 {
         pb.suspend(|| {
-            eprintln!(
+            tracing::warn!(
                 "info: skipped {unsupported_count} out-of-scope game(s) for season {season_year}"
             )
         });
@@ -299,7 +298,7 @@ async fn enrich_games(
             Ok(Ok((stats, bs))) => match transform_game(&stats, bs.as_ref(), &team_id_map) {
                 Ok(game) => games.push(game),
                 Err(e) if stats.game_type == 1 => pb.suspend(|| {
-                    eprintln!("excluded out-of-scope exhibition game {}: {e}", stats.id)
+                    tracing::warn!("excluded out-of-scope exhibition game {}: {e}", stats.id)
                 }),
                 Err(e) => return Err(e),
             },
@@ -406,7 +405,7 @@ fn select_enrichment(
         let fresh = match transform_game(&record, None, map) {
             Ok(game) => game,
             Err(error) if record.game_type == 1 => {
-                eprintln!(
+                tracing::warn!(
                     "excluded out-of-scope exhibition game {}: {error}",
                     record.id
                 );
@@ -427,7 +426,7 @@ fn select_enrichment(
     periodic.sort_by_key(|(checked, record)| (*checked, record.id));
     let urgent_count = immediate.len();
     immediate.extend(periodic.into_iter().take(100).map(|(_, record)| record));
-    println!(
+    tracing::info!(
         "[schedule] catalog={catalog_count} immediate={} periodic={} boxscores={}",
         urgent_count,
         immediate.len() - urgent_count,
@@ -442,7 +441,7 @@ fn select_enrichment(
 pub async fn fetch_single_game(game_id: i64) -> Result<DbGame, AnyError> {
     let team_id_map = fetch_team_id_to_franchise_id_map().await?;
     let url = format!("https://api.nhle.com/stats/rest/en/game?cayenneExp=id%3D{game_id}");
-    let json = fetch_api_json(&url).await?;
+    let json = fetch_api_text(&url).await?;
     let resp: StatsApiResponse<StatsGameRecord> = serde_json::from_str(&json)?;
     let stats = resp
         .data

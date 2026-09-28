@@ -7,7 +7,7 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::{
-    api::{fetch_api_json, ApiError},
+    api::{fetch_api_text, ApiError},
     models::{CurrentRosterObservation, DbPlayer, DbRosterMembership},
     AnyError,
 };
@@ -125,7 +125,7 @@ struct RosterResponse {
 /// historical defunct franchises such as the Brooklyn Americans and Hamilton
 /// Tigers, plus relocated teams like the Arizona Coyotes).
 async fn fetch_active_team_abbrevs() -> Result<Vec<String>, AnyError> {
-    let json = fetch_api_json("https://api-web.nhle.com/v1/standings/now").await?;
+    let json = fetch_api_text("https://api-web.nhle.com/v1/standings/now").await?;
     let resp: StandingsResponse = serde_json::from_str(&json)?;
     Ok(resp
         .standings
@@ -137,7 +137,7 @@ async fn fetch_active_team_abbrevs() -> Result<Vec<String>, AnyError> {
 /// Fetch the source membership details for one team's current roster.
 async fn fetch_team_roster(abbrev: &str) -> Result<Vec<DbRosterMembership>, AnyError> {
     let url = format!("https://api-web.nhle.com/v1/roster/{abbrev}/current");
-    let json = fetch_api_json(&url).await?;
+    let json = fetch_api_text(&url).await?;
     let roster: RosterResponse = serde_json::from_str(&json)?;
     Ok(roster_to_memberships(abbrev, roster))
 }
@@ -180,7 +180,7 @@ pub async fn fetch_current_rosters() -> Result<CurrentRosterObservation, AnyErro
                 fetched_team_count += 1;
                 memberships.extend(team_memberships);
             }
-            Err(error) => eprintln!("warn: roster fetch failed for {abbrev}: {error}"),
+            Err(error) => tracing::warn!("warn: roster fetch failed for {abbrev}: {error}"),
         }
     }
 
@@ -208,7 +208,7 @@ async fn fetch_stats_player_ids(
     );
 
     let first_url = base_url.replace("{}", "0");
-    let first_json = fetch_api_json(&first_url).await?;
+    let first_json = fetch_api_text(&first_url).await?;
     let first_resp: ApiResponse<PlayerIdRecord> = serde_json::from_str(&first_json)?;
     let total = first_resp.total.unwrap_or(0) as usize;
     for r in first_resp.data {
@@ -218,7 +218,7 @@ async fn fetch_stats_player_ids(
     let mut offset = 100usize;
     while all_ids.len() < total && offset < total {
         let page_url = base_url.replace("{}", &offset.to_string());
-        let page_json = fetch_api_json(&page_url).await?;
+        let page_json = fetch_api_text(&page_url).await?;
         let page_resp: ApiResponse<PlayerIdRecord> = serde_json::from_str(&page_json)?;
         if page_resp.data.is_empty() {
             break;
@@ -267,7 +267,7 @@ async fn enumerate_player_ids_and_rosters(
                     .iter()
                     .map(|membership| membership.player_id),
             );
-            println!(
+            tracing::info!(
                 "  enumerating players: rosters {}/{} ({} unique IDs so far)",
                 observation.fetched_team_count,
                 observation.expected_team_count,
@@ -284,7 +284,7 @@ async fn enumerate_player_ids_and_rosters(
     if !seasons.is_empty() {
         // 2 entity types × 2 game types × N seasons
         let stats_total = seasons.len() * 4;
-        println!(
+        tracing::info!(
             "  enumerating players: fetching stats pages for {} seasons ({} paginated queries)...",
             seasons.len(),
             stats_total
@@ -301,7 +301,7 @@ async fn enumerate_player_ids_and_rosters(
                     }
                     stats_done += 1;
                     if stats_done.is_multiple_of(8) || stats_done == stats_total {
-                        println!(
+                        tracing::info!(
                             "  enumerating players: stats pages {}/{} ({} unique IDs)",
                             stats_done,
                             stats_total,
@@ -327,7 +327,7 @@ pub async fn enumerate_player_ids(seasons: &[i32]) -> Result<Vec<i64>, AnyError>
 
 async fn fetch_player_landing(id: i64) -> Result<PlayerLanding, ApiError> {
     let url = format!("https://api-web.nhle.com/v1/player/{id}/landing");
-    let json = fetch_api_json(&url).await?;
+    let json = fetch_api_text(&url).await?;
     let landing: PlayerLanding = serde_json::from_str(&json).map_err(|_e| ApiError::Other(500))?;
     Ok(landing)
 }
@@ -338,7 +338,7 @@ fn landing_to_db(landing: PlayerLanding) -> DbPlayer {
         match time::Date::parse(s, &fmt) {
             Ok(d) => Some(d),
             Err(e) => {
-                eprintln!("warn: could not parse birth_date '{s}': {e}");
+                tracing::warn!("warn: could not parse birth_date '{s}': {e}");
                 None
             }
         }
@@ -387,7 +387,7 @@ pub async fn fetch_all_players(
             match fetch_player_landing(id).await {
                 Ok(landing) => Ok(Some(landing_to_db(landing))),
                 Err(ApiError::NotFound) => {
-                    eprintln!("warn: player {id} not found, skipping");
+                    tracing::warn!("warn: player {id} not found, skipping");
                     Ok(None)
                 }
                 Err(e) => Err(e),
@@ -467,7 +467,9 @@ pub async fn repair_missing_players(pool: &sqlx::PgPool) -> Result<usize, AnyErr
 
     let missing_ids: Vec<i64> = rows.into_iter().map(|r| r.pid).collect();
     let count = missing_ids.len();
-    eprintln!("repair: found {count} player IDs in event tables with no players row — fetching");
+    tracing::warn!(
+        "repair: found {count} player IDs in event tables with no players row — fetching"
+    );
 
     let pb = crate::ui::make_progress_bar(count as u64, "missing players");
     let records = fetch_all_players(missing_ids, &pb).await?;

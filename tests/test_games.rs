@@ -101,7 +101,13 @@ async fn test_games_batch_upsert() {
         game_id,
         season: 20242025,
         game_date: time::macros::date!(2024 - 10 - 08),
-        start_time_utc: Some("2024-10-09T00:00:00.123456Z".parse().unwrap()),
+        start_time_utc: Some(
+            time::OffsetDateTime::parse(
+                "2024-10-09T00:00:00.123456Z",
+                &time::format_description::well_known::Rfc3339,
+            )
+            .unwrap(),
+        ),
         home_team_id: 99101,
         away_team_id: 99102,
         game_type: 2,
@@ -122,7 +128,13 @@ async fn test_games_batch_upsert() {
     let mut updated = game(9910000001);
     updated.season = 20252026;
     updated.game_date = time::macros::date!(2025 - 10 - 10);
-    updated.start_time_utc = Some("2025-10-11T01:02:03.654321Z".parse().unwrap());
+    updated.start_time_utc = Some(
+        time::OffsetDateTime::parse(
+            "2025-10-11T01:02:03.654321Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap(),
+    );
     updated.home_team_id = 99102;
     updated.away_team_id = 99101;
     updated.game_type = 3;
@@ -167,7 +179,7 @@ async fn test_games_batch_upsert() {
             timestamp.map(|t| t.unix_timestamp_nanos()),
             expected
                 .start_time_utc
-                .map(|t| i128::from(t.timestamp_micros()) * 1000)
+                .map(|t| t.unix_timestamp_nanos() / 1000 * 1000)
         );
         assert_eq!(row.get::<i64, _>("home_team_id"), expected.home_team_id);
         assert_eq!(row.get::<i64, _>("away_team_id"), expected.away_team_id);

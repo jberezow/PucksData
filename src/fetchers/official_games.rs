@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 
 use crate::{
-    api::fetch_api_json,
+    api::fetch_api_text,
     models::{DbOfficialGoalieGame, DbOfficialSkaterGame},
     AnyError,
 };
@@ -392,9 +392,9 @@ pub async fn fetch_official_game_stats(
     let skater_realtime_url = report_url("skater", "realtime", game_id);
     let goalie_summary_url = report_url("goalie", "summary", game_id);
     let (skater_summary, skater_realtime, goalie_summary) = tokio::try_join!(
-        fetch_api_json(&skater_summary_url),
-        fetch_api_json(&skater_realtime_url),
-        fetch_api_json(&goalie_summary_url),
+        fetch_api_text(&skater_summary_url),
+        fetch_api_text(&skater_realtime_url),
+        fetch_api_text(&goalie_summary_url),
     )?;
     let mut stats = parse_game_stats(
         game_id,
@@ -403,7 +403,7 @@ pub async fn fetch_official_game_stats(
         &skater_realtime,
         &goalie_summary,
     )?;
-    let boxscore = fetch_api_json(&format!(
+    let boxscore = fetch_api_text(&format!(
         "https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore"
     ))
     .await?;

@@ -1,5 +1,6 @@
 //! Transactional replacement of league-published player/game statistics.
 
+use crate::error::LoadError;
 use crate::fetchers::official_games::OfficialGameStats;
 
 /// Replace the complete official snapshot for one game.
@@ -10,8 +11,8 @@ use crate::fetchers::official_games::OfficialGameStats;
 pub async fn replace_official_game_stats(
     pool: &sqlx::PgPool,
     stats: &OfficialGameStats,
-) -> Result<(usize, usize), sqlx::Error> {
-    stats.validate().map_err(sqlx::Error::Protocol)?;
+) -> Result<(usize, usize), LoadError> {
+    stats.validate().map_err(LoadError::Validation)?;
     let game_id = stats.game_id;
     let mut transaction = pool.begin().await?;
     super::history::lock_game(&mut transaction, game_id).await?;
@@ -21,7 +22,7 @@ pub async fn replace_official_game_stats(
             .fetch_one(&mut *transaction)
             .await?;
     if stats.skaters[0].season != season || stats.skaters[0].game_type != game_type {
-        return Err(sqlx::Error::Protocol(
+        return Err(LoadError::Validation(
             "official snapshot scope disagrees with stored game".into(),
         ));
     }

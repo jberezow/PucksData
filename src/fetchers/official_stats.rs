@@ -7,7 +7,7 @@
 use serde::Deserialize;
 
 use crate::{
-    api::fetch_api_json,
+    api::fetch_api_text,
     models::{DbOfficialGoalieSeason, DbOfficialSkaterSeason},
     AnyError,
 };
@@ -138,7 +138,7 @@ pub async fn fetch_skater_season(
     season: i32,
     game_type: i16,
 ) -> Result<Vec<DbOfficialSkaterSeason>, AnyError> {
-    let json = fetch_api_json(&summary_url("skater", season, game_type)).await?;
+    let json = fetch_api_text(&summary_url("skater", season, game_type)).await?;
     let response: SummaryResponse<SkaterSummary> = serde_json::from_str(&json)?;
 
     Ok(response
@@ -180,7 +180,7 @@ pub async fn fetch_goalie_season(
     season: i32,
     game_type: i16,
 ) -> Result<Vec<DbOfficialGoalieSeason>, AnyError> {
-    let json = fetch_api_json(&summary_url("goalie", season, game_type)).await?;
+    let json = fetch_api_text(&summary_url("goalie", season, game_type)).await?;
     let response: SummaryResponse<GoalieSummary> = serde_json::from_str(&json)?;
 
     Ok(response

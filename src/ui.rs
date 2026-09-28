@@ -2,6 +2,14 @@
 
 use indicatif::{ProgressBar, ProgressStyle};
 
+pub fn make_spinner(message: &str) -> ProgressBar {
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(ProgressStyle::with_template("{spinner} {msg}").unwrap());
+    spinner.set_message(message.to_owned());
+    spinner.enable_steady_tick(std::time::Duration::from_millis(80));
+    spinner
+}
+
 /// Create a progress bar with the shared style and throughput display.
 pub fn make_progress_bar(total: u64, label: &str) -> ProgressBar {
     let pb = ProgressBar::new(total);

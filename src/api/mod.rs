@@ -82,13 +82,17 @@ async fn fetch_text_with_client(client: &reqwest::Client, url: &str) -> Result<S
                             .ok()
                             .map(std::time::Duration::from_secs)
                             .or_else(|| {
-                                chrono::DateTime::parse_from_rfc2822(value)
-                                    .ok()
-                                    .map(|date| {
-                                        (date.with_timezone(&chrono::Utc) - chrono::Utc::now())
-                                            .to_std()
-                                            .unwrap_or_default()
-                                    })
+                                time::OffsetDateTime::parse(
+                                    value,
+                                    &time::format_description::well_known::Rfc2822,
+                                )
+                                .ok()
+                                .map(|date| {
+                                    std::time::Duration::try_from(
+                                        date - time::OffsetDateTime::now_utc(),
+                                    )
+                                    .unwrap_or_default()
+                                })
                             });
                         if let Some(retry_after) = retry_after {
                             // Leave long waits to the next run without retrying early.
@@ -134,11 +138,6 @@ async fn fetch_text_with_client(client: &reqwest::Client, url: &str) -> Result<S
         tokio::time::sleep(delay + std::time::Duration::from_millis(jitter)).await;
     }
     unreachable!("bounded retry loop always returns")
-}
-
-/// Fetch a JSON endpoint via the shared HTTP client.
-pub async fn fetch_api_json(url: &str) -> Result<String, ApiError> {
-    fetch_api_text(url).await
 }
 
 #[cfg(test)]

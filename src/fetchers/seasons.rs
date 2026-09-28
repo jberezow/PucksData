@@ -1,5 +1,5 @@
 //! Fetches the list of all season IDs from the NHL stats API.
-use crate::{api::fetch_api_json, models::DbSeason, AnyError};
+use crate::{api::fetch_api_text, models::DbSeason, AnyError};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 
@@ -38,28 +38,28 @@ pub async fn fetch_seasons() -> Result<Vec<DbSeason>, AnyError> {
     pb.set_message("Fetching NHL seasons...");
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let seasons_json = fetch_api_json("https://api-web.nhle.com/v1/season").await?;
+    let seasons_json = fetch_api_text("https://api-web.nhle.com/v1/season").await?;
     let season_years: Vec<i32> = serde_json::from_str(&seasons_json)?;
 
     pb.set_message("Fetching season date data...");
 
     let stats_map: HashMap<i32, StatsSeasonRecord> =
-        match fetch_api_json("https://api.nhle.com/stats/rest/en/season?limit=-1").await {
+        match fetch_api_text("https://api.nhle.com/stats/rest/en/season?limit=-1").await {
             Ok(json) => match serde_json::from_str::<StatsSeasonResponse>(&json) {
                 Ok(resp) => resp.data.into_iter().map(|r| (r.season_id, r)).collect(),
                 Err(e) => {
-                    eprintln!(
+                    tracing::warn!(
                         "Warning: failed to parse stats season data: {e} — dates will be None"
                     );
                     HashMap::new()
                 }
             },
             Err(crate::api::ApiError::NotFound) => {
-                eprintln!("Warning: stats season endpoint returned 404 — dates will be None");
+                tracing::warn!("Warning: stats season endpoint returned 404 — dates will be None");
                 HashMap::new()
             }
             Err(e) => {
-                eprintln!("Warning: stats season endpoint error: {e} — dates will be None");
+                tracing::warn!("Warning: stats season endpoint error: {e} — dates will be None");
                 HashMap::new()
             }
         };
