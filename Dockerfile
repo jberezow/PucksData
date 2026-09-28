@@ -1,5 +1,5 @@
 # Shared cargo-chef base.
-FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm@sha256:5a37e174ceb7ccbebd6d0024049e9308f4de399bbcabbc3c6c649c70486880d5 AS chef
 WORKDIR /app
 
 # Dependency recipe.
@@ -19,7 +19,7 @@ RUN cargo build --release --bin pucksdata
 # Minimal non-root runtime.
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
-# reqwest requires system CA certificates for NHL API TLS verification.
+# Keep system trust available for operational tools; the application uses bundled webpki roots.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*

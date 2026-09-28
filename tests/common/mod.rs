@@ -4,7 +4,15 @@ use sqlx::{postgres::PgConnectOptions, postgres::PgPoolOptions, PgPool};
 
 #[allow(dead_code)]
 pub fn test_database_configured() -> bool {
-    std::env::var("TEST_DATABASE_URL").is_ok()
+    let configured = std::env::var("TEST_DATABASE_URL").is_ok_and(|value| !value.trim().is_empty());
+    assert!(
+        configured || std::env::var_os("CI").is_none(),
+        "CI requires TEST_DATABASE_URL; database tests must not silently pass without running"
+    );
+    if !configured {
+        eprintln!("database test skipped: set TEST_DATABASE_URL to a disposable test database");
+    }
+    configured
 }
 
 /// Create a pool owned by the current test's Tokio runtime.
