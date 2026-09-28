@@ -1,4 +1,4 @@
--- PucksPool e8edeb9fb7415a7a3c72ad017d3b42ca1e779a9f: lineups.py
+-- Consumer e8edeb9fb7415a7a3c72ad017d3b42ca1e779a9f: lineups.py
 WITH next_slate AS (
     SELECT game_date
     FROM games

@@ -1,6 +1,6 @@
 # Schema conventions and migration direction
 
-The immediate priority is preserving PucksPool's deployed reads while making
+The immediate priority is preserving the consumer's deployed reads while making
 identities and ownership explicit. Migrations 0037–0038 establish that foundation;
 they do not rename hockey storage tables or existing consumer columns.
 
@@ -61,16 +61,16 @@ Migration 0037 preserves all existing dataset names and payload shapes. Future
 column renames must also preserve or deliberately version the normalized payload;
 stable dataset names alone cannot prevent artificial revisions from renamed keys.
 
-## Protecting PucksPool
+## Protecting downstream consumers
 
-The checked-in [contract](../tests/contracts/puckspool.json) records relation
-names and ordered column names/types used by PucksPool at commit
+The checked-in [contract](../tests/contracts/consumer.json) records relation
+names and ordered column names/types used by the reviewed consumer at commit
 `e8edeb9fb7415a7a3c72ad017d3b42ca1e779a9f`. Its existing public tables and analytics
 interfaces remain unchanged. This is a reviewed source contract, not a claim
 that the deployed application was exercised end to end.
 
 CI verifies those shapes and upgrades a populated database from migration 0036.
-It compares existing read results and the captured PucksPool scoring, draft and
+It compares existing read results and the captured consumer scoring, draft and
 schedule SQL before and after migration, using a restricted reader. Fixtures
 include official skater/goalie facts and a scoring retraction. It also checks
 legacy grants, column grants, grant options, default privilege isolation,
@@ -109,14 +109,14 @@ contract shapes and the new views when `TEST_DATABASE_URL` is configured.
    cannot upsert through the compatibility views. A binary-only rollback is
    therefore insufficient after 0038; keep writers paused until the binary and
    canonical table locations agree.
-5. Verify PucksPool's draft, schedule and scoring reads and the first sync's
-   status. PucksPool requires no application deployment or schema change for
-   this upgrade. Its current grants remain attached to unchanged relations.
+5. Verify the consumer's draft, schedule and scoring reads and the first sync's
+   status. The existing consumer requires no application deployment or schema
+   change for this upgrade. Its current grants remain attached to unchanged relations.
 
 Legacy operational SELECT grants (including column-only grants and grant
 options) are copied to the public views. Those readers need no new `ingestion`
-schema access. New analytics views receive SELECT for `pucksstudio_read` if that
-role exists; other readers can receive narrowly scoped grants when adopting them:
+schema access. New analytics views receive SELECT for the legacy reader role if it
+exists; other readers can receive narrowly scoped grants when adopting them:
 
 ```sql
 GRANT USAGE ON SCHEMA analytics TO consumer_role;
@@ -127,13 +127,13 @@ GRANT SELECT ON analytics.franchises, analytics.season_catalog,
 ## Next substantial migration
 
 First extend the explicit analytics contracts for the remaining consumer needs
-and migrate PucksPool reads in its own tested release. Inventory other consumers
-and grants before moving physical hockey storage into a domain schema such as
+and migrate the deployed consumer’s reads in its own tested release. Inventory
+other consumers and grants before moving physical hockey storage into a domain schema such as
 `hockey`. Keep the legacy interfaces until those consumers have migrated.
 
 Then rename physical keys to their actual identity domains, preserving foreign
 keys, history payload semantics and consumer view shapes. Compare populated
 upgrade results and query plans before rollout. Only retire compatibility views
 after a documented deprecation period and confirmation that deployed consumers
-no longer use them. PucksQL can adopt the new contracts as development resumes;
-it does not need to delay this preparatory work.
+no longer use them. Consumers still under development can adopt the new contracts
+as work resumes; they do not need to delay this preparatory work.

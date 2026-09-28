@@ -23,7 +23,7 @@ async fn test_player_event_seasons_refreshes_concurrently() {
 }
 
 /// The health page reads these columns by name. Renaming or dropping one
-/// breaks PucksStudio and the status command at runtime, not at build time.
+/// breaks downstream consumers and the status command at runtime, not at build time.
 #[tokio::test]
 async fn test_dataset_health_exposes_its_contract() {
     if !common::test_database_configured() {

@@ -55,7 +55,7 @@ jobs:
             psql "$TEST_DATABASE_URL" --set ON_ERROR_STOP=1 --file "$migration"
           done
 
-      - name: Verify populated schema upgrade and PucksPool contracts
+      - name: Verify populated schema upgrade and Consumer contracts
         run: python3 scripts/check_schema_upgrade.py
 
       - name: Check formatting

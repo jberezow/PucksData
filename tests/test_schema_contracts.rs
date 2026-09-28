@@ -2,15 +2,15 @@ mod common;
 
 /// Snapshot of the deployed consumer's relation/column/type contracts. A larger
 /// storage migration must preserve these names (possibly through views) until
-/// PucksPool has explicitly migrated. Do not regenerate this fixture blindly.
+/// the consumer has explicitly migrated. Do not regenerate this fixture blindly.
 #[tokio::test]
-async fn puckspool_read_contract_is_unchanged() {
+async fn consumer_read_contract_is_unchanged() {
     if !common::test_database_configured() {
         return;
     }
     let pool = common::test_pool().await;
     let contract: serde_json::Value =
-        serde_json::from_str(include_str!("contracts/puckspool.json")).unwrap();
+        serde_json::from_str(include_str!("contracts/consumer.json")).unwrap();
     for (relation, expected) in contract["relations"].as_object().unwrap() {
         let columns: Vec<(String, String)> = sqlx::query_as(
             "SELECT attname::text, format_type(atttypid,atttypmod)
@@ -22,7 +22,7 @@ async fn puckspool_read_contract_is_unchanged() {
         .await
         .unwrap();
         assert_eq!(serde_json::to_value(columns).unwrap(), *expected,
-            "PucksPool contract changed: {relation}; coordinate a consumer migration before changing this fixture");
+            "Consumer contract changed: {relation}; coordinate a consumer migration before changing this fixture");
     }
 }
 
