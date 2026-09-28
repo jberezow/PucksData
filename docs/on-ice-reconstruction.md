@@ -34,7 +34,7 @@ season's backfill. Replay needs no network. Retain the source export and summary
 together: NHL feeds and database snapshots can change.
 
 The library exposes `on_ice::analyze(&GameSource)`, `audit::game` and
-`audit::run`. Consumers such as PucksSequences can call the same engine or use
+`audit::run`. Downstream applications can call the same engine or use
 its JSON output. Keep the summary's method version, source snapshot time and
 source hash alongside exported events. No permanent event-player bridge or
 lineup columns on `events` are created.
@@ -158,7 +158,7 @@ cannot identify that special one-shooter/one-goalie setup; the count pattern is
 flagged and disagreements remain visible. No players are removed to force a match.
 Boundary-compatible counts also cannot validate which five skaters were present.
 
-For an initial conservative PucksSequences subset, require `resolved` **and**
+For an initial conservative analysis subset, require `resolved` **and**
 `exact`, inspect source flags and game/player TOI, and keep exclusions visible.
 The summary reports this joint subset both with and without source warnings.
 That is an operational filter, not an accuracy probability. Do not use the union

@@ -105,18 +105,19 @@ unchanged; tune them only if timing evidence shows sustained contention.
 
 ### Runtime measurements
 
-`[phase]` lines identify dataset, entity and attempt. `[timing]` lines report
+Ingestion logs identify dataset, entity and attempt. Timing records report
 elapsed seconds, actual HTTP request/retry counts, HTTP worker milliseconds,
 source-capture SQL worker milliseconds and source-capture pool-wait milliseconds.
+Logs go to stderr; set `PUCKSDATA_LOG_FORMAT=json` for structured fields and
+`RUST_LOG` to adjust verbosity (default `pucksdata=info`).
 Worker times sum concurrent operations and can exceed wall time. Each attempt
 reports its own work; a parent does not double-count nested attempt metrics.
 Player upserts and schedule writes also log elapsed seconds. Schedule logs show
 catalog size, immediate selections, periodic selections and boxscore requests;
 derived logs explicitly report skipped products.
 
-Compare these phase measurements with the September 24 timeout and subsequent
-successful runs. Do not treat the reduced request counts as a measured runtime
-speedup: NHL and database latency still vary, initial catalogs need more work,
+Compare phase measurements across normal and correction-audit runs. Reduced
+request counts alone do not establish a runtime speedup: NHL and database latency still vary, initial catalogs need more work,
 and Sundays audit more completed games.
 
 ## Failure and refresh behavior
