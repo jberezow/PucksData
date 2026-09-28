@@ -3,8 +3,10 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::{
-    api::fetch_api_json,
-    models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot, StrengthSource},
+    api::fetch_api_text,
+    models::{
+        DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot, EventBatch, StrengthSource,
+    },
     AnyError,
 };
 
@@ -237,7 +239,7 @@ pub fn strength_for_owner(
 /// Endpoint: <https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play>
 pub async fn fetch_play_by_play(game_id: i64) -> Result<PlayByPlay, AnyError> {
     let url = format!("https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play");
-    let json = fetch_api_json(&url).await?;
+    let json = fetch_api_text(&url).await?;
     parse_play_by_play(game_id, &json)
 }
 
@@ -270,7 +272,7 @@ fn parse_play_by_play(game_id: i64, json: &str) -> Result<PlayByPlay, AnyError> 
 /// short-handed using the same event ID.
 pub async fn fetch_goal_strengths(game_id: i64) -> Result<HashMap<i32, EventStrength>, AnyError> {
     let url = format!("https://api-web.nhle.com/v1/gamecenter/{game_id}/landing");
-    let json = fetch_api_json(&url).await?;
+    let json = fetch_api_text(&url).await?;
     let landing: GameLanding = serde_json::from_str(&json)?;
 
     Ok(landing
@@ -300,74 +302,36 @@ pub fn needs_goal_strengths(pbp: &PlayByPlay) -> bool {
 
 // ── Transform ─────────────────────────────────────────────────────────────────
 
-/// Transform a PlayByPlay response into typed Db model vectors.
+/// Transform play-by-play into typed event rows and parsing warnings.
 ///
-/// Single pass over pbp.plays — classifies each event by typeDescKey and
-/// populates all seven return vectors.
-///
-/// Shootout events (periodType == "SO") are skipped per REQUIREMENTS.md.
+/// Shootout events (periodType == "SO") are skipped.
 /// Events with a recognized typeDescKey but missing details are skipped with a
-/// warning string collected in the returned skip_warnings vector.
+/// warning string collected in the returned batch.
 ///
 /// eventOwnerTeamId is translated from NHL team ID to franchise ID via
 /// team_id_map. Unmapped team IDs store as NULL (nullable column).
-///
-/// Returns (events, goals, shots, hits, blocks, penalties, faceoffs, skip_warnings).
-#[allow(clippy::type_complexity)]
-pub fn transform_events(
-    pbp: &PlayByPlay,
-    team_id_map: &HashMap<i64, i64>,
-) -> (
-    Vec<DbEvent>,
-    Vec<DbGoal>,
-    Vec<DbShot>,
-    Vec<DbHit>,
-    Vec<DbBlock>,
-    Vec<DbPenalty>,
-    Vec<DbFaceoff>,
-    Vec<String>,
-) {
+pub fn transform_events(pbp: &PlayByPlay, team_id_map: &HashMap<i64, i64>) -> EventBatch {
     transform_events_with_goal_strengths(pbp, team_id_map, &HashMap::new())
 }
 
 /// Transform play-by-play and enrich goals with explicit scoring-summary
 /// strength when the play itself has no valid `situationCode`.
-#[allow(clippy::type_complexity)]
 pub fn transform_events_with_goal_strengths(
     pbp: &PlayByPlay,
     team_id_map: &HashMap<i64, i64>,
     goal_strengths: &HashMap<i32, EventStrength>,
-) -> (
-    Vec<DbEvent>,
-    Vec<DbGoal>,
-    Vec<DbShot>,
-    Vec<DbHit>,
-    Vec<DbBlock>,
-    Vec<DbPenalty>,
-    Vec<DbFaceoff>,
-    Vec<String>,
-) {
+) -> EventBatch {
     transform_events_with_strength_sources(pbp, team_id_map, goal_strengths, &HashMap::new())
 }
 
 /// Transform play-by-play using explicit NHL strength sources in priority
 /// order: situation code, structured scoring summary, then archived report.
-#[allow(clippy::type_complexity)]
 pub fn transform_events_with_strength_sources(
     pbp: &PlayByPlay,
     team_id_map: &HashMap<i64, i64>,
     goal_strengths: &HashMap<i32, EventStrength>,
     report_strengths: &HashMap<i32, EventStrength>,
-) -> (
-    Vec<DbEvent>,
-    Vec<DbGoal>,
-    Vec<DbShot>,
-    Vec<DbHit>,
-    Vec<DbBlock>,
-    Vec<DbPenalty>,
-    Vec<DbFaceoff>,
-    Vec<String>,
-) {
+) -> EventBatch {
     let game_id = pbp.id;
     let mut events = Vec::new();
     let mut goals = Vec::new();
@@ -573,7 +537,7 @@ pub fn transform_events_with_strength_sources(
         }
     }
 
-    (
+    EventBatch {
         events,
         goals,
         shots,
@@ -581,8 +545,8 @@ pub fn transform_events_with_strength_sources(
         blocks,
         penalties,
         faceoffs,
-        skip_warnings,
-    )
+        warnings: skip_warnings,
+    }
 }
 
 #[cfg(test)]

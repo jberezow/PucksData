@@ -1,5 +1,6 @@
 //! Transactional persistence of complete NHL current-roster observations.
 
+use crate::error::LoadError;
 use crate::models::CurrentRosterObservation;
 
 const SOURCE: &str = "https://api-web.nhle.com/v1/roster/{team}/current";
@@ -11,9 +12,9 @@ const SOURCE: &str = "https://api-web.nhle.com/v1/roster/{team}/current";
 pub async fn insert_roster_snapshot(
     pool: &sqlx::PgPool,
     observation: &CurrentRosterObservation,
-) -> Result<i64, sqlx::Error> {
+) -> Result<i64, LoadError> {
     if !observation.is_complete() || observation.memberships.is_empty() {
-        return Err(sqlx::Error::Protocol(
+        return Err(LoadError::Validation(
             "refusing to persist an incomplete or empty roster observation".to_string(),
         ));
     }
@@ -77,7 +78,7 @@ pub async fn insert_roster_snapshot(
     .rows_affected();
 
     if inserted != observation.memberships.len() as u64 {
-        return Err(sqlx::Error::Protocol(format!(
+        return Err(LoadError::Validation(format!(
             "roster snapshot expected {} memberships but matched {inserted} known team rows",
             observation.memberships.len()
         )));

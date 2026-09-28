@@ -44,10 +44,17 @@ pub async fn scope<T>(context: Context, operation: impl Future<Output = T>) -> T
     let attempt_id = context.attempt_id;
     let started = Instant::now();
     let result = CONTEXT.scope(context, operation).await;
-    println!("[timing] attempt={attempt_id} elapsed_s={:.3} http_requests={} retries={} http_worker_ms={} capture_worker_ms={} capture_pool_wait_ms={}",
-        started.elapsed().as_secs_f64(), metrics.requests.load(Ordering::Relaxed),
-        metrics.retries.load(Ordering::Relaxed), metrics.http_ms.load(Ordering::Relaxed),
-        metrics.capture_ms.load(Ordering::Relaxed), metrics.pool_wait_ms.load(Ordering::Relaxed));
+    tracing::info!(
+        phase = "timing",
+        attempt = attempt_id,
+        elapsed_s = started.elapsed().as_secs_f64(),
+        http_requests = metrics.requests.load(Ordering::Relaxed),
+        retries = metrics.retries.load(Ordering::Relaxed),
+        http_worker_ms = metrics.http_ms.load(Ordering::Relaxed),
+        capture_worker_ms = metrics.capture_ms.load(Ordering::Relaxed),
+        capture_pool_wait_ms = metrics.pool_wait_ms.load(Ordering::Relaxed),
+        "ingestion timing"
+    );
     result
 }
 

@@ -63,7 +63,7 @@ where
     .fetch_one(pool)
     .await?;
     if invalidations.is_empty() && !unfinished {
-        println!("[derived] {label} unchanged; skipped");
+        tracing::info!("[derived] {label} unchanged; skipped");
         return Ok(false);
     }
     super::attempts::track(pool, "derived", label, async {

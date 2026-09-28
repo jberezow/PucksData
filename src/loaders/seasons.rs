@@ -26,7 +26,7 @@ pub async fn upsert_seasons(
         )
         .execute(&mut *tx)
         .await?;
-        pb.suspend(|| println!("{}", record.season_year));
+        pb.suspend(|| tracing::info!("{}", record.season_year));
         pb.inc(1);
     }
     tx.commit().await?;

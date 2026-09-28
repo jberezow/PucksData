@@ -30,7 +30,12 @@ pub async fn track<T>(
     operation: impl Future<Output = Result<T, crate::AnyError>>,
 ) -> Result<T, crate::AnyError> {
     let id = start(pool, dataset, key).await?;
-    println!("[phase] dataset={dataset} entity={key} attempt={id} started");
+    tracing::info!(
+        dataset,
+        entity = key,
+        attempt = id,
+        "ingestion attempt started"
+    );
     let result = crate::provenance::scope(
         crate::provenance::Context {
             pool: pool.clone(),
@@ -65,36 +70,99 @@ pub async fn track<T>(
     result
 }
 
+/// Run an ingestion command with exclusive writes, provenance, and current team identities.
+pub async fn command<T>(
+    pool: &sqlx::PgPool,
+    key: &str,
+    operation: impl Future<Output = Result<T, crate::AnyError>>,
+) -> Result<T, crate::AnyError> {
+    exclusive(
+        pool,
+        track(
+            pool,
+            "command",
+            key,
+            super::team_attribution::with_current_mapping(pool, operation),
+        ),
+    )
+    .await
+}
+
 /// Hold a pooler-safe writer lease through fetch and commit, preventing an older
 /// response from a concurrent command replacing a more recent observation.
 pub async fn exclusive<T>(
     pool: &sqlx::PgPool,
     operation: impl Future<Output = Result<T, crate::AnyError>>,
 ) -> Result<T, crate::AnyError> {
-    if pool.options().get_max_connections() < 2 {
-        return Err("ingestion requires at least two database connections".into());
-    }
-    let mut lease = pool.begin().await?;
-    sqlx::query("SET LOCAL idle_in_transaction_session_timeout = '60s'")
-        .execute(&mut *lease)
-        .await?;
-    let acquired: bool = sqlx::query_scalar(
-        "SELECT pg_try_advisory_xact_lock(hashtextextended('pucksdata:ingestion', 0))",
+    crate::db::require_connections(pool, 1, "ingestion")?;
+    Lease::acquire(
+        pool,
+        LeaseKey::Hashed("pucksdata:ingestion"),
+        "another ingestion command is running; retry after it finishes",
     )
-    .fetch_one(&mut *lease)
-    .await?;
-    if !acquired {
-        return Err("another ingestion command is running; retry after it finishes".into());
-    }
-    tokio::pin!(operation);
-    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(10));
-    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let result = loop {
-        tokio::select! {
-            result = &mut operation => break result,
-            _ = heartbeat.tick() => { sqlx::query("SELECT 1").execute(&mut *lease).await?; }
+    .await?
+    .run(operation)
+    .await
+}
+
+/// A transaction-scoped advisory lock, kept alive even while ingestion is idle.
+pub struct Lease {
+    transaction: sqlx::Transaction<'static, sqlx::Postgres>,
+}
+
+pub(crate) enum LeaseKey {
+    Hashed(&'static str),
+    Numeric(i64),
+}
+
+impl Lease {
+    pub(crate) async fn acquire(
+        pool: &sqlx::PgPool,
+        key: LeaseKey,
+        contention_message: &str,
+    ) -> Result<Self, crate::AnyError> {
+        let mut transaction = pool.begin().await?;
+        sqlx::query("SET LOCAL idle_in_transaction_session_timeout = '60s'")
+            .execute(&mut *transaction)
+            .await?;
+        let (numeric_key, hashed_key) = match key {
+            LeaseKey::Hashed(key) => (None, Some(key)),
+            LeaseKey::Numeric(key) => (Some(key), None),
+        };
+        let acquired: bool = sqlx::query_scalar(
+            "SELECT pg_try_advisory_xact_lock(COALESCE($1::bigint, hashtextextended($2, 0)))",
+        )
+        .bind(numeric_key)
+        .bind(hashed_key)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if !acquired {
+            return Err(contention_message.to_owned().into());
         }
-    };
-    lease.rollback().await?;
-    result
+        Ok(Self { transaction })
+    }
+
+    /// Cancel the operation if its lease connection is lost or stops responding.
+    pub async fn run<T>(
+        mut self,
+        operation: impl Future<Output = Result<T, crate::AnyError>>,
+    ) -> Result<T, crate::AnyError> {
+        tokio::pin!(operation);
+        let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(10));
+        heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let result = loop {
+            tokio::select! {
+                biased;
+                _ = heartbeat.tick() => {
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(10),
+                        sqlx::query("SELECT 1").execute(&mut *self.transaction),
+                    ).await??;
+                }
+                result = &mut operation => break result,
+            }
+        };
+        self.transaction.rollback().await?;
+        result
+    }
 }

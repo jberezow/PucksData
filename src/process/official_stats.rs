@@ -67,7 +67,7 @@ pub async fn run_official_stats(
                 Err(error) => {
                     summary.failures += 1;
                     pb.suspend(|| {
-                        eprintln!("warn: skater summary {season} type {game_type}: {error}")
+                        tracing::warn!("warn: skater summary {season} type {game_type}: {error}")
                     });
                 }
             }
@@ -87,7 +87,7 @@ pub async fn run_official_stats(
                 Err(error) => {
                     summary.failures += 1;
                     pb.suspend(|| {
-                        eprintln!("warn: goalie summary {season} type {game_type}: {error}")
+                        tracing::warn!("warn: goalie summary {season} type {game_type}: {error}")
                     });
                 }
             }
@@ -97,9 +97,12 @@ pub async fn run_official_stats(
     }
 
     pb.finish_and_clear();
-    println!(
+    tracing::info!(
         "Official stats: {} seasons, {} skater rows, {} goalie rows, {} failures",
-        summary.seasons, summary.skater_rows, summary.goalie_rows, summary.failures
+        summary.seasons,
+        summary.skater_rows,
+        summary.goalie_rows,
+        summary.failures
     );
 
     Ok(summary)

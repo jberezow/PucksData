@@ -1,7 +1,4 @@
 //! Incremental sync orchestrator — gap detection and event ingestion for completed games.
-use chrono::Datelike;
-use sqlx::postgres::PgAdvisoryLock;
-use sqlx::Either;
 
 /// Summary returned by run_sync() on every success path.
 pub struct SyncSummary {
@@ -43,14 +40,14 @@ pub fn season_for_date(month: u32, year: i32) -> i32 {
 ///
 /// Calls `season_for_date` with the current UTC month and year.
 pub fn current_season() -> i32 {
-    let now = chrono::Utc::now();
-    season_for_date(now.month(), now.year())
+    let now = time::OffsetDateTime::now_utc();
+    season_for_date(now.month() as u32, now.year())
 }
 
 /// September includes both the finishing and incoming season.
-pub fn active_seasons(date: chrono::NaiveDate) -> Vec<i32> {
-    let mut seasons = vec![season_for_date(date.month(), date.year())];
-    if date.month() == 9 {
+pub fn active_seasons(date: time::Date) -> Vec<i32> {
+    let mut seasons = vec![season_for_date(date.month() as u32, date.year())];
+    if date.month() == time::Month::September {
         seasons.push(date.year() * 10_000 + date.year() + 1);
     }
     seasons
@@ -79,7 +76,7 @@ async fn refresh_current_season_games(
     pool: &sqlx::PgPool,
     audit_from: time::Date,
 ) -> Result<usize, crate::AnyError> {
-    let seasons = active_seasons(chrono::Utc::now().date_naive());
+    let seasons = active_seasons(time::OffsetDateTime::now_utc().date());
     let mut count = 0;
     for season in seasons {
         let progress = indicatif::ProgressBar::hidden();
@@ -100,32 +97,30 @@ async fn refresh_current_season_games(
         .bind(&ids)
         .execute(pool)
         .await?;
-        println!(
-            "[timing] schedule_write_s={:.3}",
-            started.elapsed().as_secs_f64()
+        tracing::info!(
+            phase = "schedule_write",
+            elapsed_s = started.elapsed().as_secs_f64(),
+            "schedule written"
         );
     }
     Ok(count)
 }
 
-/// Acquire the session-level advisory lock used to enforce a single daemon.
-///
-/// The caller must retain the guard for the daemon's lifetime; dropping it
-/// releases the lock and returns its connection to the pool.
+/// Acquire the daemon lease; execute its lifetime through [`super::attempts::Lease::run`].
 pub async fn acquire_daemon_lock(
     pool: &sqlx::PgPool,
-) -> Result<
-    sqlx::postgres::PgAdvisoryLockGuard<sqlx::pool::PoolConnection<sqlx::Postgres>>,
-    crate::AnyError,
-> {
-    let lock = PgAdvisoryLock::new("pucksdata_daemon");
-    let conn = pool.acquire().await?;
-    match lock.try_acquire(conn).await? {
-        Either::Left(guard) => Ok(guard),
-        Either::Right(_conn) => Err(
-            "pucksdata daemon is already running (advisory lock held by another instance)".into(),
-        ),
-    }
+) -> Result<super::attempts::Lease, crate::AnyError> {
+    // Keep the existing key so deployments still exclude older daemon instances.
+    let lock = sqlx::postgres::PgAdvisoryLock::new("pucksdata_daemon");
+    let sqlx::postgres::PgAdvisoryLockKey::BigInt(key) = lock.key() else {
+        return Err("daemon advisory lock must use a bigint key".into());
+    };
+    super::attempts::Lease::acquire(
+        pool,
+        super::attempts::LeaseKey::Numeric(*key),
+        "pucksdata daemon is already running (advisory lock held by another instance)",
+    )
+    .await
 }
 
 /// Return past games with no events, optionally bounded by a starting date.
@@ -178,7 +173,7 @@ pub async fn query_sync_candidates_with_window(
 /// Daily recent corrections, with a wider Sunday audit. Override explicitly for
 /// older corrections; invalid configuration is never silently ignored.
 pub fn correction_days() -> Result<i32, crate::AnyError> {
-    let default = if chrono::Utc::now().weekday() == chrono::Weekday::Sun {
+    let default = if time::OffsetDateTime::now_utc().weekday() == time::Weekday::Sunday {
         14
     } else {
         3
@@ -275,10 +270,10 @@ async fn run_sync_inner(
     );
 
     // Refresh teams before building the team-to-franchise map.
-    println!("[sync 1/5] refreshing teams...");
+    tracing::info!(phase = "teams", "refreshing teams");
     let teams = crate::fetchers::teams::fetch_teams().await?;
     crate::loaders::teams::upsert_teams(pool, &teams, &indicatif::ProgressBar::hidden()).await?;
-    println!("[sync 1/5] {} teams upserted", teams.len());
+    tracing::info!(phase = "teams", count = teams.len(), "teams upserted");
 
     super::attempts::track(
         pool,
@@ -288,32 +283,24 @@ async fn run_sync_inner(
     )
     .await?;
 
-    println!("[sync 2/5] refreshing current players and rotating historical audits...");
+    tracing::info!(
+        phase = "players",
+        "refreshing players and historical audits"
+    );
     super::attempts::track(pool, "players_rosters", "current", async {
-        let mut seasons = active_seasons(chrono::Utc::now().date_naive());
+        let mut seasons = active_seasons(time::OffsetDateTime::now_utc().date());
         let audits = player_audit_seasons(pool, &seasons).await?;
-        println!("[players] active_seasons={seasons:?} historical_audits={audits:?}");
+        tracing::info!(phase = "players", active_seasons = ?seasons, historical_audits = ?audits, "selected player seasons");
         seasons.extend(&audits);
         let fetched_players = crate::fetchers::players::fetch_players_for_seasons(&seasons).await?;
         let writing = Instant::now();
         crate::loaders::players::upsert_players(pool, &fetched_players.players).await?;
-        println!(
-            "[timing] player_upsert_s={:.3}",
-            writing.elapsed().as_secs_f64()
-        );
-        println!(
-            "[sync 2/5] {} players upserted",
-            fetched_players.players.len()
-        );
+        tracing::info!(phase = "players", elapsed_s = writing.elapsed().as_secs_f64(), count = fetched_players.players.len(), "players upserted");
         if let Some(rosters) = fetched_players.current_rosters {
             if rosters.is_complete() {
                 let snapshot_id =
                     crate::loaders::rosters::insert_roster_snapshot(pool, &rosters).await?;
-                println!(
-                    "[sync 2/5] roster snapshot {snapshot_id} written ({} teams, {} memberships)",
-                    rosters.fetched_team_count,
-                    rosters.memberships.len()
-                );
+                tracing::info!(phase = "rosters", snapshot_id, teams = rosters.fetched_team_count, memberships = rosters.memberships.len(), "roster snapshot written");
             } else {
                 return Err("current roster observation incomplete; snapshot preserved".into());
             }
@@ -335,28 +322,36 @@ async fn run_sync_inner(
 
     let team_id_map = Arc::new(crate::fetchers::games::fetch_team_id_to_franchise_id_map().await?);
 
-    println!("[sync 3/5] detecting games with missing events...");
+    tracing::info!(phase = "event_candidates", "detecting gaps and corrections");
     let candidates = super::attempts::track(pool, "event_candidates", "current", async {
         Ok(query_sync_candidates_with_window(pool, from_date, audit_days).await?)
     })
     .await?;
     let candidates_count = candidates.len(); // all gap-detected candidates, before game_state filter
-    println!("[sync 3/5] {candidates_count} candidate games found (regular season + playoffs, gaps or correction audit)");
+    tracing::info!(
+        phase = "event_candidates",
+        candidates = candidates_count,
+        "candidate games found"
+    );
 
     let mut games_to_process: Vec<i64> = Vec::new();
     for (game_id, state) in &candidates {
         match state.as_deref() {
             Some(s) if is_game_completed(s) => games_to_process.push(*game_id),
-            Some(s) => eprintln!("warn: unknown gameState {s:?} for game {game_id} — skipping"),
+            Some(s) => tracing::warn!(game_id, game_state = s, "skipping unknown game state"),
             None => {} // NULL game_state — not completed, skip silently
         }
     }
 
     let total = games_to_process.len();
-    println!("[sync 4/5] {total} games ready to process (game_state OFF/OVER/FINAL)");
+    tracing::info!(
+        phase = "events",
+        games = total,
+        "completed games ready to process"
+    );
 
     let (processed, failed, events_written) = if total == 0 {
-        println!("[sync 4/5] nothing to do");
+        tracing::info!(phase = "events", "no games to process");
         (0usize, 0usize, 0usize)
     } else {
         const MAX_CONCURRENT_GAMES: usize = 5;
@@ -390,11 +385,11 @@ async fn run_sync_inner(
                     processed += 1;
                 }
                 Ok((game_id, Err(e))) => {
-                    pb.suspend(|| eprintln!("warn: game {game_id} failed: {e}"));
+                    pb.suspend(|| tracing::warn!(game_id, error = %e, "game ingestion failed"));
                     failed += 1;
                 }
                 Err(join_err) => {
-                    pb.suspend(|| eprintln!("warn: task join error: {join_err}"));
+                    pb.suspend(|| tracing::warn!(error = %join_err, "game task failed"));
                     failed += 1;
                 }
             }
@@ -406,8 +401,14 @@ async fn run_sync_inner(
 
     let elapsed = started_at.elapsed();
     let duration_secs = elapsed.as_secs_f64();
-    println!(
-        "[sync] event phase finished:\n  candidates:  {candidates_count}\n  processed:   {processed}\n  failed:      {failed}\n  events:      {events_written}\n  duration:    {duration_secs:.1}s",
+    tracing::info!(
+        phase = "events",
+        candidates = candidates_count,
+        processed,
+        failed,
+        events_written,
+        elapsed_s = duration_secs,
+        "event phase finished"
     );
 
     // Repair player references after all new event rows are visible.

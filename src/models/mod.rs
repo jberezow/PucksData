@@ -1,6 +1,4 @@
 //! Plain-Rust DB model structs that map 1-to-1 to database table columns.
-use chrono::DateTime;
-use chrono::Utc;
 use time::Date;
 
 /// A team record mapping to the `teams` table.
@@ -70,7 +68,7 @@ pub struct DbGame {
     pub game_id: i64,
     pub season: i32,
     pub game_date: Date,
-    pub start_time_utc: Option<DateTime<Utc>>,
+    pub start_time_utc: Option<time::OffsetDateTime>,
     pub home_team_id: i64,
     pub away_team_id: i64,
     pub game_type: i16,
@@ -82,6 +80,31 @@ pub struct DbGame {
 }
 
 // ── Event model structs ───────────────────────────────────────────────────────
+
+/// Parsed rows and diagnostics from one game’s play-by-play feed.
+#[derive(Default)]
+pub struct EventBatch {
+    pub events: Vec<DbEvent>,
+    pub goals: Vec<DbGoal>,
+    pub shots: Vec<DbShot>,
+    pub hits: Vec<DbHit>,
+    pub blocks: Vec<DbBlock>,
+    pub penalties: Vec<DbPenalty>,
+    pub faceoffs: Vec<DbFaceoff>,
+    pub warnings: Vec<String>,
+}
+
+/// Rows written by an atomic event snapshot replacement.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct EventCounts {
+    pub events: usize,
+    pub goals: usize,
+    pub shots: usize,
+    pub hits: usize,
+    pub blocks: usize,
+    pub penalties: usize,
+    pub faceoffs: usize,
+}
 
 /// Base event row — maps to the `events` table.
 pub struct DbEvent {

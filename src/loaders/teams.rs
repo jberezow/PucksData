@@ -67,7 +67,7 @@ pub async fn upsert_teams(
         )
         .execute(&mut *tx)
         .await?;
-        pb.suspend(|| println!("{}", record.abbrev));
+        pb.suspend(|| tracing::info!("{}", record.abbrev));
         pb.inc(1);
     }
     tx.commit().await?;

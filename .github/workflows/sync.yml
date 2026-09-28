@@ -20,7 +20,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   SQLX_OFFLINE: "true"
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
 jobs:
   sync:
@@ -30,13 +29,13 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
 
       - name: Build engine
         id: build
@@ -44,6 +43,7 @@ jobs:
 
       - name: Synchronize and audit recent corrections
         env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PUCKSDATA_CORRECTION_DAYS: ${{ inputs.audit_days }}
         run: |
           if [[ -z "$PUCKSDATA_CORRECTION_DAYS" ]]; then
@@ -54,6 +54,8 @@ jobs:
       - name: Collect database health
         id: health
         if: always() && steps.build.outcome == 'success'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           target/release/pucksdata status --json --no-fail > pucksdata-health.json
           jq empty pucksdata-health.json
@@ -87,7 +89,7 @@ jobs:
 
       - name: Upload health report
         if: always() && steps.health.outputs.report == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pucksdata-health-${{ github.run_id }}
           path: pucksdata-health.json

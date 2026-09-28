@@ -3,7 +3,11 @@ use std::collections::HashMap;
 
 use sqlx::Row;
 
-use crate::models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot};
+use crate::error::LoadError;
+
+use crate::models::{
+    DbBlock, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot, EventBatch, EventCounts,
+};
 
 /// Replace all events for a game atomically in a single PostgreSQL transaction.
 ///
@@ -13,24 +17,14 @@ use crate::models::{DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbSho
 ///
 /// Uses UNNEST-based bulk inserts: one SQL roundtrip for base events
 /// (with RETURNING id to build the FK map), then one per non-empty child type.
-/// This replaces the previous per-row loop pattern (~300+ roundtrips/game).
-///
-/// Returns (events_inserted, goals_inserted, shots_inserted, hits_inserted,
-///          blocks_inserted, penalties_inserted, faceoffs_inserted).
-#[allow(clippy::too_many_arguments)]
 pub async fn upsert_game_events(
     pool: &sqlx::PgPool,
     game_id: i64,
-    events: &[DbEvent],
-    goals: &[DbGoal],
-    shots: &[DbShot],
-    hits: &[DbHit],
-    blocks: &[DbBlock],
-    penalties: &[DbPenalty],
-    faceoffs: &[DbFaceoff],
-) -> Result<(usize, usize, usize, usize, usize, usize, usize), sqlx::Error> {
+    batch: &EventBatch,
+) -> Result<EventCounts, LoadError> {
+    let events = &batch.events;
     if events.iter().any(|event| event.game_id != game_id) {
-        return Err(sqlx::Error::Protocol(
+        return Err(LoadError::Validation(
             "event snapshot contains a foreign game".into(),
         ));
     }
@@ -167,7 +161,7 @@ pub async fn upsert_game_events(
         // The join above is also the source of the denormalized scope fields. A
         // missing game would otherwise turn into a silent zero-row insert.
         if rows.len() != events.len() {
-            return Err(sqlx::Error::Protocol(format!(
+            return Err(LoadError::Validation(format!(
                 "inserted {} of {} events; every event must reference a loaded game",
                 rows.len(),
                 events.len()
@@ -181,9 +175,30 @@ pub async fn upsert_game_events(
         }
     }
 
-    let events_inserted = events.len();
+    let counts = EventCounts {
+        events: events.len(),
+        goals: insert_goals(&mut tx, &batch.goals, &event_db_id_map).await?,
+        shots: insert_shots(&mut tx, &batch.shots, &event_db_id_map).await?,
+        hits: insert_hits(&mut tx, &batch.hits, &event_db_id_map).await?,
+        blocks: insert_blocks(&mut tx, &batch.blocks, &event_db_id_map).await?,
+        penalties: insert_penalties(&mut tx, &batch.penalties, &event_db_id_map).await?,
+        faceoffs: insert_faceoffs(&mut tx, &batch.faceoffs, &event_db_id_map).await?,
+    };
 
-    // ── Bulk insert goals ─────────────────────────────────────────────────────
+    // Single commit — all events for the game or none (atomic guarantee)
+    if !events.is_empty() {
+        super::history::events(&mut tx, game_id).await?;
+    }
+    tx.commit().await?;
+
+    Ok(counts)
+}
+
+async fn insert_goals(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    goals: &[DbGoal],
+    event_db_id_map: &HashMap<i32, i64>,
+) -> Result<usize, sqlx::Error> {
     let goals_matched: Vec<(i64, &DbGoal)> = goals
         .iter()
         .filter_map(|g| event_db_id_map.get(&g.event_id_in_game).map(|&id| (id, g)))
@@ -231,13 +246,18 @@ pub async fn upsert_game_events(
         .bind(&a2)
         .bind(&goalies)
         .bind(&stypes)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    let goals_inserted = goals_matched.len();
+    Ok(goals_matched.len())
+}
 
-    // ── Bulk insert shots ─────────────────────────────────────────────────────
+async fn insert_shots(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    shots: &[DbShot],
+    event_db_id_map: &HashMap<i32, i64>,
+) -> Result<usize, sqlx::Error> {
     let shots_matched: Vec<(i64, &DbShot)> = shots
         .iter()
         .filter_map(|s| event_db_id_map.get(&s.event_id_in_game).map(|&id| (id, s)))
@@ -273,13 +293,18 @@ pub async fn upsert_game_events(
         .bind(&shooters)
         .bind(&goalies)
         .bind(&stypes)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    let shots_inserted = shots_matched.len();
+    Ok(shots_matched.len())
+}
 
-    // ── Bulk insert hits ──────────────────────────────────────────────────────
+async fn insert_hits(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    hits: &[DbHit],
+    event_db_id_map: &HashMap<i32, i64>,
+) -> Result<usize, sqlx::Error> {
     let hits_matched: Vec<(i64, &DbHit)> = hits
         .iter()
         .filter_map(|h| event_db_id_map.get(&h.event_id_in_game).map(|&id| (id, h)))
@@ -309,13 +334,18 @@ pub async fn upsert_game_events(
         .bind(&eids)
         .bind(&hitters)
         .bind(&hittees)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    let hits_inserted = hits_matched.len();
+    Ok(hits_matched.len())
+}
 
-    // ── Bulk insert blocks ────────────────────────────────────────────────────
+async fn insert_blocks(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    blocks: &[DbBlock],
+    event_db_id_map: &HashMap<i32, i64>,
+) -> Result<usize, sqlx::Error> {
     let blocks_matched: Vec<(i64, &DbBlock)> = blocks
         .iter()
         .filter_map(|b| event_db_id_map.get(&b.event_id_in_game).map(|&id| (id, b)))
@@ -345,13 +375,18 @@ pub async fn upsert_game_events(
         .bind(&eids)
         .bind(&blockers)
         .bind(&shooters)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    let blocks_inserted = blocks_matched.len();
+    Ok(blocks_matched.len())
+}
 
-    // ── Bulk insert penalties ─────────────────────────────────────────────────
+async fn insert_penalties(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    penalties: &[DbPenalty],
+    event_db_id_map: &HashMap<i32, i64>,
+) -> Result<usize, sqlx::Error> {
     let penalties_matched: Vec<(i64, &DbPenalty)> = penalties
         .iter()
         .filter_map(|p| event_db_id_map.get(&p.event_id_in_game).map(|&id| (id, p)))
@@ -395,13 +430,18 @@ pub async fn upsert_game_events(
         .bind(&dbys)
         .bind(&infracts)
         .bind(&durs)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    let penalties_inserted = penalties_matched.len();
+    Ok(penalties_matched.len())
+}
 
-    // ── Bulk insert faceoffs ──────────────────────────────────────────────────
+async fn insert_faceoffs(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    faceoffs: &[DbFaceoff],
+    event_db_id_map: &HashMap<i32, i64>,
+) -> Result<usize, sqlx::Error> {
     let faceoffs_matched: Vec<(i64, &DbFaceoff)> = faceoffs
         .iter()
         .filter_map(|f| event_db_id_map.get(&f.event_id_in_game).map(|&id| (id, f)))
@@ -431,25 +471,9 @@ pub async fn upsert_game_events(
         .bind(&eids)
         .bind(&winners)
         .bind(&losers)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    let faceoffs_inserted = faceoffs_matched.len();
-
-    // Single commit — all events for the game or none (atomic guarantee)
-    if !events.is_empty() {
-        super::history::events(&mut tx, game_id).await?;
-    }
-    tx.commit().await?;
-
-    Ok((
-        events_inserted,
-        goals_inserted,
-        shots_inserted,
-        hits_inserted,
-        blocks_inserted,
-        penalties_inserted,
-        faceoffs_inserted,
-    ))
+    Ok(faceoffs_matched.len())
 }

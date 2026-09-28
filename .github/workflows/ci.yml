@@ -36,24 +36,26 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: clippy, rustfmt
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
 
-      - name: Install PostgreSQL client and native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client pkg-config libssl-dev
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install migration runner
+        run: cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features rustls,postgres
 
       - name: Apply database migrations
-        run: |
-          for migration in migrations/*.sql; do
-            psql "$TEST_DATABASE_URL" --set ON_ERROR_STOP=1 --file "$migration"
-          done
+        env:
+          MIGRATION_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: ./scripts/run-migrations.sh
 
       - name: Verify populated schema upgrade and Consumer contracts
         run: python3 scripts/check_schema_upgrade.py

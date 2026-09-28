@@ -3,16 +3,6 @@ use std::collections::HashSet;
 
 use crate::models::DbGame;
 
-/// Convert a chrono::DateTime<Utc> to time::OffsetDateTime.
-///
-/// SQLx with the `time` feature maps TIMESTAMPTZ to time::OffsetDateTime at the macro level.
-fn chrono_to_time(dt: chrono::DateTime<chrono::Utc>) -> time::OffsetDateTime {
-    let ts = dt.timestamp();
-    let nanos = dt.timestamp_subsec_nanos();
-    time::OffsetDateTime::from_unix_timestamp_nanos((ts as i128) * 1_000_000_000 + nanos as i128)
-        .expect("valid timestamp from chrono")
-}
-
 /// Upsert a batch of games into the games table.
 ///
 /// Uses one `UNNEST` statement with `ON CONFLICT (game_id) DO UPDATE`.
@@ -47,10 +37,8 @@ pub async fn upsert_games(
     let game_ids: Vec<i64> = games.iter().map(|g| g.game_id).collect();
     let seasons: Vec<i32> = games.iter().map(|g| g.season).collect();
     let dates: Vec<time::Date> = games.iter().map(|g| g.game_date).collect();
-    let start_times: Vec<Option<time::OffsetDateTime>> = games
-        .iter()
-        .map(|g| g.start_time_utc.map(chrono_to_time))
-        .collect();
+    let start_times: Vec<Option<time::OffsetDateTime>> =
+        games.iter().map(|g| g.start_time_utc).collect();
     let home_team_ids: Vec<i64> = games.iter().map(|g| g.home_team_id).collect();
     let away_team_ids: Vec<i64> = games.iter().map(|g| g.away_team_id).collect();
     let game_types: Vec<i16> = games.iter().map(|g| g.game_type).collect();
@@ -102,7 +90,7 @@ pub async fn upsert_games(
     .await?;
 
     for g in records {
-        pb.suspend(|| println!("{}  game {}", g.game_date, g.game_id));
+        pb.suspend(|| tracing::info!("{}  game {}", g.game_date, g.game_id));
         pb.inc(1);
     }
     tx.commit().await?;

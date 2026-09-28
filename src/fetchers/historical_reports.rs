@@ -771,7 +771,9 @@ mod tests {
                 ));
             }
         }
-        println!("compared={compared:?} mismatches={mismatches:?} examples={mismatch_examples:?}");
+        tracing::info!(
+            "compared={compared:?} mismatches={mismatches:?} examples={mismatch_examples:?}"
+        );
         let total_compared: usize = compared.values().sum();
         let total_mismatches: usize = mismatches.values().sum();
         assert!(total_compared > 200);

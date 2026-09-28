@@ -97,6 +97,9 @@ async fn typed_shift_snapshot_replacement_preserves_source_fields_and_rolls_back
     let error = pucksdata::loaders::shifts::replace_game_shifts(pool, GAME_ID, &invalid)
         .await
         .unwrap_err();
+    let pucksdata::error::LoadError::Database(error) = error else {
+        panic!("expected a database constraint failure after deletion");
+    };
     assert_eq!(
         error.as_database_error().unwrap().code().as_deref(),
         Some("23505")

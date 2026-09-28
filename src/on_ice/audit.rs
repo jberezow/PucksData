@@ -356,10 +356,10 @@ impl Accumulator {
         details.events.clear();
         json_line(&mut self.games, &details)?;
         if self.audit.games.len().is_multiple_of(100) {
-            eprintln!(
-                "audited {} / {} games",
-                self.audit.games.len(),
-                self.audit.snapshot_games
+            tracing::info!(
+                audited_games = self.audit.games.len(),
+                total_games = self.audit.snapshot_games,
+                "audit progress"
             );
         }
         Ok(())

@@ -148,11 +148,7 @@ pub async fn run_status(
             }
         } else {
             if season_filter.is_none() {
-                eprintln!(
-                    "warn: --fix without --season will remediate {} season(s) with gaps: {:?}",
-                    seasons_to_fix.len(),
-                    seasons_to_fix
-                );
+                tracing::warn!(seasons = ?seasons_to_fix, "unscoped repair will remediate all seasons with gaps");
             }
             for season in &seasons_to_fix {
                 println!("Fixing season {season}...");

@@ -10,7 +10,14 @@ fn current_player_seasons_cover_september_rollover() {
         ((2027, 1, 1), vec![20262027]),
     ] {
         assert_eq!(
-            sync::active_seasons(chrono::NaiveDate::from_ymd_opt(date.0, date.1, date.2).unwrap()),
+            sync::active_seasons(
+                time::Date::from_calendar_date(
+                    date.0,
+                    time::Month::try_from(date.1).unwrap(),
+                    date.2
+                )
+                .unwrap()
+            ),
             expected
         );
     }

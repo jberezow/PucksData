@@ -119,7 +119,9 @@ pub async fn run_backfill(
                     {
                         // Preserve the original typed error so upstream failures
                         // still stop the request window.
-                        eprintln!("game {game_id}: could not record shift attempt: {status_error}");
+                        tracing::warn!(
+                            "game {game_id}: could not record shift attempt: {status_error}"
+                        );
                     }
                 }
                 result

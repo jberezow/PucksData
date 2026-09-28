@@ -322,8 +322,13 @@ fn test_goal_produces_shot_entry() {
     };
 
     let team_id_map = HashMap::new();
-    let (events, goals, shots, _hits, _blocks, _penalties, _faceoffs, warnings) =
-        transform_events(&pbp, &team_id_map);
+    let pucksdata::models::EventBatch {
+        events,
+        goals,
+        shots,
+        warnings,
+        ..
+    } = transform_events(&pbp, &team_id_map);
 
     assert!(
         warnings.is_empty(),
@@ -408,7 +413,7 @@ fn test_missing_situation_uses_goal_summary_without_fabricating_on_ice_state() {
     .unwrap();
     let teams = HashMap::from([(6, 6), (8, 8)]);
 
-    let (events, ..) = transform_events(&pbp, &teams);
+    let pucksdata::models::EventBatch { events, .. } = transform_events(&pbp, &teams);
     let event = &events[0];
     assert_eq!(event.strength, None);
     assert_eq!(event.strength_source, StrengthSource::Unavailable);
@@ -419,7 +424,8 @@ fn test_missing_situation_uses_goal_summary_without_fabricating_on_ice_state() {
     assert_eq!(event.home_goalie_present, None);
 
     let strengths = HashMap::from([(10088563, EventStrength::PowerPlay)]);
-    let (events, ..) = transform_events_with_goal_strengths(&pbp, &teams, &strengths);
+    let pucksdata::models::EventBatch { events, .. } =
+        transform_events_with_goal_strengths(&pbp, &teams, &strengths);
     let event = &events[0];
     assert_eq!(event.strength.as_deref(), Some("pp"));
     assert_eq!(event.strength_source, StrengthSource::ScoringSummary);
@@ -430,7 +436,7 @@ fn test_missing_situation_uses_goal_summary_without_fabricating_on_ice_state() {
     assert_eq!(event.home_goalie_present, None);
 
     let report_strengths = HashMap::from([(10088563, EventStrength::ShortHanded)]);
-    let (events, ..) =
+    let pucksdata::models::EventBatch { events, .. } =
         transform_events_with_strength_sources(&pbp, &teams, &HashMap::new(), &report_strengths);
     let event = &events[0];
     assert_eq!(event.strength.as_deref(), Some("sh"));
@@ -525,19 +531,21 @@ async fn test_events_upsert_idempotent() {
     };
 
     // First snapshot contains an event later removed by an NHL feed revision.
-    pucksdata::loaders::events::upsert_game_events(
+    let counts = pucksdata::loaders::events::upsert_game_events(
         pool,
         9900000002,
-        &[event, stale_event],
-        &[goal],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
+        &pucksdata::models::EventBatch {
+            events: vec![event, stale_event],
+            goals: vec![goal],
+            ..Default::default()
+        },
     )
     .await
     .unwrap();
+
+    assert_eq!(counts.events, 2);
+    assert_eq!(counts.goals, 1);
+    assert_eq!(counts.shots, 0);
 
     let event2 = pucksdata::models::DbEvent {
         game_id: 9900000002,
@@ -567,20 +575,40 @@ async fn test_events_upsert_idempotent() {
         shot_type: None,
     };
 
-    // Second snapshot must replace the first and remove the stale event.
-    pucksdata::loaders::events::upsert_game_events(
+    let mut batch = pucksdata::models::EventBatch {
+        events: vec![event2],
+        goals: vec![goal2],
+        ..Default::default()
+    };
+    let counts = pucksdata::loaders::events::upsert_game_events(pool, 9900000002, &batch)
+        .await
+        .unwrap();
+    assert_eq!(counts.events, 1);
+    assert_eq!(counts.goals, 1);
+
+    // A child insert failure must restore the previously accepted snapshot.
+    batch.events[0].strength = Some("sh".into());
+    batch.goals.push(pucksdata::models::DbGoal {
+        event_id_in_game: 1,
+        scorer_player_id: None,
+        assist1_player_id: None,
+        assist2_player_id: None,
+        goalie_id: None,
+        shot_type: None,
+    });
+    assert!(matches!(
+        pucksdata::loaders::events::upsert_game_events(pool, 9900000002, &batch).await,
+        Err(pucksdata::error::LoadError::Database(_))
+    ));
+
+    let empty_counts = pucksdata::loaders::events::upsert_game_events(
         pool,
         9900000002,
-        &[event2],
-        &[goal2],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
+        &pucksdata::models::EventBatch::default(),
     )
     .await
     .unwrap();
+    assert_eq!(empty_counts, pucksdata::models::EventCounts::default());
 
     let event_count: i64 =
         sqlx::query_scalar!("SELECT COUNT(*) FROM events WHERE game_id = 9900000002")
