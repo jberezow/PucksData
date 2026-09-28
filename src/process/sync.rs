@@ -214,7 +214,10 @@ async fn run_sync_exclusive(
             attempt_id: id,
             metrics: Default::default(),
         },
-        run_sync_inner(pool, from_date),
+        super::team_attribution::with_current_mapping(
+            pool,
+            Box::pin(run_sync_inner(pool, from_date)),
+        ),
     )
     .await;
     record_sync_result(pool, id, &result).await?;

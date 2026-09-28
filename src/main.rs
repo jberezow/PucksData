@@ -11,6 +11,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Rebuild materialized products invalidated by committed data corrections
+    RefreshDerived,
     /// Fetch and upsert NHL entity metadata
     Fetch {
         #[command(subcommand)]
@@ -213,28 +215,41 @@ async fn main() -> Result<(), pucksdata::AnyError> {
 
     let capture = matches!(
         &cli.command,
-        Commands::Fetch { .. }
+        Commands::RefreshDerived
+            | Commands::Fetch { .. }
             | Commands::Backfill(_)
             | Commands::Shifts {
                 command: ShiftsCommand::Backfill(_)
             }
             | Commands::Status(StatusArgs { fix: true, .. })
     );
+    // Boxing keeps the large dispatcher future off the entry-point stack.
     if capture {
         let pool = db::get_pool().await?;
         let key = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
         pucksdata::process::attempts::exclusive(
             pool,
-            pucksdata::process::attempts::track(pool, "command", &key, dispatch(cli.command)),
+            pucksdata::process::attempts::track(
+                pool,
+                "command",
+                &key,
+                pucksdata::process::team_attribution::with_current_mapping(
+                    pool,
+                    Box::pin(dispatch(cli.command)),
+                ),
+            ),
         )
         .await
     } else {
-        dispatch(cli.command).await
+        Box::pin(dispatch(cli.command)).await
     }
 }
 
 async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
     match command {
+        Commands::RefreshDerived => {
+            pucksdata::process::analytics::refresh_derived(db::get_pool().await?).await?;
+        }
         Commands::Fetch { entity } => match entity {
             FetchEntity::Teams => {
                 let pool = db::get_pool().await?;
@@ -245,8 +260,7 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
                     .await
                     .inspect_err(|_| pb.finish_and_clear())?;
                 pb.finish_and_clear();
-                let identities = fetchers::teams::fetch_team_identities().await?;
-                loaders::teams::upsert_team_identities(pool, &identities).await?;
+                // The writer preflight already refreshed source team identities.
             }
             FetchEntity::OfficialStats(args) => {
                 let pool = db::get_pool().await?;

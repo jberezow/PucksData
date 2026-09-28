@@ -83,6 +83,9 @@ struct TeamIdRecord {
 /// (e.g. VGK=54, SEA=55), but the `teams` table is keyed by franchise ID (e.g. VGK=38, SEA=39).
 /// This map is used to translate game team IDs to franchise IDs before DB insertion.
 pub async fn fetch_team_id_to_franchise_id_map() -> Result<HashMap<i64, i64>, AnyError> {
+    if let Some(mapping) = crate::process::team_attribution::current_mapping() {
+        return Ok(mapping);
+    }
     #[derive(Deserialize)]
     struct TeamListResponse {
         data: Vec<TeamIdRecord>,

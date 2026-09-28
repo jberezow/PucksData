@@ -15,7 +15,15 @@ pub async fn run_daemon(
     if backfill_on_start {
         crate::process::attempts::exclusive(
             pool,
-            crate::process::backfill::run_backfill(pool, None),
+            crate::process::attempts::track(
+                pool,
+                "command",
+                "daemon backfill-on-start",
+                super::team_attribution::with_current_mapping(
+                    pool,
+                    Box::pin(crate::process::backfill::run_backfill(pool, None)),
+                ),
+            ),
         )
         .await?;
     }

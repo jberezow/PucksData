@@ -5,9 +5,19 @@ use crate::models::DbTeam;
 pub async fn upsert_team_identities(
     pool: &sqlx::PgPool,
     records: &[crate::fetchers::teams::TeamIdentity],
-) -> Result<(), sqlx::Error> {
+) -> Result<(), crate::AnyError> {
     let mut tx = pool.begin().await?;
     crate::provenance::set_transaction(&mut tx).await?;
+    // Validate before any upsert: metadata refresh must never accept a reassignment
+    // without reconciling games and event owners in the same operation.
+    sqlx::query("LOCK TABLE nhl_team_identities IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut *tx)
+        .await?;
+    let stored: Vec<(i64, i64)> =
+        sqlx::query_as("SELECT nhl_team_id, franchise_id FROM nhl_team_identities")
+            .fetch_all(&mut *tx)
+            .await?;
+    crate::process::team_attribution::validate_mapping(&stored, records)?;
     for row in records {
         let Some(franchise_id) = row.franchise_id else {
             continue;
@@ -26,7 +36,8 @@ pub async fn upsert_team_identities(
         .execute(&mut *tx)
         .await?;
     }
-    tx.commit().await
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Upsert a batch of team records into the `teams` table.
