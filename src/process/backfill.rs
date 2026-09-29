@@ -177,6 +177,20 @@ async fn load_one_game_inner(
         return Err("play-by-play game identity mismatch".into());
     }
     let counts = crate::loaders::events::upsert_game_events(pool, game_id, &batch).await?;
+    tracing::debug!(
+        game_id,
+        events = counts.events,
+        goals = counts.goals,
+        shots = counts.shots,
+        missed_shots = counts.missed_shots,
+        hits = counts.hits,
+        blocks = counts.blocks,
+        penalties = counts.penalties,
+        faceoffs = counts.faceoffs,
+        giveaways = counts.giveaways,
+        takeaways = counts.takeaways,
+        "accepted event snapshot"
+    );
     Ok(counts.events)
 }
 

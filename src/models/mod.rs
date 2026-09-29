@@ -87,6 +87,9 @@ pub struct EventBatch {
     pub events: Vec<DbEvent>,
     pub goals: Vec<DbGoal>,
     pub shots: Vec<DbShot>,
+    pub missed_shots: Vec<DbMissedShot>,
+    pub giveaways: Vec<DbTurnover>,
+    pub takeaways: Vec<DbTurnover>,
     pub hits: Vec<DbHit>,
     pub blocks: Vec<DbBlock>,
     pub penalties: Vec<DbPenalty>,
@@ -100,6 +103,9 @@ pub struct EventCounts {
     pub events: usize,
     pub goals: usize,
     pub shots: usize,
+    pub missed_shots: usize,
+    pub giveaways: usize,
+    pub takeaways: usize,
     pub hits: usize,
     pub blocks: usize,
     pub penalties: usize,
@@ -185,6 +191,21 @@ pub struct DbShot {
     pub shooting_player_id: Option<i64>,
     pub goalie_in_net_id: Option<i64>,
     pub shot_type: Option<String>,
+}
+
+/// Missed attempt, distinct from a shot on goal.
+pub struct DbMissedShot {
+    pub event_id_in_game: i32,
+    pub shooting_player_id: Option<i64>,
+    pub goalie_in_net_id: Option<i64>,
+    pub shot_type: Option<String>,
+    pub miss_reason: Option<String>,
+}
+
+/// Player attribution shared by giveaway and takeaway rows.
+pub struct DbTurnover {
+    pub event_id_in_game: i32,
+    pub player_id: Option<i64>,
 }
 
 /// Hit child row — maps to the `hits` table.

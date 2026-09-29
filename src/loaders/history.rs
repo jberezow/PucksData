@@ -17,26 +17,43 @@ pub async fn events(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     game_id: i64,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"SELECT history.record('events', $1::text,
-        COALESCE(jsonb_agg(
+    let payload = event_payload(tx, game_id).await?;
+    sqlx::query("SELECT history.record('events', $1, $2, 'normalized-events-v2')")
+        .bind(game_id.to_string())
+        .bind(payload)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+pub(crate) async fn event_payload(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    game_id: i64,
+) -> Result<serde_json::Value, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"SELECT COALESCE(jsonb_agg(
             (to_jsonb(e) - 'id') || jsonb_build_object(
                 'goal', to_jsonb(g) - 'event_id',
                 'shot', to_jsonb(s) - 'event_id',
+                'missed_shot', to_jsonb(ms) - 'event_id',
+                'giveaway', to_jsonb(gv) - 'event_id',
+                'takeaway', to_jsonb(tk) - 'event_id',
                 'hit', to_jsonb(h) - 'event_id',
                 'block', to_jsonb(b) - 'event_id',
                 'penalty', to_jsonb(p) - 'event_id',
                 'faceoff', to_jsonb(f) - 'event_id'
-            ) ORDER BY e.event_id_in_game), '[]'::jsonb))
+            ) ORDER BY e.event_id_in_game), '[]'::jsonb)
         FROM events e LEFT JOIN goals g ON g.event_id = e.id
         LEFT JOIN shots s ON s.event_id = e.id LEFT JOIN hits h ON h.event_id = e.id
         LEFT JOIN blocks b ON b.event_id = e.id LEFT JOIN penalties p ON p.event_id = e.id
-        LEFT JOIN faceoffs f ON f.event_id = e.id WHERE e.game_id = $1::bigint"#,
+        LEFT JOIN faceoffs f ON f.event_id = e.id
+        LEFT JOIN missed_shots ms ON ms.event_id = e.id
+        LEFT JOIN giveaways gv ON gv.event_id = e.id
+        LEFT JOIN takeaways tk ON tk.event_id = e.id WHERE e.game_id = $1::bigint"#,
     )
-    .bind(game_id.to_string())
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
+    .bind(game_id)
+    .fetch_one(&mut **tx)
+    .await
 }
 
 pub async fn official_games(

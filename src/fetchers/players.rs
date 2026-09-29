@@ -405,26 +405,12 @@ pub async fn fetch_all_players(
     Ok(results)
 }
 
-/// Find all player IDs referenced in any event child table but absent from the players table,
-/// fetch their landing pages, and upsert them.
-///
-/// This is a "gap repair" step. It catches any player who:
-/// - Appears in goals/shots/hits/blocks/penalties/faceoffs as a scorer, assistant, goalie, etc.
-/// - Does NOT have a row in the players table yet.
-///
-/// This handles two failure modes that enumerate_player_ids cannot:
-/// 1. Players already written to event tables in a previous run before the v2 fix was deployed.
-/// 2. Any edge-case player who slips through all enumeration sources in a future run.
-///
-/// Called at the end of run_sync() and run_backfill() so that after every sync cycle,
-/// no event row references an unknown player.
-pub async fn repair_missing_players(pool: &sqlx::PgPool) -> Result<usize, AnyError> {
-    // Collect all player IDs referenced in event tables but absent from players.
-    // Uses a single UNION ALL query across all six child event tables.
-    // NULL values are excluded by IS NOT NULL — they represent events with no player (EN goals, etc.).
-    let rows = sqlx::query!(
+/// Player identities referenced by event facts but absent from `players`.
+/// Source placeholder IDs are excluded because they have no landing pages.
+pub async fn missing_event_player_ids(pool: &sqlx::PgPool) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT DISTINCT pid AS "pid!" FROM (
+        SELECT DISTINCT pid FROM (
             SELECT scorer_player_id    AS pid FROM goals     WHERE scorer_player_id    IS NOT NULL
             UNION ALL
             SELECT assist1_player_id   AS pid FROM goals     WHERE assist1_player_id   IS NOT NULL
@@ -452,6 +438,14 @@ pub async fn repair_missing_players(pool: &sqlx::PgPool) -> Result<usize, AnyErr
             SELECT winning_player_id   AS pid FROM faceoffs  WHERE winning_player_id   IS NOT NULL
             UNION ALL
             SELECT losing_player_id    AS pid FROM faceoffs  WHERE losing_player_id    IS NOT NULL
+            UNION ALL
+            SELECT shooting_player_id AS pid FROM missed_shots WHERE shooting_player_id IS NOT NULL
+            UNION ALL
+            SELECT goalie_in_net_id AS pid FROM missed_shots WHERE goalie_in_net_id IS NOT NULL
+            UNION ALL
+            SELECT player_id AS pid FROM giveaways WHERE player_id IS NOT NULL
+            UNION ALL
+            SELECT player_id AS pid FROM takeaways WHERE player_id IS NOT NULL
         ) all_refs
         WHERE pid NOT IN (SELECT player_id FROM players)
           -- Historical feeds use 9xxxxxx placeholders without player landing pages.
@@ -459,13 +453,18 @@ pub async fn repair_missing_players(pool: &sqlx::PgPool) -> Result<usize, AnyErr
         "#
     )
     .fetch_all(pool)
-    .await?;
+    .await
+}
+
+/// Fetch missing player identities discovered in event facts.
+pub async fn repair_missing_players(pool: &sqlx::PgPool) -> Result<usize, AnyError> {
+    let rows = missing_event_player_ids(pool).await?;
 
     if rows.is_empty() {
         return Ok(0);
     }
 
-    let missing_ids: Vec<i64> = rows.into_iter().map(|r| r.pid).collect();
+    let missing_ids = rows;
     let count = missing_ids.len();
     tracing::warn!(
         "repair: found {count} player IDs in event tables with no players row — fetching"

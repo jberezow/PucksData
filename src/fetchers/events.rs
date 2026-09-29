@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use crate::{
     api::fetch_api_text,
     models::{
-        DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot, EventBatch, StrengthSource,
+        DbBlock, DbEvent, DbFaceoff, DbGoal, DbHit, DbMissedShot, DbPenalty, DbShot, DbTurnover,
+        EventBatch, StrengthSource,
     },
     AnyError,
 };
@@ -59,7 +60,7 @@ pub struct PeriodDescriptor {
 /// Unified flat struct for all possible event detail fields.
 ///
 /// Optional fields use `serde(default)` because event payloads vary by type.
-/// All six event types share this single struct.
+/// Typed events share this single struct.
 #[derive(Deserialize)]
 pub struct EventDetails {
     #[serde(rename = "xCoord", default)]
@@ -86,6 +87,11 @@ pub struct EventDetails {
     // Shot fields
     #[serde(rename = "shootingPlayerId", default)]
     pub shooting_player_id: Option<i64>,
+
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(rename = "playerId", default)]
+    pub player_id: Option<i64>,
 
     // Hit fields
     #[serde(rename = "hittingPlayerId", default)]
@@ -243,7 +249,7 @@ pub async fn fetch_play_by_play(game_id: i64) -> Result<PlayByPlay, AnyError> {
     parse_play_by_play(game_id, &json)
 }
 
-fn parse_play_by_play(game_id: i64, json: &str) -> Result<PlayByPlay, AnyError> {
+pub(crate) fn parse_play_by_play(game_id: i64, json: &str) -> Result<PlayByPlay, AnyError> {
     let pbp: PlayByPlay = serde_json::from_str(json)?;
     if pbp.id != game_id || pbp.plays.is_empty() {
         return Err("empty or foreign play-by-play response".into());
@@ -336,6 +342,9 @@ pub fn transform_events_with_strength_sources(
     let mut events = Vec::new();
     let mut goals = Vec::new();
     let mut shots = Vec::new();
+    let mut missed_shots = Vec::new();
+    let mut giveaways = Vec::new();
+    let mut takeaways = Vec::new();
     let mut hits = Vec::new();
     let mut blocks = Vec::new();
     let mut penalties = Vec::new();
@@ -468,6 +477,32 @@ pub fn transform_events_with_strength_sources(
                     });
                 }
             },
+            "missed-shot" | "giveaway" | "takeaway" => match &play.details {
+                None => skip_warnings.push(format!(
+                    "skip: {} event {} in game {} has no details",
+                    play.type_desc_key, play.event_id, game_id
+                )),
+                Some(d) => match play.type_desc_key.as_str() {
+                    "missed-shot" => missed_shots.push(DbMissedShot {
+                        event_id_in_game: play.event_id,
+                        shooting_player_id: d.shooting_player_id,
+                        goalie_in_net_id: d.goalie_in_net_id,
+                        shot_type: d.shot_type.clone(),
+                        miss_reason: d.reason.clone(),
+                    }),
+                    kind => {
+                        let row = DbTurnover {
+                            event_id_in_game: play.event_id,
+                            player_id: d.player_id,
+                        };
+                        if kind == "giveaway" {
+                            giveaways.push(row);
+                        } else {
+                            takeaways.push(row);
+                        }
+                    }
+                },
+            },
             "hit" => match &play.details {
                 None => {
                     skip_warnings.push(format!(
@@ -531,7 +566,7 @@ pub fn transform_events_with_strength_sources(
                 }
             },
             _ => {
-                // Unknown or untracked event type (stoppage, period-start, missed-shot, etc.)
+                // Unknown or untracked event type (stoppage, period-start, etc.)
                 // These are stored in the base events table but have no child record.
             }
         }
@@ -541,6 +576,9 @@ pub fn transform_events_with_strength_sources(
         events,
         goals,
         shots,
+        missed_shots,
+        giveaways,
+        takeaways,
         hits,
         blocks,
         penalties,

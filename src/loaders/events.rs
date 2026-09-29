@@ -6,7 +6,8 @@ use sqlx::Row;
 use crate::error::LoadError;
 
 use crate::models::{
-    DbBlock, DbFaceoff, DbGoal, DbHit, DbPenalty, DbShot, EventBatch, EventCounts,
+    DbBlock, DbFaceoff, DbGoal, DbHit, DbMissedShot, DbPenalty, DbShot, DbTurnover, EventBatch,
+    EventCounts,
 };
 
 /// Replace all events for a game atomically in a single PostgreSQL transaction.
@@ -42,6 +43,15 @@ pub async fn upsert_game_events(
             ),
             deleted_shots AS (
                 DELETE FROM shots WHERE event_id IN (SELECT id FROM target_events)
+            ),
+            deleted_missed_shots AS (
+                DELETE FROM missed_shots WHERE event_id IN (SELECT id FROM target_events)
+            ),
+            deleted_giveaways AS (
+                DELETE FROM giveaways WHERE event_id IN (SELECT id FROM target_events)
+            ),
+            deleted_takeaways AS (
+                DELETE FROM takeaways WHERE event_id IN (SELECT id FROM target_events)
             ),
             deleted_hits AS (
                 DELETE FROM hits WHERE event_id IN (SELECT id FROM target_events)
@@ -179,6 +189,9 @@ pub async fn upsert_game_events(
         events: events.len(),
         goals: insert_goals(&mut tx, &batch.goals, &event_db_id_map).await?,
         shots: insert_shots(&mut tx, &batch.shots, &event_db_id_map).await?,
+        missed_shots: insert_missed_shots(&mut tx, &batch.missed_shots, &event_db_id_map).await?,
+        giveaways: insert_turnovers(&mut tx, &batch.giveaways, &event_db_id_map, false).await?,
+        takeaways: insert_turnovers(&mut tx, &batch.takeaways, &event_db_id_map, true).await?,
         hits: insert_hits(&mut tx, &batch.hits, &event_db_id_map).await?,
         blocks: insert_blocks(&mut tx, &batch.blocks, &event_db_id_map).await?,
         penalties: insert_penalties(&mut tx, &batch.penalties, &event_db_id_map).await?,
@@ -476,4 +489,67 @@ async fn insert_faceoffs(
     }
 
     Ok(faceoffs_matched.len())
+}
+
+pub(crate) async fn insert_missed_shots(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    rows: &[DbMissedShot],
+    ids: &HashMap<i32, i64>,
+) -> Result<usize, sqlx::Error> {
+    let matched: Vec<_> = rows
+        .iter()
+        .filter_map(|row| ids.get(&row.event_id_in_game).map(|id| (*id, row)))
+        .collect();
+    if matched.is_empty() {
+        return Ok(0);
+    }
+    let event_ids: Vec<_> = matched.iter().map(|(id, _)| *id).collect();
+    let shooters: Vec<_> = matched
+        .iter()
+        .map(|(_, row)| row.shooting_player_id)
+        .collect();
+    let goalies: Vec<_> = matched
+        .iter()
+        .map(|(_, row)| row.goalie_in_net_id)
+        .collect();
+    let types: Vec<_> = matched
+        .iter()
+        .map(|(_, row)| row.shot_type.as_deref())
+        .collect();
+    let reasons: Vec<_> = matched
+        .iter()
+        .map(|(_, row)| row.miss_reason.as_deref())
+        .collect();
+    let result = sqlx::query("INSERT INTO missed_shots (event_id, shooting_player_id, goalie_in_net_id, shot_type, miss_reason)
+        SELECT * FROM UNNEST($1::bigint[], $2::bigint[], $3::bigint[], $4::text[], $5::text[])")
+        .bind(event_ids).bind(shooters).bind(goalies).bind(types).bind(reasons).execute(&mut **tx).await?;
+    Ok(result.rows_affected() as usize)
+}
+
+pub(crate) async fn insert_turnovers(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    rows: &[DbTurnover],
+    ids: &HashMap<i32, i64>,
+    takeaway: bool,
+) -> Result<usize, sqlx::Error> {
+    let matched: Vec<_> = rows
+        .iter()
+        .filter_map(|row| ids.get(&row.event_id_in_game).map(|id| (*id, row)))
+        .collect();
+    if matched.is_empty() {
+        return Ok(0);
+    }
+    let event_ids: Vec<_> = matched.iter().map(|(id, _)| *id).collect();
+    let players: Vec<_> = matched.iter().map(|(_, row)| row.player_id).collect();
+    let query = if takeaway {
+        "INSERT INTO takeaways (event_id, player_id) SELECT * FROM UNNEST($1::bigint[], $2::bigint[])"
+    } else {
+        "INSERT INTO giveaways (event_id, player_id) SELECT * FROM UNNEST($1::bigint[], $2::bigint[])"
+    };
+    let result = sqlx::query(query)
+        .bind(event_ids)
+        .bind(players)
+        .execute(&mut **tx)
+        .await?;
+    Ok(result.rows_affected() as usize)
 }

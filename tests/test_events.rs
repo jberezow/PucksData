@@ -274,6 +274,8 @@ fn test_goal_produces_shot_entry() {
                     goalie_in_net_id: None,
                     shot_type: Some("wrist".to_string()),
                     shooting_player_id: None,
+                    reason: None,
+                    player_id: None,
                     hitting_player_id: None,
                     hittee_player_id: None,
                     blocking_player_id: None,
@@ -306,6 +308,8 @@ fn test_goal_produces_shot_entry() {
                     goalie_in_net_id: Some(8480382),
                     shot_type: Some("slap".to_string()),
                     shooting_player_id: Some(8479318),
+                    reason: None,
+                    player_id: None,
                     hitting_player_id: None,
                     hittee_player_id: None,
                     blocking_player_id: None,
@@ -662,6 +666,220 @@ async fn test_events_upsert_idempotent() {
         .await
         .unwrap();
     sqlx::query!("DELETE FROM teams WHERE team_id IN (99001, 99002)")
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+fn extended_event_batch(game_id: i64) -> pucksdata::models::EventBatch {
+    let pbp = serde_json::from_value(serde_json::json!({
+        "id": game_id, "homeTeam": {"id": 1}, "awayTeam": {"id": 7},
+        "plays": [
+            {"eventId": 1, "periodDescriptor": {"number": 1, "periodType": "REG"},
+             "timeInPeriod": "01:00", "typeDescKey": "missed-shot", "details": {
+                 "xCoord": 71, "yCoord": -28, "zoneCode": "O", "reason": "short",
+                 "shotType": "wrist", "shootingPlayerId": 8479407, "goalieInNetId": 8480045,
+                 "eventOwnerTeamId": 1}},
+            {"eventId": 2, "periodDescriptor": {"number": 1, "periodType": "REG"},
+             "timeInPeriod": "02:00", "typeDescKey": "giveaway", "details": {"playerId": 8474593}},
+            {"eventId": 3, "periodDescriptor": {"number": 1, "periodType": "REG"},
+             "timeInPeriod": "03:00", "typeDescKey": "takeaway", "details": {"playerId": 8481528}}
+        ]
+    }))
+    .unwrap();
+    pucksdata::fetchers::events::transform_events(&pbp, &std::collections::HashMap::new())
+}
+
+#[test]
+fn extended_events_preserve_nhl_attribution_and_missed_shot_reason() {
+    // Detail fields sampled from the NHL feed for game 2024020001.
+    let batch = extended_event_batch(2024020001);
+    assert_eq!(batch.events.len(), 3);
+    assert!(batch.shots.is_empty());
+    assert!(batch.warnings.is_empty());
+    let missed = &batch.missed_shots[0];
+    assert_eq!(missed.shooting_player_id, Some(8479407));
+    assert_eq!(missed.goalie_in_net_id, Some(8480045));
+    assert_eq!(missed.shot_type.as_deref(), Some("wrist"));
+    assert_eq!(missed.miss_reason.as_deref(), Some("short"));
+    assert_eq!(batch.giveaways[0].player_id, Some(8474593));
+    assert_eq!(batch.takeaways[0].player_id, Some(8481528));
+}
+
+#[test]
+fn extended_events_distinguish_missing_details_from_unknown_attribution() {
+    use pucksdata::fetchers::events::{transform_events, PlayByPlay};
+    for kind in ["missed-shot", "giveaway", "takeaway"] {
+        let mut value = serde_json::json!({"id": 2024020001, "homeTeam": {"id": 1}, "awayTeam": {"id": 7},
+            "plays": [{"eventId": 1, "periodDescriptor": {"number": 1, "periodType": "REG"},
+                "timeInPeriod": "01:00", "typeDescKey": kind, "details": {}}]});
+        let pbp: PlayByPlay = serde_json::from_value(value.clone()).unwrap();
+        let batch = transform_events(&pbp, &Default::default());
+        assert!(batch.warnings.is_empty());
+        assert_eq!(
+            batch.missed_shots.len() + batch.giveaways.len() + batch.takeaways.len(),
+            1
+        );
+        assert!(batch
+            .missed_shots
+            .iter()
+            .all(|r| r.shooting_player_id.is_none() && r.miss_reason.is_none()));
+        assert!(batch
+            .giveaways
+            .iter()
+            .chain(batch.takeaways.iter())
+            .all(|r| r.player_id.is_none()));
+        value["plays"][0]["details"] = serde_json::Value::Null;
+        let pbp = serde_json::from_value(value.clone()).unwrap();
+        let batch = transform_events(&pbp, &Default::default());
+        assert_eq!(batch.events.len(), 1);
+        assert_eq!(batch.warnings.len(), 1);
+        assert_eq!(
+            batch.missed_shots.len() + batch.giveaways.len() + batch.takeaways.len(),
+            0
+        );
+        value["plays"][0]["periodDescriptor"]["periodType"] = "SO".into();
+        let pbp = serde_json::from_value(value).unwrap();
+        assert!(transform_events(&pbp, &Default::default())
+            .events
+            .is_empty());
+    }
+}
+
+#[tokio::test]
+async fn extended_events_replace_atomically_and_preserve_history() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+    let game = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_micros() as i64;
+    sqlx::query(
+        "INSERT INTO teams (team_id, full_name, common_name, place_name, abbrev) VALUES
+        (99391,'Event Home','Home','Test','EHM'), (99392,'Event Away','Away','Test','EAW')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO games (game_id,season,game_date,home_team_id,away_team_id,game_type)
+        VALUES ($1,20242025,'2024-10-04',99391,99392,2)",
+    )
+    .bind(game)
+    .execute(pool)
+    .await
+    .unwrap();
+    let mut batch = extended_event_batch(game);
+    let counts = pucksdata::process::attempts::track(pool, "events", &game.to_string(), async {
+        pucksdata::loaders::events::upsert_game_events(pool, game, &batch)
+            .await
+            .map_err(|error| -> pucksdata::AnyError { Box::new(error) })
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        (counts.missed_shots, counts.giveaways, counts.takeaways),
+        (1, 1, 1)
+    );
+    pucksdata::loaders::events::upsert_game_events(pool, game, &batch)
+        .await
+        .unwrap();
+    let snapshots: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM history.snapshots WHERE dataset='events' AND entity_key=$1",
+    )
+    .bind(game.to_string())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(snapshots, 1, "identical replays must not create revisions");
+    let (method,payload): (String,serde_json::Value) = sqlx::query_as("SELECT method_version,payload FROM history.snapshots WHERE dataset='events' AND entity_key=$1")
+        .bind(game.to_string()).fetch_one(pool).await.unwrap();
+    assert_eq!(method, "normalized-events-v2");
+    let linked: bool = sqlx::query_scalar("SELECT attempt_id IS NOT NULL FROM history.snapshots WHERE dataset='events' AND entity_key=$1")
+        .bind(game.to_string()).fetch_one(pool).await.unwrap();
+    assert!(
+        linked,
+        "new facts must retain their ingestion attempt linkage"
+    );
+    assert_eq!(payload[0]["missed_shot"]["miss_reason"], "short");
+    assert_eq!(payload[1]["giveaway"]["player_id"], 8474593);
+    assert_eq!(payload[2]["takeaway"]["player_id"], 8481528);
+    let missing = pucksdata::fetchers::players::missing_event_player_ids(pool)
+        .await
+        .unwrap();
+    for player in [8479407, 8480045, 8474593, 8481528] {
+        let known: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM players WHERE player_id=$1)")
+                .bind(player)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            missing.contains(&player),
+            !known,
+            "new event participant {player} must be discoverable"
+        );
+    }
+
+    batch.missed_shots[0].miss_reason = Some("wide-right".into());
+    batch.events.retain(|e| e.event_id_in_game != 3);
+    batch.takeaways.clear();
+    pucksdata::loaders::events::upsert_game_events(pool, game, &batch)
+        .await
+        .unwrap();
+    batch.missed_shots[0].miss_reason = Some("invalid-replacement".into());
+    batch.giveaways.push(pucksdata::models::DbTurnover {
+        event_id_in_game: 2,
+        player_id: None,
+    });
+    assert!(
+        pucksdata::loaders::events::upsert_game_events(pool, game, &batch)
+            .await
+            .is_err()
+    );
+    let reason: String = sqlx::query_scalar("SELECT miss_reason FROM missed_shots m JOIN events e ON e.id=m.event_id WHERE e.game_id=$1")
+        .bind(game).fetch_one(pool).await.unwrap();
+    assert_eq!(reason, "wide-right");
+    let removed: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM takeaways t JOIN events e ON e.id=t.event_id WHERE e.game_id=$1",
+    )
+    .bind(game)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(removed, 0);
+    let snapshots: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM history.snapshots WHERE dataset='events' AND entity_key=$1",
+    )
+    .bind(game.to_string())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(snapshots, 2, "failed replacement must not write history");
+    let empty = pucksdata::loaders::events::upsert_game_events(pool, game, &Default::default())
+        .await
+        .unwrap();
+    assert_eq!(empty, pucksdata::models::EventCounts::default());
+    for query in [
+        "DELETE FROM missed_shots WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM giveaways WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM takeaways WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+    ] {
+        sqlx::query(query).bind(game).execute(pool).await.unwrap();
+    }
+    sqlx::query("DELETE FROM events WHERE game_id=$1")
+        .bind(game)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM games WHERE game_id=$1")
+        .bind(game)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM teams WHERE team_id IN (99391,99392)")
         .execute(pool)
         .await
         .unwrap();
