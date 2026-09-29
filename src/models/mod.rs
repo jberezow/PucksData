@@ -176,6 +176,7 @@ impl StrengthSource {
 }
 
 /// Goal child row — maps to the `goals` table.
+#[derive(serde::Serialize)]
 pub struct DbGoal {
     pub event_id_in_game: i32, // used to look up events(id) after base insert
     pub scorer_player_id: Option<i64>,
@@ -186,6 +187,7 @@ pub struct DbGoal {
 }
 
 /// Shot-on-goal child row — maps to the `shots` table.
+#[derive(serde::Serialize)]
 pub struct DbShot {
     pub event_id_in_game: i32,
     pub shooting_player_id: Option<i64>,
@@ -194,6 +196,7 @@ pub struct DbShot {
 }
 
 /// Missed attempt, distinct from a shot on goal.
+#[derive(serde::Serialize)]
 pub struct DbMissedShot {
     pub event_id_in_game: i32,
     pub shooting_player_id: Option<i64>,
@@ -203,12 +206,14 @@ pub struct DbMissedShot {
 }
 
 /// Player attribution shared by giveaway and takeaway rows.
+#[derive(serde::Serialize)]
 pub struct DbTurnover {
     pub event_id_in_game: i32,
     pub player_id: Option<i64>,
 }
 
 /// Hit child row — maps to the `hits` table.
+#[derive(serde::Serialize)]
 pub struct DbHit {
     pub event_id_in_game: i32,
     pub hitting_player_id: Option<i64>,
@@ -216,6 +221,7 @@ pub struct DbHit {
 }
 
 /// Blocked-shot child row — maps to the `blocks` table.
+#[derive(serde::Serialize)]
 pub struct DbBlock {
     pub event_id_in_game: i32,
     pub blocking_player_id: Option<i64>,
@@ -223,6 +229,7 @@ pub struct DbBlock {
 }
 
 /// Penalty child row — maps to the `penalties` table.
+#[derive(serde::Serialize)]
 pub struct DbPenalty {
     pub event_id_in_game: i32,
     pub committed_by_player_id: Option<i64>,
@@ -232,6 +239,7 @@ pub struct DbPenalty {
 }
 
 /// Faceoff child row — maps to the `faceoffs` table.
+#[derive(serde::Serialize)]
 pub struct DbFaceoff {
     pub event_id_in_game: i32,
     pub winning_player_id: Option<i64>,
