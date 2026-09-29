@@ -159,6 +159,9 @@ struct ReplayEventDetailsArgs {
     /// Maximum games inspected, ordered by game ID
     #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(i64).range(1..=10000))]
     limit: i64,
+    /// Inspect only games with missing missed-shot, giveaway or takeaway details
+    #[arg(long)]
+    missing_only: bool,
     /// Write missing child facts; never fetch remote sources
     #[arg(long)]
     apply: bool,
@@ -169,6 +172,14 @@ struct BackfillArgs {
     /// Restrict backfill to a single season (e.g. 20232024)
     #[arg(long)]
     season: Option<i32>,
+
+    /// Fetch only games missing typed missed-shot, giveaway or takeaway details
+    #[arg(long, requires = "season", conflicts_with = "refresh")]
+    missing_event_details: bool,
+
+    /// Concurrent detail refreshes; upstream fetches remain capped at five
+    #[arg(long, default_value_t = 5, requires = "missing_event_details", value_parser = clap::value_parser!(u8).range(1..=16))]
+    concurrency: u8,
 
     /// Re-fetch and atomically replace games already marked done
     #[arg(long, requires = "season")]
@@ -274,6 +285,7 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
                     after_game_id: args.after_game_id,
                     limit: args.limit,
                     apply: args.apply,
+                    missing_only: args.missing_only,
                 },
             )
             .await?;
@@ -371,12 +383,21 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
         },
         Commands::Backfill(args) => {
             let pool = db::get_pool().await?;
-            pucksdata::process::backfill::run_backfill_with_refresh(
-                pool,
-                args.season,
-                args.refresh,
-            )
-            .await?;
+            if args.missing_event_details {
+                pucksdata::process::backfill::run_event_detail_backfill(
+                    pool,
+                    args.season,
+                    usize::from(args.concurrency),
+                )
+                .await?;
+            } else {
+                pucksdata::process::backfill::run_backfill_with_refresh(
+                    pool,
+                    args.season,
+                    args.refresh,
+                )
+                .await?;
+            }
         }
         Commands::Sync(args) => {
             let pool = db::get_pool().await?;
@@ -483,4 +504,48 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detail_concurrency_preserves_default_backfill_and_requires_explicit_scope() {
+        assert!(Cli::try_parse_from(["pucksdata", "backfill"]).is_ok());
+        assert!(Cli::try_parse_from([
+            "pucksdata",
+            "backfill",
+            "--season",
+            "20252026",
+            "--missing-event-details",
+            "--concurrency",
+            "12",
+        ])
+        .is_ok());
+        for args in [
+            vec!["pucksdata", "backfill", "--concurrency", "12"],
+            vec!["pucksdata", "backfill", "--missing-event-details"],
+            vec![
+                "pucksdata",
+                "backfill",
+                "--season",
+                "20252026",
+                "--missing-event-details",
+                "--concurrency",
+                "0",
+            ],
+            vec![
+                "pucksdata",
+                "backfill",
+                "--season",
+                "20252026",
+                "--missing-event-details",
+                "--concurrency",
+                "17",
+            ],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
+    }
 }

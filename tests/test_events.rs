@@ -884,3 +884,134 @@ async fn extended_events_replace_atomically_and_preserve_history() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn all_child_tables_share_atomic_insert_and_preserve_nulls() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+    let game = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_micros() as i64
+        + 10_000_000_000_000_000;
+    sqlx::query("INSERT INTO teams (team_id,full_name,common_name,place_name,abbrev) VALUES (99491,'Batch Home','Home','Test','BHM'),(99492,'Batch Away','Away','Test','BAW')").execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO games (game_id,season,game_date,home_team_id,away_team_id,game_type) VALUES ($1,20242025,'2024-10-04',99491,99492,2)").bind(game).execute(pool).await.unwrap();
+    let details = [
+        (
+            "goal",
+            serde_json::json!({"scoringPlayerId":101,"assist1PlayerId":102,"shotType":"wrist"}),
+        ),
+        (
+            "shot-on-goal",
+            serde_json::json!({"shootingPlayerId":103,"goalieInNetId":104,"shotType":"slap"}),
+        ),
+        (
+            "missed-shot",
+            serde_json::json!({"shootingPlayerId":105,"reason":"wide-left"}),
+        ),
+        ("giveaway", serde_json::json!({"playerId":106})),
+        ("takeaway", serde_json::json!({})),
+        (
+            "hit",
+            serde_json::json!({"hittingPlayerId":107,"hitteePlayerId":108}),
+        ),
+        (
+            "blocked-shot",
+            serde_json::json!({"shootingPlayerId":109,"blockingPlayerId":110}),
+        ),
+        (
+            "penalty",
+            serde_json::json!({"committedByPlayerId":111,"descKey":"hooking","duration":2}),
+        ),
+        (
+            "faceoff",
+            serde_json::json!({"winningPlayerId":112,"losingPlayerId":113}),
+        ),
+    ];
+    let plays: Vec<_> = details.into_iter().enumerate().map(|(index,(kind,details))| serde_json::json!({
+        "eventId":index+1,"periodDescriptor":{"number":1,"periodType":"REG"},"timeInPeriod":"01:00","typeDescKey":kind,"details":details
+    })).collect();
+    let pbp = serde_json::from_value(
+        serde_json::json!({"id":game,"homeTeam":{"id":1},"awayTeam":{"id":7},"plays":plays}),
+    )
+    .unwrap();
+    let mut batch = pucksdata::fetchers::events::transform_events(&pbp, &Default::default());
+    let counts = pucksdata::loaders::events::upsert_game_events(pool, game, &batch)
+        .await
+        .unwrap();
+    assert_eq!(
+        counts,
+        pucksdata::models::EventCounts {
+            events: 9,
+            goals: 1,
+            shots: 2,
+            missed_shots: 1,
+            giveaways: 1,
+            takeaways: 1,
+            hits: 1,
+            blocks: 1,
+            penalties: 1,
+            faceoffs: 1
+        }
+    );
+    let values: serde_json::Value = sqlx::query_scalar("SELECT jsonb_build_object(
+        'scorer',g.scorer_player_id,'assist',g.assist1_player_id,'assist2',g.assist2_player_id,'goalie',g.goalie_id,'type',g.shot_type,
+        'hit',h.hitting_player_id,'hittee',h.hittee_player_id,'blocker',b.blocking_player_id,'shooter',b.shooting_player_id,
+        'penalty',p.committed_by_player_id,'drawn',p.drawn_by_player_id,'infraction',p.infraction_type,'duration',p.duration_minutes,
+        'winner',f.winning_player_id,'loser',f.losing_player_id)
+        FROM events e JOIN goals g ON g.event_id=e.id
+        JOIN events eh ON eh.game_id=e.game_id AND eh.event_type='hit' JOIN hits h ON h.event_id=eh.id
+        JOIN events eb ON eb.game_id=e.game_id AND eb.event_type='blocked-shot' JOIN blocks b ON b.event_id=eb.id
+        JOIN events ep ON ep.game_id=e.game_id AND ep.event_type='penalty' JOIN penalties p ON p.event_id=ep.id
+        JOIN events ef ON ef.game_id=e.game_id AND ef.event_type='faceoff' JOIN faceoffs f ON f.event_id=ef.id
+        WHERE e.game_id=$1").bind(game).fetch_one(pool).await.unwrap();
+    assert_eq!(
+        values,
+        serde_json::json!({"scorer":101,"assist":102,"assist2":null,"goalie":null,"type":"wrist","hit":107,"hittee":108,"blocker":110,"shooter":109,"penalty":111,"drawn":null,"infraction":"hooking","duration":2,"winner":112,"loser":113})
+    );
+    batch.takeaways.push(pucksdata::models::DbTurnover {
+        event_id_in_game: 999,
+        player_id: Some(114),
+    });
+    assert!(matches!(
+        pucksdata::loaders::events::upsert_game_events(pool, game, &batch).await,
+        Err(pucksdata::error::LoadError::Validation(_))
+    ));
+    batch.takeaways.pop();
+    batch.penalties[0].duration_minutes = Some(5);
+    batch.faceoffs.push(pucksdata::models::DbFaceoff {
+        event_id_in_game: 9,
+        winning_player_id: None,
+        losing_player_id: None,
+    });
+    assert!(matches!(
+        pucksdata::loaders::events::upsert_game_events(pool, game, &batch).await,
+        Err(pucksdata::error::LoadError::Database(_))
+    ));
+    let duration:i16 = sqlx::query_scalar("SELECT duration_minutes FROM penalties p JOIN events e ON e.id=p.event_id WHERE e.game_id=$1").bind(game).fetch_one(pool).await.unwrap();
+    assert_eq!(
+        duration, 2,
+        "failure in another child table must roll back every insert"
+    );
+    for query in [
+        "DELETE FROM goals WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM shots WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM missed_shots WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM giveaways WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM takeaways WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM hits WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM blocks WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM penalties WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM faceoffs WHERE event_id IN (SELECT id FROM events WHERE game_id=$1)",
+        "DELETE FROM events WHERE game_id=$1",
+        "DELETE FROM games WHERE game_id=$1",
+    ] {
+        sqlx::query(query).bind(game).execute(pool).await.unwrap();
+    }
+    sqlx::query("DELETE FROM teams WHERE team_id IN (99491,99492)")
+        .execute(pool)
+        .await
+        .unwrap();
+}
