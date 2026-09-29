@@ -20,6 +20,8 @@ enum Commands {
     },
     /// Run full historical backfill (events only; entity tables must be pre-populated)
     Backfill(BackfillArgs),
+    /// Enrich current events from matching archived feeds; dry run unless --apply
+    ReplayEventDetails(ReplayEventDetailsArgs),
     /// Fill event gaps and audit recent completed-game corrections
     Sync(SyncArgs),
     /// Run as a long-lived daemon, calling sync on a configurable interval
@@ -145,6 +147,24 @@ struct GamesArgs {
 }
 
 #[derive(Args)]
+struct ReplayEventDetailsArgs {
+    /// Eight-digit NHL season (for example 20242025)
+    #[arg(long)]
+    season: i32,
+    #[arg(long)]
+    game_id: Option<i64>,
+    /// Resume inspection after this game ID
+    #[arg(long, conflicts_with = "game_id")]
+    after_game_id: Option<i64>,
+    /// Maximum games inspected, ordered by game ID
+    #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(i64).range(1..=10000))]
+    limit: i64,
+    /// Write missing child facts; never fetch remote sources
+    #[arg(long)]
+    apply: bool,
+}
+
+#[derive(Args)]
 struct BackfillArgs {
     /// Restrict backfill to a single season (e.g. 20232024)
     #[arg(long)]
@@ -245,6 +265,25 @@ async fn run(cli: Cli) -> Result<(), pucksdata::AnyError> {
 
 async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
     match command {
+        Commands::ReplayEventDetails(args) => {
+            let results = pucksdata::replay::run(
+                db::get_pool().await?,
+                &pucksdata::replay::Options {
+                    season: args.season,
+                    game_id: args.game_id,
+                    after_game_id: args.after_game_id,
+                    limit: args.limit,
+                    apply: args.apply,
+                },
+            )
+            .await?;
+            println!("{}", serde_json::to_string_pretty(&results)?);
+            if results.iter().any(|game| game.status == "rejected") {
+                return Err(
+                    "some games were rejected; inspect the JSON report before retrying".into(),
+                );
+            }
+        }
         Commands::RefreshDerived => {
             pucksdata::process::analytics::refresh_derived(db::get_pool().await?).await?;
         }

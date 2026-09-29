@@ -8,7 +8,15 @@ new installation, start with the [README](README.md#quick-start).
 `DATABASE_URL` is the runtime connection; `MIGRATION_DATABASE_URL` is the
 schema-owner connection used by `scripts/run-migrations.sh`. They can be the
 same for local development. Hosted deployments should use a restricted ingestion
-role at runtime. Both wrapper scripts below read their connection from `.env`
+role at runtime. A fresh baseline creates schema objects owned by the migration
+role; it does not provision runtime or reader roles. Before using a different
+runtime role, grant access to its hockey tables, operational tables, history,
+sequences and functions, and arrange ownership or maintenance privileges for
+materialized-view refreshes. The history and schema rollout sections below list
+incremental grants; they assume the earlier runtime permissions already exist.
+Existing databases keep their grants when upgrading.
+
+Both wrapper scripts below read their connection from `.env`
 when it is not exported, without sourcing the file; URL characters such as `&`
 are preserved.
 
@@ -27,6 +35,22 @@ controls verbosity (default `pucksdata=info`). `PUCKSDATA_LOG_FORMAT` accepts
 
 ## Upgrading an existing database
 
+`./scripts/run-migrations.sh` chooses the migration path from the database's
+verified migration ledger. Empty databases receive the consolidated baseline;
+existing databases continue through the unchanged archived migrations. Both
+paths then apply the same new migrations. The wrapper refuses unknown or
+modified migration history; it does not reset the ledger or rebuild data.
+
+Preview pending migrations without applying them:
+
+```bash
+./scripts/run-migrations.sh --dry-run
+```
+
+This validates migration history, not the pending SQL's behavior on your data.
+Use the wrapper rather than running SQLx directly against `migrations/`, which
+contains only the migrations after the baseline.
+
 Pause older ingestion processes while applying schema changes, and deploy a
 compatible binary before resuming them. Migrations are not run by the container.
 Use the [history rollout](docs/ingestion-history.md#rollout),
@@ -39,11 +63,13 @@ specific permissions and ordering requirements.
 Stage the event-scope update so existing events are filled in batches:
 
 ```bash
-./scripts/run-migrations.sh --target-version 21
+cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features rustls,postgres
+sqlx migrate run --source migrations/legacy --target-version 21 --database-url "$MIGRATION_DATABASE_URL"
 ./scripts/run-event-scope-backfill.sh
 ./scripts/run-migrations.sh
 ```
 
+Export `MIGRATION_DATABASE_URL` before running this historical staging command.
 Deploy the updated ingestion binary before the final command. The migration
 wrapper uses `MIGRATION_DATABASE_URL`; the backfill wrapper uses `DATABASE_URL`.
 Fresh databases can apply all migrations together because there are no existing
@@ -68,11 +94,38 @@ through ingestion.
 
 ### Franchise attribution
 
-The seed mapping for the original Winnipeg Jets predates the NHL's attribution
-change. Fresh installations and older databases need the
+The archived seed mapping for the original Winnipeg Jets predates the NHL's
+attribution change. Older databases may need the
 [Winnipeg audit and repair](docs/team-attribution.md#winnipeg-audit-and-repair)
 before ingestion. The audit distinguishes missing data from incorrect attribution;
-the repair preserves the Coyotes' own history.
+the repair preserves the Coyotes' own history. The consolidated baseline already
+contains the corrected mapping for new installations.
+
+### Optional database rebuild
+
+A baseline simplifies new installations; rebuilding an existing database is
+optional. If rebuilding, prepare a separate database and retain the original
+until the replacement passes validation and its readers have switched over.
+
+Preserve hockey facts and source identities, all `history` data, source receipt
+observations, and their linked ingestion attempts and diagnostics. Preserve
+original IDs, timestamps, hashes and revision numbers: fetching the same game
+again cannot recreate when it was first observed. Shift availability records
+also describe source outcomes and should be retained.
+
+Backfill checkpoints, sync watermarks, schedule/player audit checkpoints and
+pending derived-refresh state can be reset. Refresh materialized products after
+the transfer; resetting a checkpoint may cause extra work on the first sync.
+Do not treat the entire `ingestion` schema as disposable: it contains provenance
+as well as scheduling state.
+
+Before switching connections, rehearse the transfer with writers paused or from
+a consistent backup. Copy retained rows without firing history-capture triggers,
+restore sequence positions, then verify foreign keys, row counts, content hashes,
+revision continuity, observation times and reader queries. Reapply and test
+runtime/reader privileges. Keep the new baseline's migration ledger; do not copy
+the old `_sqlx_migrations` table over it. A schema baseline alone does not perform
+this data transfer.
 
 ## Sync and daemon
 

@@ -51,8 +51,10 @@ Repeating the repair makes no further attribution changes.
 The final audit must show franchise `35`, zero games/events needing correction,
 and zero invalid participants/owners. Keep missing-game coverage distinct from
 attribution correctness. No schema migration or historical re-download is needed.
-Existing migrations still describe the original seed snapshot; fresh installations
-should run this reconciliation before ingestion while that seed contains `33 -> 28`.
+Archived migrations still describe the original seed snapshot. The consolidated
+baseline uses `33 -> 35`, so fresh installations do not need this reconciliation.
+Existing databases retain their data and should use the audit to determine
+whether a repair is needed.
 
 ## Future upstream changes
 

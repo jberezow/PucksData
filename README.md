@@ -35,11 +35,9 @@ sync as the CLI on a configurable interval.
 
 ## Quick start
 
-You need a stable [Rust toolchain](https://rustup.rs/), PostgreSQL 14 or newer,
-and the PostgreSQL-enabled migration CLI:
+You need a stable [Rust toolchain](https://rustup.rs/) and PostgreSQL 14 or newer:
 
 ```bash
-cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features rustls,postgres
 git clone https://github.com/jberezow/pucksdata.git
 cd pucksdata
 cp .env.example .env
@@ -56,9 +54,8 @@ For a new database:
 cargo install --path .
 ```
 
-Before ingestion, complete the [Winnipeg seed reconciliation](docs/team-attribution.md#winnipeg-audit-and-repair).
-The migration seed predates the NHL's updated franchise attribution; the runtime
-checks that mapping before accepting data. Existing installations should follow
+New databases start from a consolidated schema baseline. Existing databases
+retain their migration history and follow the archived upgrade chain; use
 [the upgrade guide](OPERATIONS.md#upgrading-an-existing-database).
 
 Load the entity catalogue and a season of games, then its events:
@@ -89,6 +86,7 @@ Seasons use the NHL's eight-digit format, such as `20252026` for 2025–26.
 | `fetch events 2025020001` | Load one game's play-by-play |
 | `backfill --season 20252026` | Resume missing historical event loads |
 | `backfill --season 20252026 --refresh` | Re-fetch and replace a season's event snapshots |
+| `replay-event-details --season 20252026` | Preview missing event details recoverable from accepted archived responses; add `--apply` to write them |
 | `fetch official-stats --season 20252026` | Load official skater and goalie season totals; omit the season for all seasons |
 | `fetch official-game-stats --game 2025020001` | Load a completed game's official player statistics |
 | `fetch official-game-stats --from 2026-01-01 --to 2026-01-31` | Load or audit completed games in an inclusive date range |
@@ -117,13 +115,14 @@ grants and upgrade instructions, see [Operations](OPERATIONS.md).
 | Dataset | What it provides |
 | --- | --- |
 | Entities and games | Franchise identities, players, current roster observations, seasons and game metadata |
-| Events | Shared play-by-play metadata, with detail tables for goals, shots, hits, blocks, penalties and faceoffs |
+| Events | Shared play-by-play metadata, with details for goals, shots on goal, missed shots, hits, blocks, penalties, faceoffs, giveaways and takeaways |
 | Official statistics | NHL-published skater and goalie season and completed-game totals, separate from event-derived counts |
 | Shifts | Typed source intervals from 2010–11 onward, with fetch outcomes and source team identities |
 | History and observability | Source captures, normalized revisions, ingestion attempts, coverage and health views |
 | Analytical views | Coverage metadata, correction feeds and materialized hit/blocked-shot season totals |
 
-Goals also appear in `shots`, which represents shots on net. Event strength is
+Goals also appear in `shots`, which represents shots on net; missed shots remain
+separate. Event strength is
 recorded from the event owner's perspective; unknown strength remains null.
 Resolve raw shift team IDs through `nhl_team_identities` before joining franchise
 IDs in `games` or `teams`.
@@ -131,11 +130,14 @@ IDs in `games` or `teams`.
 Coverage varies by statistic and season. Query `analytics.coverage` for known
 source limits and `analytics.coverage_observed` for data actually present in your
 database. Scheduled, unplayed games do not count as missing completed-game data.
+For missed shots, giveaways and takeaways, `analytics.event_fact_coverage`
+distinguishes stored base events from extracted details and player attribution.
 Historical source gaps remain visible; ingestion cannot reconstruct observations
 that the NHL does not publish. Source and revision history is captured from the
 point ingestion observes it, not retroactively.
 
-See [schema conventions](docs/schema-conventions.md) for identifiers and reader
+See [event data](docs/events.md) for event tables and attribution gaps,
+[schema conventions](docs/schema-conventions.md) for identifiers and reader
 contracts, [ingestion history](docs/ingestion-history.md) for revisions and
 corrections, and [on-ice reconstruction](docs/on-ice-reconstruction.md) for lineup
 uncertainty and validation.
@@ -164,9 +166,11 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 cargo test --all-targets
 ```
 
-For the database-backed suite, start a disposable PostgreSQL container with:
+For the database-backed suite, install the SQLx CLI used by the upgrade checks,
+then start disposable PostgreSQL:
 
 ```bash
+cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features rustls,postgres
 ./scripts/test-database.sh
 ```
 

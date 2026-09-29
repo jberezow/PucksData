@@ -1,8 +1,8 @@
 # Ingestion history and corrections
 
-Migration 0034 adds prospective history and attempt tracking. Current tables
-remain the operational interface; the new schemas preserve evidence for audits
-and downstream research. No production migration is implied by this document.
+PucksData retains prospective source history and ingestion attempts for audits
+and downstream research. Current tables contain accepted facts; historical
+revisions preserve earlier accepted states and when they were observed.
 
 ## Rollout
 
@@ -268,4 +268,4 @@ trigger. Existing dataset names, entity keys and payloads are unchanged, so a
 physical table rename or schema move no longer starts a new revision stream.
 Column renames still require an explicit payload mapping to preserve hashes and
 consumer semantics. See [schema conventions](schema-conventions.md) for the
-0037–0038 rollout and future migration direction.
+0037–0038 rollout and baseline conventions.

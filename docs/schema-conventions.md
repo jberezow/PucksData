@@ -1,8 +1,7 @@
-# Schema conventions and migration direction
+# Schema conventions
 
-The immediate priority is preserving the consumer's deployed reads while making
-identities and ownership explicit. Migrations 0037–0038 establish that foundation;
-they do not rename hockey storage tables or existing consumer columns.
+PucksData separates hockey facts, operational state and historical evidence.
+Stable reader interfaces preserve existing queries as storage evolves.
 
 ## Schema responsibilities
 
@@ -93,7 +92,7 @@ contract shapes and the new views when `TEST_DATABASE_URL` is configured.
 1. Complete the [0034–0036 rollout](ingestion-history.md#rollout) if necessary.
    Pause the scheduled sync and all other ingestion writers; allow active runs
    to finish. These migrations require table locks, so use a quiet window.
-2. Apply migrations with the schema-owner connection using `sqlx migrate run`.
+2. Apply migrations with the schema-owner connection using `./scripts/run-migrations.sh`.
    Each new migration must be transactional, including function/trigger changes.
 3. Ensure the runtime has `USAGE` on `ingestion`. Original table privileges move
    with the three operational tables; existing history and invalidation grants
@@ -124,16 +123,24 @@ GRANT SELECT ON analytics.franchises, analytics.season_catalog,
     analytics.game_inventory, analytics.raw_shift_rows TO consumer_role;
 ```
 
-## Next substantial migration
+## Baseline and upgrades
 
-First extend the explicit analytics contracts for the remaining consumer needs
-and migrate the deployed consumer’s reads in its own tested release. Inventory
-other consumers and grants before moving physical hockey storage into a domain schema such as
-`hockey`. Keep the legacy interfaces until those consumers have migrated.
+`schema/baseline/` contains the consolidated schema through migration 0038.
+`migrations/legacy/` preserves the original migration files without checksum
+changes. `migrations/` contains subsequent changes shared by both paths.
+The migration wrapper selects the correct path from verified database history.
+Existing databases do not need a rebuild or a replacement migration ledger.
 
-Then rename physical keys to their actual identity domains, preserving foreign
-keys, history payload semantics and consumer view shapes. Compare populated
-upgrade results and query plans before rollout. Only retire compatibility views
-after a documented deprecation period and confirmation that deployed consumers
-no longer use them. Consumers still under development can adopt the new contracts
-as work resumes; they do not need to delay this preparatory work.
+The baseline includes the current static coverage and identity seeds, including
+the corrected original-Winnipeg mapping. It does not fabricate NHL observations
+or transfer data from another installation. Baseline checks compare its schema
+with the archived chain and verify reader contracts, seeds and initialized views.
+
+```sh
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/pucksdata_test \
+  python3 scripts/check_schema_baseline.py
+```
+
+Future storage changes must preserve reader shapes, foreign keys and historical
+payload semantics. Retire compatibility views only after their readers have
+migrated and populated-database checks verify the replacement contracts.
