@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 from urllib.parse import urlsplit, urlunsplit
 import uuid
 
@@ -83,16 +84,20 @@ def main() -> None:
         for role in roles.values():
             sql(f'CREATE ROLE "{role}" NOLOGIN')
             created_roles.append(role)
-        migrations = sorted((ROOT / "migrations").glob("*.sql"))
+        migrations = sorted((ROOT / "migrations/legacy").glob("*.sql"))
+        migrations += sorted((ROOT / "migrations").glob("*.sql"))
+        migration_source = tempfile.TemporaryDirectory(prefix="pucksdata-upgrade-migrations-")
         for migration in migrations:
-            if int(migration.name.split("_", 1)[0]) <= 36:
-                apply(migration)  # Includes CREATE INDEX CONCURRENTLY migrations.
+            (Path(migration_source.name) / migration.name).write_bytes(migration.read_bytes())
+        def migrate(*extra: str) -> None:
+            run("sqlx", "migrate", "run", "--no-dotenv", "--database-url", database_url,
+                "--source", migration_source.name, *extra)
+        migrate("--target-version", "36")
         apply(ROOT / "tests/schema_upgrade/before.sql")
         before = reader_snapshot()
         oids = {name: sql(f"SELECT 'public.{name}'::regclass::oid") for name in OPERATIONS}
-        for migration in migrations:
-            if int(migration.name.split("_", 1)[0]) > 36:
-                apply(migration, atomic=True)
+        migrate()
+        migration_source.cleanup()
         if before != reader_snapshot():
             raise AssertionError("Existing Consumer or legacy operational read results changed")
         for name, oid in oids.items():

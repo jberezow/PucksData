@@ -33,4 +33,5 @@ if [[ -z "$migration_database_url" ]]; then
   exit 1
 fi
 
-exec sqlx migrate run --database-url "$migration_database_url" "$@"
+export MIGRATION_DATABASE_URL="$migration_database_url"
+exec cargo run --quiet --bin pucksdata-migrate -- "$@"

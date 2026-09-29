@@ -52,7 +52,9 @@ class DatabaseRepair(unittest.TestCase):
         cls.url = urlunsplit(parsed._replace(path="/" + cls.name))
         cls.command("createdb", "--maintenance-db", cls.maintenance, cls.name)
         try:
-            for migration in sorted((repair.ROOT / "migrations").glob("*.sql")):
+            migrations = sorted((repair.ROOT / "schema/baseline").glob("*.sql"))
+            migrations += sorted((repair.ROOT / "migrations").glob("*.sql"))
+            for migration in migrations:
                 cls.command("psql", "--dbname", cls.url, "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(migration))
         except Exception:
             cls.tearDownClass()

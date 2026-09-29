@@ -12,5 +12,8 @@ cleanup() {
 trap cleanup EXIT
 
 docker compose --file "$compose_file" up --detach --wait
-DATABASE_URL="$TEST_DATABASE_URL" sqlx migrate run
+MIGRATION_DATABASE_URL="$TEST_DATABASE_URL" ./scripts/run-migrations.sh
+python3 scripts/check_schema_baseline.py
+python3 scripts/check_migration_runner.py
+python3 scripts/check_schema_upgrade.py
 cargo test --all-targets

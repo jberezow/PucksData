@@ -1,5 +1,6 @@
 [package]
 name = "pucksdata"
+default-run = "pucksdata"
 version = "1.8.0"
 edition = "2021"
 authors = ["Jon Berezowski"]
