@@ -607,3 +607,52 @@ async fn test_backfill_season_scope() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn event_detail_selection_ignores_old_checkpoints_and_resumes_from_facts() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+    sqlx::query("INSERT INTO teams(team_id,full_name,common_name,place_name,abbrev) VALUES (99411,'Detail Home','Home','Test','DTH'),(99412,'Detail Away','Away','Test','DTA') ON CONFLICT DO NOTHING")
+        .execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO games(game_id,season,game_date,home_team_id,away_team_id,game_type,game_state) VALUES (9941100001,99411,'2099-01-01',99411,99412,2,'OFF'),(9941100002,99411,'2099-01-02',99411,99412,2,'FUT'),(9941200001,99412,'2099-01-03',99411,99412,2,'OFF'),(9941100003,99411,'2099-01-04',99411,99412,2,'OFF') ON CONFLICT DO NOTHING")
+        .execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO events(game_id,event_id_in_game,period,period_type,time_in_period,event_type,season,game_type,game_date) SELECT g.game_id,1,1,'REG','01:00','missed-shot',g.season,g.game_type,g.game_date FROM games g WHERE game_id IN (9941100001,9941100002,9941200001) ON CONFLICT DO NOTHING")
+        .execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO ingestion.backfill_progress(game_id,season,status) VALUES(9941100001,99411,'done') ON CONFLICT(game_id) DO UPDATE SET status='done'")
+        .execute(pool).await.unwrap();
+    let selected = pucksdata::process::backfill::query_missing_event_details(pool, Some(99411))
+        .await
+        .unwrap();
+    assert_eq!(
+        selected.iter().map(|g| g.game_id).collect::<Vec<_>>(),
+        vec![9941100001]
+    );
+    sqlx::query("INSERT INTO missed_shots(event_id) SELECT id FROM events WHERE game_id=9941100001 ON CONFLICT DO NOTHING")
+        .execute(pool).await.unwrap();
+    assert!(
+        pucksdata::process::backfill::query_missing_event_details(pool, Some(99411))
+            .await
+            .unwrap()
+            .is_empty(),
+        "null player attribution is already populated, not a missing detail row"
+    );
+    sqlx::query("DELETE FROM missed_shots WHERE event_id IN (SELECT id FROM events WHERE game_id=9941100001)")
+        .execute(pool).await.unwrap();
+    assert_eq!(
+        pucksdata::process::backfill::query_missing_event_details(pool, Some(99411))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    sqlx::query("DELETE FROM events WHERE game_id IN (9941100001,9941100002,9941200001)")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM games WHERE game_id IN (9941100001,9941100002,9941200001,9941100003)")
+        .execute(pool)
+        .await
+        .unwrap();
+}

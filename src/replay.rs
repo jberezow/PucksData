@@ -14,6 +14,7 @@ pub struct Options {
     pub after_game_id: Option<i64>,
     pub limit: i64,
     pub apply: bool,
+    pub missing_only: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,40 +50,95 @@ async fn run_inner(pool: &PgPool, options: &Options) -> Result<Vec<GameResult>, 
     let games: Vec<i64> = sqlx::query_scalar(
         "SELECT game_id FROM games WHERE season=$1 AND ($2::bigint IS NULL OR game_id=$2)
          AND ($4::bigint IS NULL OR game_id>$4)
-         AND EXISTS(SELECT 1 FROM events WHERE events.game_id=games.game_id)
+         AND EXISTS(SELECT 1 FROM events e WHERE e.game_id=games.game_id
+             AND (NOT $5 OR
+                  (e.event_type='missed-shot' AND NOT EXISTS(SELECT 1 FROM missed_shots m WHERE m.event_id=e.id)) OR
+                  (e.event_type='giveaway' AND NOT EXISTS(SELECT 1 FROM giveaways g WHERE g.event_id=e.id)) OR
+                  (e.event_type='takeaway' AND NOT EXISTS(SELECT 1 FROM takeaways t WHERE t.event_id=e.id))))
          ORDER BY game_id LIMIT $3",
     )
     .bind(options.season)
     .bind(options.game_id)
     .bind(options.limit)
     .bind(options.after_game_id)
+    .bind(options.missing_only)
     .fetch_all(pool)
     .await?;
     if options.game_id.is_some() && games.is_empty() {
-        return Err("requested game has no current events in the selected season".into());
+        let exists = options.missing_only
+            && sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM games g WHERE g.game_id=$1 AND g.season=$2
+             AND EXISTS(SELECT 1 FROM events e WHERE e.game_id=g.game_id))",
+            )
+            .bind(options.game_id)
+            .bind(options.season)
+            .fetch_one(pool)
+            .await?;
+        if !exists {
+            return Err("requested game has no current events in the selected season".into());
+        }
     }
-    let mut results = Vec::new();
-    for game_id in games {
-        let operation = enrich(pool, game_id, options.apply);
-        let result = if options.apply {
-            attempts::track(pool, "event_replay", &game_id.to_string(), operation).await
-        } else {
-            operation.await
+    let concurrency = worker_limit(pool.options().get_max_connections(), options.apply);
+    let total = games.len();
+    tracing::info!(
+        total,
+        concurrency,
+        apply = options.apply,
+        "archived event replay started"
+    );
+    let mut pending = games.into_iter();
+    let mut workers = tokio::task::JoinSet::new();
+    let mut results = Vec::with_capacity(total);
+    loop {
+        while workers.len() < concurrency {
+            let Some(game_id) = pending.next() else { break };
+            let pool = pool.clone();
+            let apply = options.apply;
+            workers.spawn(async move {
+                let operation = enrich(&pool, game_id, apply);
+                let result = if apply {
+                    attempts::track(&pool, "event_replay", &game_id.to_string(), operation).await
+                } else {
+                    operation.await
+                };
+                match result {
+                    Ok(result) => result,
+                    Err(error) => GameResult {
+                        game_id,
+                        status: "rejected",
+                        missed_shots: 0,
+                        giveaways: 0,
+                        takeaways: 0,
+                        source_observation_id: None,
+                        reason: Some(error.to_string()),
+                    },
+                }
+            });
+        }
+        let Some(result) = workers.join_next().await else {
+            break;
         };
-        results.push(match result {
-            Ok(result) => result,
-            Err(error) => GameResult {
-                game_id,
-                status: "rejected",
-                missed_shots: 0,
-                giveaways: 0,
-                takeaways: 0,
-                source_observation_id: None,
-                reason: Some(error.to_string()),
-            },
-        });
+        let result = result?;
+        tracing::info!(
+            game_id = result.game_id,
+            status = result.status,
+            completed = results.len() + 1,
+            total,
+            missed_shots = result.missed_shots,
+            giveaways = result.giveaways,
+            takeaways = result.takeaways,
+            "archived event replay progress"
+        );
+        results.push(result);
     }
+    results.sort_by_key(|result| result.game_id);
     Ok(results)
+}
+
+fn worker_limit(max_connections: u32, apply: bool) -> usize {
+    max_connections
+        .saturating_sub(if apply { 2 } else { 1 })
+        .clamp(1, 4) as usize
 }
 
 async fn enrich(pool: &PgPool, game_id: i64, apply: bool) -> Result<GameResult, AnyError> {
@@ -108,18 +164,19 @@ async fn enrich(pool: &PgPool, game_id: i64, apply: bool) -> Result<GameResult, 
     }
     let (source_snapshot, source_observation, body) = source(&mut tx, game_id, snapshot_id).await?;
     let pbp = events::parse_play_by_play(game_id, &body)?;
-    let mapping: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT nhl_team_id,franchise_id FROM nhl_team_identities WHERE franchise_id IS NOT NULL",
-    )
-    .fetch_all(&mut *tx)
-    .await?
-    .into_iter()
-    .collect();
-    let (home, away): (i64, i64) =
-        sqlx::query_as("SELECT home_team_id,away_team_id FROM games WHERE game_id=$1")
-            .bind(game_id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let (home, away, source_ids, franchise_ids): (i64, i64, Vec<i64>, Vec<i64>) =
+        sqlx::query_as(
+            "SELECT g.home_team_id,g.away_team_id,i.source_ids,i.franchise_ids
+             FROM games g CROSS JOIN LATERAL (
+                 SELECT COALESCE(array_agg(nhl_team_id ORDER BY nhl_team_id),'{}'::bigint[]) AS source_ids,
+                        COALESCE(array_agg(franchise_id ORDER BY nhl_team_id),'{}'::bigint[]) AS franchise_ids
+                 FROM nhl_team_identities WHERE franchise_id IS NOT NULL
+             ) i WHERE g.game_id=$1",
+        )
+        .bind(game_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let mapping: HashMap<i64, i64> = source_ids.into_iter().zip(franchise_ids).collect();
     if mapping.get(&pbp.home_team.id) != Some(&home)
         || mapping.get(&pbp.away_team.id) != Some(&away)
     {
@@ -189,32 +246,28 @@ async fn source(
     game_id: i64,
     snapshot_id: i64,
 ) -> Result<(i64, i64, String), AnyError> {
-    let previous: Option<(i64, i64, String)> = sqlx::query_as(
-        "SELECT r.source_snapshot_id,o.observation_id,d.body FROM ingestion.event_replays r
-         JOIN ingestion.source_observations o ON o.observation_id=r.source_observation_id
+    let candidates: Vec<(i64, i64, String, String)> = sqlx::query_as(
+        "WITH previous AS MATERIALIZED (
+             SELECT r.source_snapshot_id,o.observation_id,o.content_sha256,d.body
+             FROM ingestion.event_replays r
+             JOIN ingestion.source_observations o ON o.observation_id=r.source_observation_id
+             JOIN history.source_documents d USING(content_sha256)
+             WHERE r.game_id=$1 AND r.result_snapshot_id=$2 ORDER BY r.replay_id DESC LIMIT 1
+         ), accepted AS (
+             SELECT o.attempt_id,o.recorded_at FROM history.observations o
+             JOIN ingestion.attempts a USING(attempt_id)
+             WHERE o.snapshot_id=$2 AND a.dataset='events' AND a.entity_key=$1::text
+             AND NOT EXISTS(SELECT 1 FROM previous)
+             ORDER BY o.observation_id DESC LIMIT 1
+         ) SELECT source_snapshot_id,observation_id,content_sha256,body FROM previous
+         UNION ALL
+         SELECT $2,s.observation_id,s.content_sha256,d.body FROM accepted a
+         JOIN ingestion.source_observations s ON s.attempt_id=a.attempt_id
          JOIN history.source_documents d USING(content_sha256)
-         WHERE r.game_id=$1 AND r.result_snapshot_id=$2 ORDER BY r.replay_id DESC LIMIT 1",
+         WHERE s.url=$3 AND s.observed_at<=a.recorded_at ORDER BY observation_id DESC",
     )
     .bind(game_id)
     .bind(snapshot_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    if let Some(source) = previous {
-        return Ok(source);
-    }
-    let candidates: Vec<(i64, String, String)> = sqlx::query_as(
-        "WITH accepted AS (
-             SELECT o.attempt_id,o.recorded_at FROM history.observations o
-             JOIN ingestion.attempts a USING(attempt_id)
-             WHERE o.snapshot_id=$1 AND a.dataset='events' AND a.entity_key=$2
-             ORDER BY o.observation_id DESC LIMIT 1
-         ) SELECT s.observation_id,s.content_sha256,d.body FROM accepted a
-         JOIN ingestion.source_observations s ON s.attempt_id=a.attempt_id
-         JOIN history.source_documents d USING(content_sha256)
-         WHERE s.url=$3 AND s.observed_at<=a.recorded_at ORDER BY s.observation_id DESC",
-    )
-    .bind(snapshot_id)
-    .bind(game_id.to_string())
     .bind(format!(
         "https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play"
     ))
@@ -223,10 +276,10 @@ async fn source(
     let first = candidates
         .first()
         .ok_or("no archived play-by-play linked to the latest accepted observation")?;
-    if candidates.iter().any(|candidate| candidate.1 != first.1) {
+    if candidates.iter().any(|candidate| candidate.2 != first.2) {
         return Err("ambiguous archived responses within the accepted attempt".into());
     }
-    Ok((snapshot_id, first.0, first.2.clone()))
+    Ok((first.0, first.1, first.3.clone()))
 }
 
 fn rows(value: &Value) -> Result<&Vec<Value>, AnyError> {
@@ -424,4 +477,20 @@ fn retain_missing(current: &Value, batch: &mut EventBatch) -> Result<(), AnyErro
         *children = missing;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::worker_limit;
+
+    #[test]
+    fn workers_reserve_lease_and_spare_connections() {
+        assert_eq!(worker_limit(2, true), 1);
+        assert_eq!(worker_limit(3, true), 1);
+        assert_eq!(worker_limit(5, true), 3);
+        assert_eq!(worker_limit(6, true), 4);
+        assert_eq!(worker_limit(100, true), 4);
+        assert_eq!(worker_limit(1, false), 1);
+        assert_eq!(worker_limit(5, false), 4);
+    }
 }

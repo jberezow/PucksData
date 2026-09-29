@@ -86,6 +86,7 @@ Seasons use the NHL's eight-digit format, such as `20252026` for 2025–26.
 | `fetch events 2025020001` | Load one game's play-by-play |
 | `backfill --season 20252026` | Resume missing historical event loads |
 | `backfill --season 20252026 --refresh` | Re-fetch and replace a season's event snapshots |
+| `backfill --season 20252026 --missing-event-details` | Fetch only completed games missing missed-shot, giveaway or takeaway details; reruns skip populated games |
 | `replay-event-details --season 20252026` | Preview missing event details recoverable from accepted archived responses; add `--apply` to write them |
 | `fetch official-stats --season 20252026` | Load official skater and goalie season totals; omit the season for all seasons |
 | `fetch official-game-stats --game 2025020001` | Load a completed game's official player statistics |

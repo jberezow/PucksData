@@ -66,16 +66,22 @@ After upgrading, ordinary event refreshes populate the new detail tables. To
 reuse archived responses without contacting the NHL, preview a bounded replay:
 
 ```bash
-pucksdata replay-event-details --season 20252026 --limit 100
+pucksdata replay-event-details --season 20252026 --limit 100 --missing-only
 pucksdata replay-event-details --season 20252026 --game-id 2025020001 --apply
 ```
+
+`--missing-only` selects games with base missed-shot, giveaway or takeaway
+records that lack their typed detail rows. Completed games are skipped on the
+next run. Omit it to inspect all loaded games. Replay uses bounded concurrent
+workers, reserving capacity for the writer lease and bookkeeping; small
+connection pools run serially. Progress goes to stderr, and final JSON stays
+ordered by game ID.
 
 The default limit is 100 games, ordered by game ID. Use `--after-game-id` with
 the last reported game ID to continue through a season, or `--game-id` to inspect
 one game. The JSON result identifies eligible, unchanged and rejected games;
 any rejection produces a nonzero exit status after the report is printed.
-Replay only
-inserts missing missed-shot, giveaway and takeaway details. It verifies the
+Replay only inserts missing missed-shot, giveaway and takeaway details. It verifies the
 current accepted snapshot, complete event inventory, matchup and existing facts
 against the archived response before writing. It preserves parent IDs and
 previously enriched strength fields. Conflicting facts, ambiguous archives or
@@ -86,6 +92,28 @@ Each accepted replay links its new revision to the original source receipt in
 the newly extracted facts are recorded at replay time. A repeated apply does
 not manufacture another revision. Dry runs do not create attempts or history.
 
-For games without usable archives, an explicit event fetch or season refresh
-can obtain a new source observation. That refresh records knowledge acquired
-now and cannot recreate earlier observation history.
+For games without usable archives, fetch only the games still missing typed
+details:
+
+```bash
+pucksdata backfill --season 20252026 --missing-event-details
+```
+
+This mode resumes from the missing detail rows rather than old backfill
+checkpoints. It leaves games without these gaps alone, including games whose
+detail rows have unknown player attribution. Failed validations preserve the
+previous game. Upstream or archive failures stop new requests and leave the
+remaining games eligible for a later run.
+
+For a remote database, `--concurrency 12` can overlap database work when the
+runtime pool has sufficient connections. The default is five workers; the
+allowed range is 1–16, bounded by pool capacity with a connection reserved for
+the writer lease. NHL source fetches remain capped at five. Progress is logged
+throughout the run.
+
+This uses the ordinary validated event replacement pipeline and records new
+source observations. Run it again to retry remaining gaps; games whose details
+are complete are skipped. It requires a season and cannot be combined with
+`--refresh`. An explicit event fetch or full season refresh is also available.
+These fetches record knowledge acquired now and cannot recreate earlier
+observation history.

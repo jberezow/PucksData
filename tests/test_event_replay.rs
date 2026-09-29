@@ -78,6 +78,7 @@ fn options(game: i64, apply: bool) -> replay::Options {
         after_game_id: None,
         limit: 1,
         apply,
+        missing_only: false,
     }
 }
 
@@ -283,6 +284,7 @@ fn replay_cli_requires_scope_and_exposes_safe_defaults() {
         "--after-game-id",
         "--limit",
         "--apply",
+        "--missing-only",
     ] {
         assert!(help.contains(flag), "missing {flag}");
     }
@@ -291,4 +293,116 @@ fn replay_cli_requires_scope_and_exposes_safe_defaults() {
         .output()
         .unwrap();
     assert!(!invalid.status.success());
+    for args in [
+        vec!["backfill", "--missing-event-details"],
+        vec![
+            "backfill",
+            "--season",
+            "20242025",
+            "--missing-event-details",
+            "--refresh",
+        ],
+    ] {
+        let invalid = std::process::Command::new(env!("CARGO_BIN_EXE_pucksdata"))
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(!invalid.status.success());
+        assert!(String::from_utf8(invalid.stderr)
+            .unwrap()
+            .contains("Usage:"));
+    }
+}
+
+#[tokio::test]
+async fn concurrent_replays_keep_game_provenance_and_missing_selection() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let _guard = DATABASE_TEST.lock().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(6)
+        .connect(&std::env::var("TEST_DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let mut games = Vec::new();
+    for _ in 0..4 {
+        let game = unique_game();
+        seed(&pool, game, false).await;
+        games.push(game);
+    }
+    sqlx::raw_sql("CREATE FUNCTION ingestion.test_replay_delay() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.05); RETURN NEW; END $$;
+        CREATE TRIGGER test_replay_delay BEFORE INSERT ON missed_shots FOR EACH ROW EXECUTE FUNCTION ingestion.test_replay_delay();")
+        .execute(&pool).await.unwrap();
+    let mut scope = replay::Options {
+        season: SEASON,
+        game_id: None,
+        after_game_id: Some(games[0] - 1),
+        limit: 4,
+        apply: false,
+        missing_only: true,
+    };
+    let preview = replay::run(&pool, &scope).await.unwrap();
+    assert_eq!(preview.len(), 4);
+    assert!(preview.iter().all(|game| game.status == "eligible"));
+    scope.apply = true;
+    let results = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        replay::run(&pool, &scope),
+    )
+    .await
+    .expect("bounded workers must not exhaust the connection pool")
+    .unwrap();
+    sqlx::raw_sql("DROP TRIGGER test_replay_delay ON missed_shots; DROP FUNCTION ingestion.test_replay_delay();")
+        .execute(&pool).await.unwrap();
+    assert_eq!(
+        results.iter().map(|game| game.game_id).collect::<Vec<_>>(),
+        games
+    );
+    assert!(
+        results.iter().all(|game| game.status == "applied"),
+        "{results:?}"
+    );
+    let provenance_matches: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM ingestion.event_replays r
+         JOIN ingestion.attempts a ON a.attempt_id=r.attempt_id
+         JOIN history.snapshots s ON s.snapshot_id=r.result_snapshot_id
+         JOIN ingestion.source_observations o ON o.observation_id=r.source_observation_id
+         JOIN ingestion.attempts original ON original.attempt_id=o.attempt_id
+         WHERE r.game_id=ANY($1) AND a.entity_key=r.game_id::text
+         AND original.entity_key=r.game_id::text AND s.attempt_id=a.attempt_id
+         AND a.outcome='complete'",
+    )
+    .bind(&games)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(provenance_matches, 4);
+    let overlapped: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM ingestion.attempts a JOIN ingestion.attempts b
+         ON a.attempt_id<b.attempt_id AND a.started_at<b.finished_at AND b.started_at<a.finished_at
+         WHERE a.dataset='event_replay' AND b.dataset='event_replay'
+         AND a.entity_key=ANY($1) AND b.entity_key=ANY($1))",
+    )
+    .bind(games.iter().map(ToString::to_string).collect::<Vec<_>>())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        overlapped,
+        "multiple game attempts should execute concurrently"
+    );
+    assert!(
+        replay::run(&pool, &scope).await.unwrap().is_empty(),
+        "missing-only skips newly completed games"
+    );
+    let mut completed_game = options(games[0], false);
+    completed_game.missing_only = true;
+    assert!(replay::run(&pool, &completed_game)
+        .await
+        .unwrap()
+        .is_empty());
+    completed_game.game_id = Some(unique_game());
+    assert!(replay::run(&pool, &completed_game).await.is_err());
+    pool.close().await;
 }

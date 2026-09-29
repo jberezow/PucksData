@@ -84,8 +84,27 @@ pub fn is_api_gap_error(e: &crate::AnyError) -> bool {
         .unwrap_or(false)
 }
 
+fn detail_backfill_unavailable(error: &crate::AnyError) -> bool {
+    error.downcast_ref::<sqlx::Error>().is_some()
+        || matches!(
+            error.downcast_ref::<crate::error::LoadError>(),
+            Some(crate::error::LoadError::Database(_))
+        )
+        || error
+            .downcast_ref::<crate::api::ApiError>()
+            .is_some_and(|error| {
+                matches!(
+                    error,
+                    crate::api::ApiError::NetworkError(_)
+                        | crate::api::ApiError::Other(401 | 403 | 429 | 500..=599)
+                        | crate::api::ApiError::Archive(_)
+                )
+            })
+}
+
 /// Per-game metadata returned by query_pending_games.
 /// Carries game_date, home_abbrev, and away_abbrev for log line emission.
+#[derive(sqlx::FromRow)]
 pub struct PendingGame {
     pub game_id: i64,
     pub season: i32,
@@ -122,6 +141,33 @@ pub async fn query_pending_games(
     Ok(rows)
 }
 
+/// Completed games with source events whose typed details have not been loaded.
+pub async fn query_missing_event_details(
+    pool: &sqlx::PgPool,
+    season_filter: Option<i32>,
+) -> Result<Vec<PendingGame>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT g.game_id, g.season, g.game_date,
+                ht.abbrev AS home_abbrev, at_.abbrev AS away_abbrev
+         FROM games g
+         JOIN teams ht ON ht.team_id=g.home_team_id
+         JOIN teams at_ ON at_.team_id=g.away_team_id
+         WHERE ($1::integer IS NULL OR g.season=$1)
+           AND g.game_state IN ('OFF','OVER','FINAL')
+           AND EXISTS (
+             SELECT 1 FROM events e WHERE e.game_id=g.game_id AND (
+               (e.event_type='missed-shot' AND NOT EXISTS (SELECT 1 FROM missed_shots d WHERE d.event_id=e.id))
+               OR (e.event_type='giveaway' AND NOT EXISTS (SELECT 1 FROM giveaways d WHERE d.event_id=e.id))
+               OR (e.event_type='takeaway' AND NOT EXISTS (SELECT 1 FROM takeaways d WHERE d.event_id=e.id))
+             )
+           )
+         ORDER BY g.season, g.game_id",
+    )
+    .bind(season_filter)
+    .fetch_all(pool)
+    .await
+}
+
 /// Fetch, transform, and load all events for one game.
 /// Called inside a JoinSet task — errors are captured, not propagated.
 /// Returns the number of parent events written.
@@ -130,6 +176,8 @@ async fn load_one_game_inner(
     game_id: i64,
     team_id_map: &std::collections::HashMap<i64, i64>,
 ) -> Result<usize, crate::AnyError> {
+    static SOURCE_FETCHES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(5);
+    let source_permit = SOURCE_FETCHES.acquire().await?;
     let pbp = crate::fetchers::events::fetch_play_by_play(game_id).await?;
     if pbp.plays.is_empty() {
         return Err("empty play-by-play response; previous snapshot preserved".into());
@@ -152,6 +200,7 @@ async fn load_one_game_inner(
     let report_strengths = crate::fetchers::historical_reports::fetch_reconciled_strengths(&pbp)
         .await?
         .strengths;
+    drop(source_permit);
     let batch = crate::fetchers::events::transform_events_with_strength_sources(
         &pbp,
         team_id_map,
@@ -236,10 +285,35 @@ pub async fn run_backfill_with_refresh(
     season_filter: Option<i32>,
     refresh: bool,
 ) -> Result<(), crate::AnyError> {
+    run_backfill_inner(pool, season_filter, refresh, false, 5).await
+}
+
+/// Refresh only games still missing typed event details, regardless of old checkpoints.
+pub async fn run_event_detail_backfill(
+    pool: &sqlx::PgPool,
+    season_filter: Option<i32>,
+    concurrency: usize,
+) -> Result<(), crate::AnyError> {
+    if !(1..=16).contains(&concurrency) {
+        return Err("event detail concurrency must be between 1 and 16".into());
+    }
+    let capacity = pool
+        .options()
+        .get_max_connections()
+        .saturating_sub(1)
+        .max(1) as usize;
+    run_backfill_inner(pool, season_filter, false, true, concurrency.min(capacity)).await
+}
+
+async fn run_backfill_inner(
+    pool: &sqlx::PgPool,
+    season_filter: Option<i32>,
+    refresh: bool,
+    missing_details: bool,
+    concurrency: usize,
+) -> Result<(), crate::AnyError> {
     use std::sync::Arc;
     use tokio::task::JoinSet;
-
-    const MAX_CONCURRENT_GAMES: usize = 5;
 
     let spinner = crate::ui::make_spinner("Fetching team ID map...");
     let team_id_map = Arc::new(
@@ -248,17 +322,38 @@ pub async fn run_backfill_with_refresh(
             .inspect_err(|_| spinner.finish_and_clear())?,
     );
 
-    spinner.set_message("Seeding backfill queue...");
-    seed_backfill_progress_with_refresh(pool, season_filter, refresh)
-        .await
-        .inspect_err(|_| spinner.finish_and_clear())?;
-
     spinner.set_message("Loading pending games...");
-    let pending_games = query_pending_games(pool, season_filter)
+    let pending_games = if missing_details {
+        let games = query_missing_event_details(pool, season_filter)
+            .await
+            .inspect_err(|_| spinner.finish_and_clear())?;
+        let ids: Vec<i64> = games.iter().map(|g| g.game_id).collect();
+        sqlx::query(
+            "INSERT INTO ingestion.backfill_progress(game_id,season,status)
+             SELECT game_id,season,'pending' FROM games WHERE game_id=ANY($1)
+             ON CONFLICT(game_id) DO UPDATE SET status='pending',error_message=NULL,updated_at=NOW()",
+        )
+        .bind(&ids)
+        .execute(pool)
         .await
         .inspect_err(|_| spinner.finish_and_clear())?;
+        games
+    } else {
+        seed_backfill_progress_with_refresh(pool, season_filter, refresh)
+            .await
+            .inspect_err(|_| spinner.finish_and_clear())?;
+        query_pending_games(pool, season_filter)
+            .await
+            .inspect_err(|_| spinner.finish_and_clear())?
+    };
     let total = pending_games.len();
     spinner.finish_and_clear();
+    tracing::info!(
+        total,
+        concurrency,
+        missing_details,
+        "event backfill started"
+    );
 
     if total == 0 {
         tracing::info!("Backfill complete: 0 games pending (all already done)");
@@ -280,6 +375,7 @@ pub async fn run_backfill_with_refresh(
     let mut total_failed = 0usize;
     let mut checkpoint_errors = Vec::new();
     let mut total_skipped = 0usize;
+    let mut stopped_early = false;
 
     let backfill_start = std::time::Instant::now();
 
@@ -302,7 +398,7 @@ pub async fn run_backfill_with_refresh(
         }};
     }
 
-    for game in (&mut games_iter).take(MAX_CONCURRENT_GAMES) {
+    for game in (&mut games_iter).take(concurrency) {
         spawn_game!(game);
     }
 
@@ -324,6 +420,10 @@ pub async fn run_backfill_with_refresh(
                 total_done += 1;
             }
             Ok((game_id, season, game_date, home_abbrev, away_abbrev, Err(e))) => {
+                if missing_details && detail_backfill_unavailable(&e) {
+                    stopped_early = true;
+                    tracing::warn!("Stopping new event fetches after an upstream or storage failure; remaining games can be resumed");
+                }
                 if is_api_gap_error(&e) {
                     pb.suspend(|| {
                         tracing::info!(
@@ -371,9 +471,20 @@ pub async fn run_backfill_with_refresh(
             }
         }
         pb.inc(1);
+        stopped_early |= missing_details && !checkpoint_errors.is_empty();
         // Spawn the next game now that a slot is free
-        if let Some(game) = games_iter.next() {
-            spawn_game!(game);
+        if !stopped_early {
+            if let Some(game) = games_iter.next() {
+                spawn_game!(game);
+            }
+        }
+        if missing_details && (total_done + total_failed + total_skipped).is_multiple_of(25) {
+            tracing::info!(
+                completed = total_done + total_failed + total_skipped,
+                total,
+                elapsed_s = backfill_start.elapsed().as_secs_f64(),
+                "event detail backfill progress"
+            );
         }
     }
 
@@ -415,6 +526,9 @@ pub async fn run_backfill_with_refresh(
     crate::process::analytics::refresh_derived(pool).await?;
 
     repair_result?;
+    if stopped_early {
+        return Err("event detail backfill stopped after an upstream or archive failure; rerun to resume remaining games".into());
+    }
     if !checkpoint_errors.is_empty() {
         return Err(format!(
             "checkpoint updates failed: {}",
@@ -426,4 +540,33 @@ pub async fn run_backfill_with_refresh(
         return Err(format!("{total_failed} event backfills failed").into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod detail_tests {
+    use super::*;
+
+    #[test]
+    fn infrastructure_failures_stop_detail_fetches_but_source_gaps_do_not() {
+        for code in [401, 403, 429, 500, 503] {
+            assert!(detail_backfill_unavailable(
+                &crate::api::ApiError::Other(code).into()
+            ));
+        }
+        assert!(detail_backfill_unavailable(
+            &sqlx::Error::PoolTimedOut.into()
+        ));
+        assert!(detail_backfill_unavailable(
+            &crate::error::LoadError::Database(sqlx::Error::PoolClosed).into()
+        ));
+        assert!(detail_backfill_unavailable(
+            &crate::api::ApiError::Archive("unavailable".into()).into()
+        ));
+        assert!(!detail_backfill_unavailable(
+            &crate::api::ApiError::NotFound.into()
+        ));
+        assert!(!detail_backfill_unavailable(
+            &crate::error::LoadError::Validation("invalid game".into()).into()
+        ));
+    }
 }
