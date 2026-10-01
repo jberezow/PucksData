@@ -132,6 +132,26 @@ async fn official_game_snapshot_is_idempotent_and_revisioned() {
     pucksdata::loaders::official_games::replace_official_game_stats(pool, &first)
         .await
         .unwrap();
+    let event_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM ingestion.game_webhook_outbox WHERE game_id=$1")
+            .bind(GAME_ID)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    pucksdata::loaders::official_games::replace_official_game_stats(pool, &first)
+        .await
+        .unwrap();
+    let unchanged_events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM ingestion.game_webhook_outbox WHERE game_id=$1")
+            .bind(GAME_ID)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        event_count, unchanged_events,
+        "unchanged observations must not emit events"
+    );
+
     let unchanged_revision: i32 = sqlx::query_scalar(
         "SELECT source_revision FROM analytics.official_skater_games
          WHERE game_id = $1 AND player_id = 9998001",
@@ -150,6 +170,17 @@ async fn official_game_snapshot_is_idempotent_and_revisioned() {
     pucksdata::loaders::official_games::replace_official_game_stats(pool, &corrected)
         .await
         .unwrap();
+    let corrected_events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM ingestion.game_webhook_outbox WHERE game_id=$1")
+            .bind(GAME_ID)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(corrected_events, event_count + 1);
+    let (latest_revision, event_revision): (i64,i64) = sqlx::query_as("SELECT r.revision,o.revision FROM analytics.official_game_revisions r JOIN ingestion.game_webhook_outbox o USING(game_id) WHERE r.game_id=$1 ORDER BY o.revision DESC LIMIT 1")
+        .bind(GAME_ID).fetch_one(pool).await.unwrap();
+    assert_eq!(latest_revision, event_revision);
+
     let (points, revision): (Option<i32>, i32) = sqlx::query_as(
         "SELECT points, source_revision FROM analytics.official_skater_games
          WHERE game_id = $1 AND player_id = 9998001",
