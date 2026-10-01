@@ -11,6 +11,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Refresh recent game status and complete official reports (run every five minutes)
+    SyncGames,
+    /// Deliver committed game updates to the configured consumer (run every minute)
+    DeliverWebhooks,
     /// Rebuild materialized products invalidated by committed data corrections
     RefreshDerived,
     /// Fetch and upsert NHL entity metadata
@@ -256,7 +260,8 @@ async fn main() {
 async fn run(cli: Cli) -> Result<(), pucksdata::AnyError> {
     let capture = matches!(
         &cli.command,
-        Commands::RefreshDerived
+        Commands::SyncGames
+            | Commands::RefreshDerived
             | Commands::Fetch { .. }
             | Commands::Backfill(_)
             | Commands::Shifts {
@@ -276,6 +281,10 @@ async fn run(cli: Cli) -> Result<(), pucksdata::AnyError> {
 
 async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
     match command {
+        Commands::SyncGames => pucksdata::process::recent_games::run(db::get_pool().await?).await?,
+        Commands::DeliverWebhooks => {
+            pucksdata::webhooks::deliver(db::get_pool().await?).await?;
+        }
         Commands::ReplayEventDetails(args) => {
             let results = pucksdata::replay::run(
                 db::get_pool().await?,

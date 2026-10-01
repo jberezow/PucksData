@@ -195,3 +195,7 @@ goals, predictive models and application-specific scoring are downstream work.
 ## License
 
 [MIT](LICENSE).
+
+For frequent game-only refreshes and durable notifications of committed official
+revisions, see [game update webhooks](docs/GAME_WEBHOOKS.md). These supplement the
+full sync and its correction audits; delivery is disabled until configured.

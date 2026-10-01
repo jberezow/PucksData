@@ -11,3 +11,5 @@ pub mod shifts;
 pub mod status;
 pub mod sync;
 pub mod team_attribution;
+
+pub mod recent_games;

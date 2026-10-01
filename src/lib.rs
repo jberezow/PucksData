@@ -11,6 +11,7 @@ pub mod process;
 pub mod provenance;
 pub mod replay;
 pub mod ui;
+pub mod webhooks;
 
 /// Convenience alias for a heap-allocated thread-safe error type.
 pub type AnyError = Box<dyn std::error::Error + Send + Sync + 'static>;
