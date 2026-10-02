@@ -74,7 +74,7 @@ pub async fn record_response(url: &str, body: &str) -> Result<(), sqlx::Error> {
         return Ok(());
     };
     use sha2::{Digest, Sha256};
-    let hash = format!("{:x}", Sha256::digest(body.as_bytes()));
+    let hash = crate::lowercase_hex(&Sha256::digest(body.as_bytes()));
     let waiting = Instant::now();
     let mut connection = context.pool.acquire().await?;
     context
