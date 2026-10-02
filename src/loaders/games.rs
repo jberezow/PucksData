@@ -72,6 +72,8 @@ pub async fn upsert_games(
                 game_state     = COALESCE(EXCLUDED.game_state, games.game_state),
                 home_score     = COALESCE(EXCLUDED.home_score, games.home_score),
                 away_score     = COALESCE(EXCLUDED.away_score, games.away_score)
+            WHERE (games.season, games.game_date, games.start_time_utc, games.home_team_id, games.away_team_id, games.game_type, games.venue, games.venue_location, games.game_state, games.home_score, games.away_score)
+                IS DISTINCT FROM (EXCLUDED.season, EXCLUDED.game_date, COALESCE(EXCLUDED.start_time_utc, games.start_time_utc), EXCLUDED.home_team_id, EXCLUDED.away_team_id, EXCLUDED.game_type, COALESCE(EXCLUDED.venue, games.venue), COALESCE(EXCLUDED.venue_location, games.venue_location), COALESCE(EXCLUDED.game_state, games.game_state), COALESCE(EXCLUDED.home_score, games.home_score), COALESCE(EXCLUDED.away_score, games.away_score))
             "#,
         &game_ids,
         &seasons,

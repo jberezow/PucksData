@@ -108,6 +108,39 @@ pub async fn sync_official_games(
     load_candidates(pool, query_sync_candidates(pool, from).await?).await
 }
 
+/// Recover missed initial reports throughout active seasons, including outages
+/// longer than the correction window. Historical archive repairs remain manual.
+pub async fn query_current_candidates(
+    pool: &sqlx::PgPool,
+    from: time::Date,
+    seasons: &[i32],
+) -> Result<Vec<(i64, i16)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT g.game_id, g.game_type FROM games g
+         LEFT JOIN LATERAL (
+             SELECT outcome FROM ingestion.attempts
+             WHERE dataset='official_games' AND entity_key=g.game_id::text
+             ORDER BY attempt_id DESC LIMIT 1
+         ) latest ON TRUE
+         WHERE g.season=ANY($2) AND g.game_type IN (2,3)
+           AND g.game_state IN ('OFF','OVER','FINAL')
+           AND (g.game_date >= $1 OR latest.outcome IS DISTINCT FROM 'complete')
+         ORDER BY g.game_date,g.game_id",
+    )
+    .bind(from)
+    .bind(seasons)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn sync_current_official_games(
+    pool: &sqlx::PgPool,
+    from: time::Date,
+    seasons: &[i32],
+) -> Result<OfficialGamesSummary, crate::AnyError> {
+    load_candidates(pool, query_current_candidates(pool, from, seasons).await?).await
+}
+
 async fn load_candidates(
     pool: &sqlx::PgPool,
     candidates: Vec<(i64, i16)>,

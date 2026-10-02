@@ -72,7 +72,7 @@ pub async fn player_audit_seasons(
     .await
 }
 
-async fn refresh_current_season_games(
+pub(super) async fn refresh_current_season_games(
     pool: &sqlx::PgPool,
     audit_from: time::Date,
 ) -> Result<usize, crate::AnyError> {

@@ -59,9 +59,27 @@ async fn test_players_upsert_idempotent() {
         draft_team_abbrev: None,
         draft_overall_pick: None,
     };
-    pucksdata::loaders::players::upsert_players(pool, &[record])
+    pucksdata::loaders::players::upsert_players(pool, std::slice::from_ref(&record))
         .await
         .unwrap();
+    let before: String =
+        sqlx::query_scalar("SELECT xmin::text FROM players WHERE player_id=9000001")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    pucksdata::loaders::players::upsert_players(pool, std::slice::from_ref(&record))
+        .await
+        .unwrap();
+    let after: String =
+        sqlx::query_scalar("SELECT xmin::text FROM players WHERE player_id=9000001")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        before, after,
+        "unchanged metadata must not rewrite the tuple"
+    );
+
     let initial_headshot_url: Option<String> =
         sqlx::query_scalar!("SELECT headshot_url FROM players WHERE player_id = 9000001")
             .fetch_one(pool)

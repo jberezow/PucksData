@@ -127,6 +127,22 @@ runtime/reader privileges. Keep the new baseline's migration ledger; do not copy
 the old `_sqlx_migrations` table over it. A schema baseline alone does not perform
 this data transfer.
 
+## Daily consumer updates
+
+The scheduled ingestion service runs `pucksdata sync-games --daily` before
+morning and noon consumer reconciliation. It discovers games,
+updates active-season player metadata and current rosters, and ingests official
+completed-game statistics and corrections. It recovers missing or failed official
+reports throughout active seasons, including after an outage longer than the
+three-day correction window (fourteen days on Sundays).
+
+Frequent `sync-games` and webhook delivery keep consumers current between daily
+runs; see [game update delivery](docs/GAME_WEBHOOKS.md). Full event ingestion,
+historical player audits, archive player repair, derived analytics, and full
+health scans now run only through manual `sync` or explicit maintenance commands.
+Cached archive analytics can therefore lag behind game updates until maintenance.
+Stop independently deployed full-sync daemons to avoid duplicating this work.
+
 ## Sync and daemon
 
 Refresh entity metadata, fill completed-game event gaps, and re-fetch recent
@@ -240,9 +256,10 @@ PucksData does not need to run continuously during the offseason.
    pucksdata fetch games --season 20262027
    ```
 
-2. Run the daemon during the season. Six-hour intervals suit current-data applications; daily syncs are sufficient for general analysis.
-   The daemon and scheduled workflow share the same event and official-stat
-   correction policy described above. Shift backfills remain separately operated.
+2. Use daily game maintenance plus frequent game polling and notification delivery
+   during the season. Run full `sync` manually when archive analytics are needed.
+   The optional daemon still performs full syncs; leave it stopped for consumer-only
+   operation. Shift backfills remain separately operated.
 3. After the Stanley Cup Final, run one final sync and health check:
 
    ```bash
@@ -258,9 +275,17 @@ The daily `NHL API and ingestion canary` exercises live NHL season endpoints,
 validates response shapes and writes to disposable PostgreSQL. It can also be
 started from the Actions tab and never connects to production.
 
-`Scheduled database sync` runs `sync` daily, publishes a job summary and retains
-a JSON health report as a short-lived artifact. It requires a repository Actions
-secret named `DATABASE_URL` containing an ingestion-role connection string.
+`Manual database maintenance` has no cron schedule: the production ingestion
+service already performs morning and noon game maintenance. Manual dispatch
+defaults to `sync-games --daily`; set `full_sync` to run full ingestion and generate
+the archive health summary and JSON artifact. Game updates skip archive health
+scans and materialized-view refreshes. The workflow requires an Actions secret
+named `DATABASE_URL` containing an ingestion-role connection string.
+
+Deploy the updated consumer freshness check before changing the production
+maintenance command to `sync-games --daily`. It accepts the `official_games`
+watermark from `public.sync_state` alongside the legacy `singleton` full-sync key.
+Only successful game maintenance advances the new key; frequent polling does not.
 
 ## Reader access
 

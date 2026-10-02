@@ -18,24 +18,29 @@ pub async fn upsert_team_identities(
             .fetch_all(&mut *tx)
             .await?;
     crate::process::team_attribution::validate_mapping(&stored, records)?;
-    for row in records {
-        let Some(franchise_id) = row.franchise_id else {
-            continue;
-        };
-        sqlx::query(
-            "INSERT INTO nhl_team_identities (nhl_team_id, franchise_id, abbrev, full_name)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (nhl_team_id) DO UPDATE SET
-                 franchise_id = EXCLUDED.franchise_id, abbrev = EXCLUDED.abbrev,
-                 full_name = EXCLUDED.full_name, observed_at = NOW()",
-        )
-        .bind(row.id)
-        .bind(franchise_id)
-        .bind(&row.tri_code)
-        .bind(&row.full_name)
-        .execute(&mut *tx)
-        .await?;
-    }
+    let mapped: Vec<_> = records
+        .iter()
+        .filter(|row| row.franchise_id.is_some())
+        .collect();
+    let ids: Vec<_> = mapped.iter().map(|row| row.id).collect();
+    let franchises: Vec<_> = mapped.iter().map(|row| row.franchise_id.unwrap()).collect();
+    let abbrevs: Vec<_> = mapped.iter().map(|row| row.tri_code.clone()).collect();
+    let names: Vec<_> = mapped.iter().map(|row| row.full_name.clone()).collect();
+    sqlx::query(
+        "INSERT INTO nhl_team_identities (nhl_team_id, franchise_id, abbrev, full_name)
+         SELECT * FROM unnest($1::bigint[], $2::bigint[], $3::text[], $4::text[])
+         ON CONFLICT (nhl_team_id) DO UPDATE SET
+             franchise_id = EXCLUDED.franchise_id, abbrev = EXCLUDED.abbrev,
+             full_name = EXCLUDED.full_name, observed_at = NOW()
+         WHERE (nhl_team_identities.franchise_id, nhl_team_identities.abbrev, nhl_team_identities.full_name)
+            IS DISTINCT FROM (EXCLUDED.franchise_id, EXCLUDED.abbrev, EXCLUDED.full_name)",
+    )
+    .bind(&ids)
+    .bind(&franchises)
+    .bind(&abbrevs)
+    .bind(&names)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(())
 }
@@ -58,6 +63,8 @@ pub async fn upsert_teams(
                 common_name = EXCLUDED.common_name,
                 place_name  = EXCLUDED.place_name,
                 abbrev      = EXCLUDED.abbrev
+            WHERE (teams.full_name, teams.common_name, teams.place_name, teams.abbrev)
+                IS DISTINCT FROM (EXCLUDED.full_name, EXCLUDED.common_name, EXCLUDED.place_name, EXCLUDED.abbrev)
             "#,
             record.team_id,
             record.full_name,
