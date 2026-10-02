@@ -90,6 +90,8 @@ pub async fn upsert_players(
             draft_team_abbrev   = EXCLUDED.draft_team_abbrev,
             draft_overall_pick  = EXCLUDED.draft_overall_pick,
             headshot_url        = EXCLUDED.headshot_url
+            WHERE (players.first_name, players.last_name, players.position, players.shoots_catches, players.current_team_abbrev, players.birth_date, players.height_cm, players.weight_kg, players.draft_year, players.draft_round, players.draft_pick, players.draft_team_abbrev, players.draft_overall_pick, players.headshot_url)
+                IS DISTINCT FROM (EXCLUDED.first_name, EXCLUDED.last_name, EXCLUDED.position, EXCLUDED.shoots_catches, EXCLUDED.current_team_abbrev, EXCLUDED.birth_date, EXCLUDED.height_cm, EXCLUDED.weight_kg, EXCLUDED.draft_year, EXCLUDED.draft_round, EXCLUDED.draft_pick, EXCLUDED.draft_team_abbrev, EXCLUDED.draft_overall_pick, EXCLUDED.headshot_url)
         "#,
         &player_ids,
         &first_names,

@@ -98,6 +98,7 @@ Seasons use the NHL's eight-digit format, such as `20252026` for 2025–26.
 | `shifts backfill --season 20252026` | Load raw player shifts for a season |
 | `shifts reconstruct --game 2025020001` | Derive event lineups from stored shifts |
 | `shifts audit --season 20252026` | Assess reconstruction coverage and quality |
+| `sync-games --daily` | Discover schedules, refresh active rosters, and audit official game stats |
 | `refresh-derived` | Refresh invalidated analytical rollups |
 
 The default sync correction window is three days, widened to fourteen on
@@ -182,7 +183,7 @@ the application `DATABASE_URL`. The database name must contain `test` unless
 database. Without a test URL, local database tests are skipped; CI requires it.
 
 CI uses an isolated database. A separate live NHL canary checks upstream
-responses; production sync runs in its own scheduled workflow. See
+responses; game maintenance runs on the ingestion service; the workflow provides manual maintenance. See
 [Operations](OPERATIONS.md#scheduled-workflows) for deployment configuration.
 
 ## Scope

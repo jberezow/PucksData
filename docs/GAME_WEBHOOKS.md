@@ -10,21 +10,28 @@ failure cannot suppress another game's committed event.
 The first version supports one configured consumer. Adding multiple consumers
 requires per-subscription delivery receipts; do not switch the URL to fan out an
 existing outbox. Events are prospective: migration does not manufacture notifications
-for all historical data. Existing daily sync and downstream reconciliation remain
+for all historical data. Daily game maintenance and downstream reconciliation remain
 necessary during rollout and as recovery mechanisms.
 
 ## Polling and delivery
 
-Run `pucksdata sync-games` every five minutes. It uses the existing ingestion lease,
+Run `pucksdata sync-games` hourly. It uses the existing ingestion lease,
 refreshes known recent game metadata from boxscores, then attempts complete official
 reports. Incomplete reports retry on subsequent passes; successful final reports
-are rechecked hourly for three days. Normal full sync still discovers schedule
-changes, audits older failures/corrections, updates roster metadata, and refreshes
-analytics. `sync-games` does not advance the full-sync success watermark and does
+are rechecked every six hours for three days. Run `pucksdata sync-games --daily`
+once daily to discover schedules (including the upcoming season in September),
+refresh active players and rosters, and audit official game corrections. This
+audit uses three days, fourteen on Sundays, and retries missing or failed reports
+throughout the active seasons. Full `sync`, event ingestion, historical player
+audits, and derived analytics refreshes are manual maintenance. `sync-games --daily` advances a separate `official_games` success watermark in
+`public.sync_state` only after schedule, roster, and official-report work succeeds.
+Consumers that gate scheduled scoring on freshness should accept this key or the
+legacy `singleton` full-sync key before replacing external full-sync schedules.
+The frequent pass does not advance either watermark. `sync-games` does not advance the full-sync success watermark and does
 not claim event/shift/derived data was refreshed. A full sync holding the writer
 lease can defer a fast pass; the next cron retries.
 
-Run `pucksdata deliver-webhooks` every minute in a separate service. It does not need
+Run `pucksdata deliver-webhooks` hourly in a separate service. It does not need
 the ingestion lease and can deliver successfully committed games while other
 imports are incomplete. Configure only this service with:
 
@@ -43,11 +50,27 @@ Suggested Railway commands (UTC, independent of daylight saving):
 
 | Service | Cron | Command |
 | --- | --- | --- |
-| Recent games | `*/5 * * * *` | `timeout --signal=TERM --kill-after=10s 4m pucksdata sync-games` |
-| Delivery | `* * * * *` | `timeout --signal=TERM --kill-after=5s 50s pucksdata deliver-webhooks` |
+| Recent games | `0 * * * *` | `timeout --signal=TERM --kill-after=10s 4m pucksdata sync-games` |
+| Delivery | `5 * * * *` | `timeout --signal=TERM --kill-after=5s 50s pucksdata deliver-webhooks` |
 
-Use restart policy NEVER for these cron services. Keep the existing full-sync
-schedule. Runtime caps allow subsequent cron executions even after a stalled run.
+Use restart policy NEVER for these cron services. Delivery is offset five minutes
+after game polling; a slow pass can leave notification delivery to the next tick.
+Run `sync-games --daily` before each scheduled consumer reconciliation (the current
+production schedule uses morning and noon maintenance). Stop separate full-sync
+daemons and disable duplicate GitHub schedules. The GitHub maintenance workflow
+is manual; choose `full_sync` only for archive work.
+
+Both cron processes exit between passes, allowing quieter periods on the database.
+Do not wrap webhook delivery in an every-minute persistent loop. Consumer traffic
+and other services can still prevent database suspension. Allow up to roughly
+one hour for a game update and delivery when passes overlap or retry, and
+alert on delivery backlogs older than two hours.
+
+Metadata upserts skip unchanged rows; team identity validation still runs every
+pass and writes changed identities in one batch. Source captures retain fetch
+observations, while unchanged normalized metadata does not create another
+row-triggered history observation. `nhl_team_identities.observed_at` consequently
+records the last accepted metadata change, not every identity validation.
 
 ## Wire contract
 
@@ -75,10 +98,10 @@ provides the latest complete accepted revision without granting history-table ac
    committed event is delivered and its consumer job completes. Perform the usual
    full reconciliation to cover data accepted before this migration.
 4. Monitor undelivered count/oldest age and repeated `last_error`, plus recent-game
-   attempts. Alert on delivery backlog older than ten minutes and independently
+   attempts. Alert on delivery backlog older than two hours and independently
    check morning/noon freshness. These are monitoring requirements, not alerts
    automatically installed by this change.
 
 To pause notifications, disable delivery; events remain queued. Stop fast polling
-independently if necessary. Keep the additive migration and normal sync running;
+independently if necessary. Keep the additive migration and daily game maintenance running;
 rolling back code must not remove accepted history or pending events.

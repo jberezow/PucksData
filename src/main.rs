@@ -11,9 +11,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Refresh recent game status and complete official reports (run every five minutes)
-    SyncGames,
-    /// Deliver committed game updates to the configured consumer (run every minute)
+    /// Refresh recent game status and complete official reports
+    SyncGames {
+        /// Also discover schedules, update active players/rosters, and audit corrections
+        #[arg(long)]
+        daily: bool,
+    },
+    /// Deliver committed game updates to the configured consumer
     DeliverWebhooks,
     /// Rebuild materialized products invalidated by committed data corrections
     RefreshDerived,
@@ -260,7 +264,7 @@ async fn main() {
 async fn run(cli: Cli) -> Result<(), pucksdata::AnyError> {
     let capture = matches!(
         &cli.command,
-        Commands::SyncGames
+        Commands::SyncGames { .. }
             | Commands::RefreshDerived
             | Commands::Fetch { .. }
             | Commands::Backfill(_)
@@ -281,7 +285,14 @@ async fn run(cli: Cli) -> Result<(), pucksdata::AnyError> {
 
 async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
     match command {
-        Commands::SyncGames => pucksdata::process::recent_games::run(db::get_pool().await?).await?,
+        Commands::SyncGames { daily } => {
+            let pool = db::get_pool().await?;
+            if daily {
+                pucksdata::process::recent_games::daily(pool).await?;
+            } else {
+                pucksdata::process::recent_games::run(pool).await?;
+            }
+        }
         Commands::DeliverWebhooks => {
             pucksdata::webhooks::deliver(db::get_pool().await?).await?;
         }
@@ -518,6 +529,26 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn daily_game_maintenance_is_explicit_and_full_sync_remains_available() {
+        assert!(matches!(
+            Cli::try_parse_from(["pucksdata", "sync-games"])
+                .unwrap()
+                .command,
+            Commands::SyncGames { daily: false }
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["pucksdata", "sync-games", "--daily"])
+                .unwrap()
+                .command,
+            Commands::SyncGames { daily: true }
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["pucksdata", "sync"]).unwrap().command,
+            Commands::Sync(_)
+        ));
+    }
 
     #[test]
     fn detail_concurrency_preserves_default_backfill_and_requires_explicit_scope() {

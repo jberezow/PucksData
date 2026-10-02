@@ -1,10 +1,12 @@
-name: Scheduled database sync
+name: Manual database maintenance
 
 on:
-  schedule:
-    - cron: "17 12 * * *"
   workflow_dispatch:
     inputs:
+      full_sync:
+        description: Run archive events, historical audits, derived refreshes and full health
+        type: boolean
+        default: false
       audit_days:
         description: Days of completed events and official game stats to audit
         required: false
@@ -45,15 +47,20 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PUCKSDATA_CORRECTION_DAYS: ${{ inputs.audit_days }}
+          FULL_SYNC: ${{ inputs.full_sync }}
         run: |
           if [[ -z "$PUCKSDATA_CORRECTION_DAYS" ]]; then
             unset PUCKSDATA_CORRECTION_DAYS
           fi
-          target/release/pucksdata sync
+          if [[ "$FULL_SYNC" == "true" ]]; then
+            target/release/pucksdata sync
+          else
+            target/release/pucksdata sync-games --daily
+          fi
 
       - name: Collect database health
         id: health
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.build.outcome == 'success' && inputs.full_sync == true
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |

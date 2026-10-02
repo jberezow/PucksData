@@ -154,9 +154,16 @@ async fn test_games_batch_upsert() {
 
     // Mix inserts, updates and a duplicate; the final occurrence must win.
     let records = [game(9910000001), nullable, game(9910000003), updated];
-    for _ in 0..2 {
-        assert_eq!(upsert_games(pool, &records, &pb).await.unwrap(), 4);
-    }
+    assert_eq!(upsert_games(pool, &records, &pb).await.unwrap(), 4);
+    let before: Vec<String> = sqlx::query_scalar("SELECT xmin::text FROM games WHERE game_id BETWEEN 9910000001 AND 9910000003 ORDER BY game_id")
+        .fetch_all(pool).await.unwrap();
+    assert_eq!(upsert_games(pool, &records, &pb).await.unwrap(), 4);
+    let after: Vec<String> = sqlx::query_scalar("SELECT xmin::text FROM games WHERE game_id BETWEEN 9910000001 AND 9910000003 ORDER BY game_id")
+        .fetch_all(pool).await.unwrap();
+    assert_eq!(
+        before, after,
+        "unchanged and null-preserving updates must not rewrite rows"
+    );
     assert_eq!(pb.position(), 10);
 
     use sqlx::Row;

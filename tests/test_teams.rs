@@ -11,9 +11,33 @@ async fn test_teams_upsert_idempotent() {
         place_name: "Testville".into(),
         abbrev: "TST".into(),
     };
-    pucksdata::loaders::teams::upsert_teams(pool, &[record], &indicatif::ProgressBar::hidden())
+    pucksdata::loaders::teams::upsert_teams(
+        pool,
+        std::slice::from_ref(&record),
+        &indicatif::ProgressBar::hidden(),
+    )
+    .await
+    .unwrap();
+    let before: String = sqlx::query_scalar("SELECT xmin::text FROM teams WHERE team_id=999999")
+        .fetch_one(pool)
         .await
         .unwrap();
+    pucksdata::loaders::teams::upsert_teams(
+        pool,
+        std::slice::from_ref(&record),
+        &indicatif::ProgressBar::hidden(),
+    )
+    .await
+    .unwrap();
+    let after: String = sqlx::query_scalar("SELECT xmin::text FROM teams WHERE team_id=999999")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        before, after,
+        "unchanged metadata must not rewrite the tuple"
+    );
+
     pucksdata::loaders::teams::upsert_teams(
         pool,
         &[pucksdata::models::DbTeam {
@@ -105,6 +129,23 @@ async fn identity_refresh_rejects_drift_before_any_upsert() {
     .await
     .unwrap();
     assert_eq!(count, 2);
+    let before: Vec<String> =
+        sqlx::query_scalar("SELECT xmin::text FROM nhl_team_identities ORDER BY nhl_team_id")
+            .fetch_all(pool)
+            .await
+            .unwrap();
+    pucksdata::loaders::teams::upsert_team_identities(pool, &source)
+        .await
+        .unwrap();
+    let after: Vec<String> =
+        sqlx::query_scalar("SELECT xmin::text FROM nhl_team_identities ORDER BY nhl_team_id")
+            .fetch_all(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        before, after,
+        "stable identity checks must not rewrite metadata"
+    );
     sqlx::query("DELETE FROM nhl_team_identities WHERE nhl_team_id IN (990033,990052)")
         .execute(pool)
         .await
