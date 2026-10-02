@@ -13,10 +13,9 @@ pub use types::*;
 pub fn source_sha256(source: &GameSource) -> String {
     use sha2::{Digest, Sha256};
     // Source ordering is normalized by the reader/replay validator.
-    format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(source).expect("serializable source"))
-    )
+    crate::lowercase_hex(&Sha256::digest(
+        serde_json::to_vec(source).expect("serializable source"),
+    ))
 }
 
 pub fn analyze(source: &GameSource) -> GameReport {

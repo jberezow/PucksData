@@ -1,5 +1,5 @@
 //! Durable at-least-once delivery. One configured consumer per outbox.
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use sqlx::Row;
 use std::time::{Duration, Instant};

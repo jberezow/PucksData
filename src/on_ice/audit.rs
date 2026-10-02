@@ -368,7 +368,7 @@ impl Accumulator {
         if self.audit.games.len() != self.audit.snapshot_games {
             return Err("incomplete snapshot: game count differs from header".into());
         }
-        self.audit.source_sha256 = format!("{:x}", self.digest.finalize());
+        self.audit.source_sha256 = crate::lowercase_hex(&self.digest.finalize());
         if !self.differences.is_empty() {
             let n = self.differences.len();
             let mut abs: Vec<_> = self.differences.iter().map(|d| d.abs()).collect();
