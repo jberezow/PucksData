@@ -101,3 +101,111 @@ pub async fn fetch_teams() -> Result<Vec<DbTeam>, AnyError> {
 
     Ok(teams)
 }
+
+/// Current NHL-hosted branding, keyed by the source abbreviation.
+#[derive(Debug)]
+pub struct TeamBranding {
+    pub abbrev: String,
+    pub logo_url: Option<String>,
+    pub dark_logo_url: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct LocalizedName {
+    default: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StandingsTeam {
+    team_abbrev: LocalizedName,
+    team_logo: Option<String>,
+    team_logo_dark: Option<String>,
+}
+
+fn checked_logo(value: Option<String>) -> Result<Option<String>, crate::AnyError> {
+    let Some(value) = value else { return Ok(None) };
+    let url = reqwest::Url::parse(&value)?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("assets.nhle.com")
+        || url.port_or_known_default() != Some(443)
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || !url.path().starts_with("/logos/nhl/svg/")
+        || !url.path().ends_with(".svg")
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("unexpected NHL team logo URL".into());
+    }
+    Ok(Some(value))
+}
+
+fn parse_team_branding(body: &str) -> Result<Vec<TeamBranding>, crate::AnyError> {
+    #[derive(serde::Deserialize)]
+    struct Standings {
+        standings: Vec<StandingsTeam>,
+    }
+    let response: Standings = serde_json::from_str(body)?;
+    if response.standings.is_empty() {
+        return Err("NHL team branding response is empty".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    response
+        .standings
+        .into_iter()
+        .map(|team| {
+            let abbrev = team.team_abbrev.default;
+            if !(2..=3).contains(&abbrev.len())
+                || !abbrev.bytes().all(|c| c.is_ascii_uppercase())
+                || !seen.insert(abbrev.clone())
+            {
+                return Err("invalid or duplicate NHL team abbreviation".into());
+            }
+            Ok(TeamBranding {
+                abbrev,
+                logo_url: checked_logo(team.team_logo)?,
+                dark_logo_url: checked_logo(team.team_logo_dark)?,
+            })
+        })
+        .collect()
+}
+
+/// Fetch authoritative logo URLs rather than assuming a CDN filename convention.
+pub async fn fetch_team_branding() -> Result<Vec<TeamBranding>, crate::AnyError> {
+    parse_team_branding(&fetch_api_text("https://api-web.nhle.com/v1/standings/now").await?)
+}
+
+#[cfg(test)]
+mod branding_tests {
+    use super::*;
+
+    #[test]
+    fn parses_source_variants_and_missing_logos() {
+        let rows = parse_team_branding(r#"{"standings":[{"teamAbbrev":{"default":"UTA"},"teamLogo":"https://assets.nhle.com/logos/nhl/svg/UTA_light.svg","teamLogoDark":"https://assets.nhle.com/logos/nhl/svg/UTA_dark.svg"},{"teamAbbrev":{"default":"TOR"}}]}"#).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0]
+            .dark_logo_url
+            .as_ref()
+            .unwrap()
+            .ends_with("UTA_dark.svg"));
+        assert!(rows[1].logo_url.is_none());
+    }
+
+    #[test]
+    fn rejects_untrusted_or_ambiguous_source_data() {
+        for url in [
+            "https://example.com/logos/nhl/svg/TOR.svg",
+            "http://assets.nhle.com/logos/nhl/svg/TOR.svg",
+            "https://assets.nhle.com/mugs/test.svg",
+            "https://assets.nhle.com:444/logos/nhl/svg/TOR.svg",
+        ] {
+            assert!(checked_logo(Some(url.into())).is_err());
+        }
+        assert!(parse_team_branding(r#"{"standings":[]}"#).is_err());
+        assert!(parse_team_branding(
+            r#"{"standings":[{"teamAbbrev":{"default":"UTA"}},{"teamAbbrev":{"default":"UTA"}}]}"#
+        )
+        .is_err());
+    }
+}

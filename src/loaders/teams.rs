@@ -80,3 +80,31 @@ pub async fn upsert_teams(
     tx.commit().await?;
     Ok(records.len())
 }
+
+/// Resolve branding against current franchises, never the historical identity table.
+pub async fn upsert_team_branding(
+    pool: &sqlx::PgPool,
+    records: &[crate::fetchers::teams::TeamBranding],
+) -> Result<(), crate::AnyError> {
+    let mut tx = pool.begin().await?;
+    crate::provenance::set_transaction(&mut tx).await?;
+    for record in records {
+        let team_id: i64 = sqlx::query_scalar("SELECT team_id FROM public.teams WHERE abbrev = $1")
+            .bind(&record.abbrev)
+            .fetch_one(&mut *tx)
+            .await?;
+        sqlx::query(
+            "INSERT INTO public.team_branding AS current (team_id, logo_url, dark_logo_url)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (team_id) DO UPDATE SET
+                 logo_url = COALESCE(EXCLUDED.logo_url, current.logo_url),
+                 dark_logo_url = COALESCE(EXCLUDED.dark_logo_url, current.dark_logo_url),
+                 observed_at = NOW()
+             WHERE (current.logo_url, current.dark_logo_url) IS DISTINCT FROM
+                   (COALESCE(EXCLUDED.logo_url, current.logo_url), COALESCE(EXCLUDED.dark_logo_url, current.dark_logo_url))"
+        ).bind(team_id).bind(&record.logo_url).bind(&record.dark_logo_url)
+        .execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}

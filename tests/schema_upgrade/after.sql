@@ -82,3 +82,24 @@ BEGIN
     END IF;
 END $$;
 ROLLBACK;
+
+-- New branding preserves existing names and grants for deployed readers/writers.
+SET ROLE :"reader_role";
+SELECT full_name, logo_url, dark_logo_url FROM analytics.nhl_team_branding WHERE abbrev='UPH';
+RESET ROLE;
+BEGIN;
+SET LOCAL ROLE :"writer_role";
+INSERT INTO public.team_branding(team_id,logo_url) VALUES(99681,'https://assets.nhle.com/logos/nhl/svg/UPH_light.svg');
+RESET ROLE;
+SET LOCAL ROLE :"reader_role";
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM analytics.nhl_team_branding
+                   WHERE abbrev='UPH' AND full_name='Upgrade Home'
+                     AND logo_url='https://assets.nhle.com/logos/nhl/svg/UPH_light.svg') THEN
+        RAISE EXCEPTION 'reader lost current team identity or branding';
+    END IF;
+    IF has_table_privilege(current_user, 'public.team_branding', 'INSERT') THEN
+        RAISE EXCEPTION 'branding reader unexpectedly has write access';
+    END IF;
+END $$;
+ROLLBACK;

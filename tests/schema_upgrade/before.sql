@@ -11,6 +11,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO :"de
 GRANT USAGE ON SCHEMA public, ingestion TO :"writer_role";
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.backfill_progress, public.sync_state, public.shift_fetch_status TO :"writer_role";
 GRANT SELECT, INSERT ON ingestion.derived_invalidations TO :"writer_role";
+GRANT SELECT, INSERT, UPDATE ON public.teams TO :"writer_role";
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ingestion TO :"writer_role";
 
 INSERT INTO public.teams(team_id,full_name,common_name,place_name,abbrev)
