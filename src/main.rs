@@ -323,12 +323,14 @@ async fn dispatch(command: Commands) -> Result<(), pucksdata::AnyError> {
             FetchEntity::Teams => {
                 let pool = db::get_pool().await?;
                 let records = fetchers::teams::fetch_teams().await?;
+                let branding = fetchers::teams::fetch_team_branding().await?;
                 let count = records.len();
                 let pb = pucksdata::ui::make_progress_bar(count as u64, "teams");
                 loaders::teams::upsert_teams(pool, &records, &pb)
                     .await
                     .inspect_err(|_| pb.finish_and_clear())?;
                 pb.finish_and_clear();
+                loaders::teams::upsert_team_branding(pool, &branding).await?;
                 // The writer preflight already refreshed source team identities.
             }
             FetchEntity::OfficialStats(args) => {

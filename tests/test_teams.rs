@@ -151,3 +151,94 @@ async fn identity_refresh_rejects_drift_before_any_upsert() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn branding_preserves_missing_variants_and_current_identity() {
+    if !common::test_database_configured() {
+        return;
+    }
+    let pool = common::test_pool().await;
+    sqlx::query("INSERT INTO teams(team_id,full_name,common_name,place_name,abbrev) VALUES(999998,'Current Test Team','Tests','Testville','TBR')").execute(pool).await.unwrap();
+    let mut branding = pucksdata::fetchers::teams::TeamBranding {
+        abbrev: "TBR".into(),
+        logo_url: Some("https://assets.nhle.com/logos/nhl/svg/TBR_light.svg".into()),
+        dark_logo_url: Some("https://assets.nhle.com/logos/nhl/svg/TBR_dark.svg".into()),
+    };
+    pucksdata::loaders::teams::upsert_team_branding(pool, std::slice::from_ref(&branding))
+        .await
+        .unwrap();
+    let before: String =
+        sqlx::query_scalar("SELECT xmin::text FROM team_branding WHERE team_id=999998")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    branding.logo_url = None;
+    pucksdata::loaders::teams::upsert_team_branding(pool, std::slice::from_ref(&branding))
+        .await
+        .unwrap();
+    let after: String =
+        sqlx::query_scalar("SELECT xmin::text FROM team_branding WHERE team_id=999998")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        before, after,
+        "missing URLs must retain known branding without rewriting it"
+    );
+    let row: (String, String) = sqlx::query_as(
+        "SELECT full_name,logo_url FROM analytics.nhl_team_branding WHERE abbrev='TBR'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        row,
+        (
+            "Current Test Team".into(),
+            "https://assets.nhle.com/logos/nhl/svg/TBR_light.svg".into()
+        )
+    );
+    branding.dark_logo_url = Some("https://assets.nhle.com/logos/nhl/svg/TBR_2026_dark.svg".into());
+    pucksdata::loaders::teams::upsert_team_branding(pool, &[branding])
+        .await
+        .unwrap();
+    let dark: String = sqlx::query_scalar(
+        "SELECT dark_logo_url FROM analytics.nhl_team_branding WHERE abbrev='TBR'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert!(dark.ends_with("TBR_2026_dark.svg"));
+    // One unknown abbreviation must roll back the entire batch.
+    let invalid = [
+        pucksdata::fetchers::teams::TeamBranding {
+            abbrev: "TBR".into(),
+            logo_url: Some("changed".into()),
+            dark_logo_url: None,
+        },
+        pucksdata::fetchers::teams::TeamBranding {
+            abbrev: "UNKNOWN".into(),
+            logo_url: None,
+            dark_logo_url: None,
+        },
+    ];
+    assert!(
+        pucksdata::loaders::teams::upsert_team_branding(pool, &invalid)
+            .await
+            .is_err()
+    );
+    let logo: String =
+        sqlx::query_scalar("SELECT logo_url FROM team_branding WHERE team_id=999998")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert!(logo.ends_with("TBR_light.svg"));
+    sqlx::query("DELETE FROM team_branding WHERE team_id=999998")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM teams WHERE team_id=999998")
+        .execute(pool)
+        .await
+        .unwrap();
+}

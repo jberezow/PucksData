@@ -61,7 +61,7 @@ retain their migration history and follow the archived upgrade chain; use
 Load the entity catalogue and a season of games, then its events:
 
 ```bash
-pucksdata fetch teams
+pucksdata fetch teams # Includes current NHL light/dark team logo URLs
 pucksdata fetch seasons
 pucksdata fetch games --season 20252026
 pucksdata fetch players
@@ -200,3 +200,5 @@ goals, predictive models and application-specific scoring are downstream work.
 For frequent game-only refreshes and durable notifications of committed official
 revisions, see [game update webhooks](docs/GAME_WEBHOOKS.md). These supplement the
 full sync and its correction audits; delivery is disabled until configured.
+
+Current team branding is available through `analytics.nhl_team_branding` (franchise ID, abbreviation, full name, optional `logo_url` and `dark_logo_url`, and branding observation time). Apply migrations before running `fetch teams` to populate the URLs. Names remain available before the first branding refresh; missing source variants retain previously known URLs. This catalog describes current branding, not branding at a historical game date.
