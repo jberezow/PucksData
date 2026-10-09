@@ -162,6 +162,23 @@ async fn sync_watermark_and_correction_candidates_follow_attempt_outcomes() {
         .await
         .unwrap();
     assert!(candidates.iter().any(|(id, _)| *id == old));
+    let deferred: Result<(), AnyError> = attempts::track(pool, "official_games", &key, async {
+        Err(Box::new(pucksdata::error::Deferred("report pending".into())) as AnyError)
+    })
+    .await;
+    assert!(deferred.unwrap_err().is::<pucksdata::error::Deferred>());
+    let outcome: String = sqlx::query_scalar("SELECT outcome FROM ingestion.attempts WHERE dataset='official_games' AND entity_key=$1 ORDER BY attempt_id DESC LIMIT 1")
+        .bind(&key).fetch_one(pool).await.unwrap();
+    assert_eq!(outcome, "unavailable");
+    assert_eq!(watermark(pool).await.unwrap(), successful);
+    let candidates = official_games::query_sync_candidates(pool, audit_from)
+        .await
+        .unwrap();
+    assert!(candidates.iter().any(|(id, _)| *id == old));
+    let candidates = official_games::query_current_candidates(pool, audit_from, &[20252026])
+        .await
+        .unwrap();
+    assert!(candidates.iter().any(|(id, _)| *id == old));
     let retry = attempts::start(pool, "official_games", &key).await.unwrap();
     attempts::finish(pool, retry, "complete", None)
         .await
@@ -245,11 +262,40 @@ async fn writer_lease_rejects_overlap_and_releases_after_completion() {
     )
     .await
     .expect("overlapping operation should fail without waiting for the first");
-    assert!(second
-        .unwrap_err()
+    let error = second.unwrap_err();
+    assert!(error.is::<pucksdata::error::Deferred>());
+    assert!(error
         .to_string()
         .contains("another ingestion command is running"));
     assert!(!second_ran.load(Ordering::SeqCst));
+
+    for (args, success, level) in [
+        (vec!["sync-games"], true, "WARN"),
+        (vec!["sync-games", "--daily"], true, "WARN"),
+        (vec!["fetch", "teams"], false, "ERROR"),
+    ] {
+        let output = tokio::time::timeout(
+            Duration::from_secs(10),
+            tokio::process::Command::new(env!("CARGO_BIN_EXE_pucksdata"))
+                .args(args)
+                .env("DATABASE_URL", std::env::var("TEST_DATABASE_URL").unwrap())
+                .env("DB_POOL_MAX_CONNECTIONS", "2")
+                .env("RUST_LOG", "pucksdata=info")
+                .env("PUCKSDATA_LOG_FORMAT", "text")
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(output.status.success(), success);
+        let logs = String::from_utf8(output.stderr).unwrap();
+        assert!(logs.contains(level), "{logs}");
+        assert!(
+            logs.contains("another ingestion command is running"),
+            "{logs}"
+        );
+    }
 
     release.notify_one();
     assert_eq!(

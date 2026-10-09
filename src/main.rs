@@ -262,6 +262,7 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<(), pucksdata::AnyError> {
+    let recurring = matches!(&cli.command, Commands::SyncGames { .. });
     let capture = matches!(
         &cli.command,
         Commands::SyncGames { .. }
@@ -277,7 +278,10 @@ async fn run(cli: Cli) -> Result<(), pucksdata::AnyError> {
     if capture {
         let pool = db::get_pool().await?;
         let key = std::env::args().skip(1).collect::<Vec<_>>().join(" ");
-        pucksdata::process::attempts::command(pool, &key, Box::pin(dispatch(cli.command))).await
+        let result =
+            pucksdata::process::attempts::command(pool, &key, Box::pin(dispatch(cli.command)))
+                .await;
+        pucksdata::error::scheduled_outcome(recurring, result)
     } else {
         Box::pin(dispatch(cli.command)).await
     }

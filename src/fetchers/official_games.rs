@@ -305,6 +305,11 @@ fn parse_game_stats(
     {
         return Err("incomplete or duplicate official skater reports".into());
     }
+    if summaries.data.is_empty() || goalies.data.is_empty() {
+        return Err(Box::new(crate::error::Deferred(
+            "official snapshot requires both skater and goalie reports".into(),
+        )));
+    }
     let mut realtime_by_player: HashMap<i64, SkaterRealtimeRow> = realtime
         .data
         .into_iter()
@@ -538,11 +543,29 @@ mod tests {
     }
 
     #[test]
+    fn unpublished_reports_are_typed_deferrals_and_recover_when_complete() {
+        for empty_reports in [vec![0, 1], vec![2], vec![0, 1, 2]] {
+            let mut reports = complete_reports();
+            for index in empty_reports {
+                reports[index] = serde_json::json!({"total":0,"data":[]});
+            }
+            let error = parse_reports(&reports).err().unwrap();
+            assert!(error.is::<crate::error::Deferred>());
+        }
+        assert!(parse_reports(&complete_reports()).is_ok());
+        let error = parse_game_stats(1, 2, "not json", "{}", "{}")
+            .err()
+            .unwrap();
+        assert!(!error.is::<crate::error::Deferred>());
+    }
+
+    #[test]
     fn rejects_truncated_reports_when_total_is_supplied() {
         for report in 0..3 {
             let mut reports = complete_reports();
             reports[report]["total"] = serde_json::json!(3);
-            assert!(parse_reports(&reports).is_err());
+            let error = parse_reports(&reports).err().unwrap();
+            assert!(!error.is::<crate::error::Deferred>());
         }
     }
 
