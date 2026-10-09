@@ -31,7 +31,7 @@ pub async fn candidates(pool: &sqlx::PgPool) -> Result<Vec<sqlx::postgres::PgRow
 pub async fn run(pool: &sqlx::PgPool) -> Result<(), crate::AnyError> {
     let mapping = fetchers::games::fetch_team_id_to_franchise_id_map().await?;
     let games = candidates(pool).await?;
-    let mut failures = 0;
+    let mut failures = Vec::new();
     for game in games {
         let id: i64 = game.get("game_id");
         let result: Result<(), crate::AnyError> = async {
@@ -65,15 +65,19 @@ pub async fn run(pool: &sqlx::PgPool) -> Result<(), crate::AnyError> {
         }
         .await;
         if let Err(error) = result {
-            failures += 1;
-            tracing::warn!(game_id=id, error=%error, "game refresh deferred until next pass");
+            if error.is::<crate::error::Deferred>() {
+                tracing::warn!(game_id=id, error=%error, "game refresh deferred until next pass");
+            } else {
+                tracing::error!(game_id=id, error=%error, "game refresh failed");
+            }
+            failures.push(error);
         }
     }
-    if failures > 0 {
-        return Err(format!(
-            "{failures} game refreshes deferred; other accepted games were committed"
-        )
-        .into());
+    if !failures.is_empty() {
+        return Err(crate::error::batch_error(
+            "game refreshes incomplete; other accepted games were committed",
+            failures,
+        ));
     }
     Ok(())
 }

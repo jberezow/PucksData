@@ -52,9 +52,10 @@ pub async fn track<T>(
         if result.is_ok() {
             "complete"
         } else if result.as_ref().err().is_some_and(|error| {
-            error
-                .downcast_ref::<crate::fetchers::shifts::ShiftsUnavailable>()
-                .is_some()
+            error.is::<crate::error::Deferred>()
+                || error
+                    .downcast_ref::<crate::fetchers::shifts::ShiftsUnavailable>()
+                    .is_some()
                 || matches!(
                     error.downcast_ref::<crate::api::ApiError>(),
                     Some(crate::api::ApiError::NotFound)
@@ -137,7 +138,9 @@ impl Lease {
         .fetch_one(&mut *transaction)
         .await?;
         if !acquired {
-            return Err(contention_message.to_owned().into());
+            return Err(Box::new(crate::error::Deferred(
+                contention_message.to_owned(),
+            )));
         }
         Ok(Self { transaction })
     }

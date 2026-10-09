@@ -101,6 +101,15 @@ Seasons use the NHL's eight-digit format, such as `20252026` for 2025–26.
 | `sync-games --daily` | Discover schedules, refresh active rosters, and audit official game stats |
 | `refresh-derived` | Refresh invalidated analytical rollups |
 
+Recurring `sync-games` commands (including `--daily`) log warnings and exit
+successfully when official reports are not published yet or another importer
+holds the writer lock. Deferred reports are recorded as `unavailable` and remain
+eligible for retry. Accepted games are preserved, and an incomplete daily pass
+does not advance the successful-sync watermark. A clean process exit means the
+pass ended safely, not that all source data is fresh. Database errors, malformed
+reports, and unexpected failures still exit unsuccessfully. Manual fetch commands
+retain their failure exit status for incomplete reports.
+
 The default sync correction window is three days, widened to fourteen on
 Sundays (UTC). Failed or partial syncs return an error and preserve the previous
 success watermark. Shift ingestion runs separately from sync.

@@ -90,7 +90,7 @@ pub async fn query_sync_candidates(
             SELECT game_id FROM games WHERE game_date >= $1
             UNION
             SELECT g.game_id FROM games g JOIN latest a ON a.entity_key=g.game_id::text
-            WHERE a.outcome IN ('failed','running')
+            WHERE a.outcome IN ('failed','running','unavailable')
         )
         SELECT g.game_id, g.game_type FROM games g JOIN candidates c USING(game_id)
         WHERE g.game_state IN ('OFF','OVER','FINAL') AND g.game_type IN (2,3)
@@ -158,24 +158,29 @@ async fn load_candidates(
 
     let mut skaters = 0;
     let mut goalies = 0;
-    let mut failures = Vec::new();
+    let mut failures: Vec<crate::AnyError> = Vec::new();
     while let Some(result) = tasks.join_next().await {
         match result {
             Ok((_, Ok((game_skaters, game_goalies)))) => {
                 skaters += game_skaters;
                 goalies += game_goalies;
             }
-            Ok((game_id, Err(error))) => failures.push(format!("game {game_id}: {error}")),
-            Err(error) => failures.push(format!("task failed: {error}")),
+            Ok((game_id, Err(error))) => {
+                if error.is::<crate::error::Deferred>() {
+                    tracing::warn!(game_id, error = %error, "official report pending; retry on next pass");
+                } else {
+                    tracing::error!(game_id, error = %error, "official game load failed");
+                }
+                failures.push(error);
+            }
+            Err(error) => failures.push(Box::new(error)),
         }
     }
     if !failures.is_empty() {
-        return Err(format!(
-            "{} official game loads failed: {}",
-            failures.len(),
-            failures.join("; ")
-        )
-        .into());
+        return Err(crate::error::batch_error(
+            "official game loads incomplete",
+            failures,
+        ));
     }
 
     Ok(OfficialGamesSummary {
