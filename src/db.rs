@@ -1,9 +1,69 @@
 //! PostgreSQL connection pool initialization via [`get_pool`].
 use sqlx::{postgres::PgPoolOptions, PgPool};
+use std::future::Future;
+use std::io::ErrorKind;
 use std::time::Duration;
 use tokio::sync::OnceCell;
 
 static POOL: OnceCell<PgPool> = OnceCell::const_new();
+
+const STARTUP_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+];
+
+fn transient_connection_error(error: &sqlx::Error) -> bool {
+    match error {
+        sqlx::Error::Io(error) => matches!(
+            error.kind(),
+            ErrorKind::UnexpectedEof
+                | ErrorKind::ConnectionReset
+                | ErrorKind::ConnectionAborted
+                | ErrorKind::ConnectionRefused
+                | ErrorKind::NotConnected
+                | ErrorKind::BrokenPipe
+                | ErrorKind::TimedOut
+                | ErrorKind::Interrupted
+        ),
+        sqlx::Error::PoolTimedOut => true,
+        sqlx::Error::Database(error) => matches!(
+            error.code().as_deref(),
+            Some("08000" | "08001" | "08003" | "08006" | "57P01" | "57P02" | "57P03" | "53300")
+        ),
+        _ => false,
+    }
+}
+
+// Retry only pool initialization, before any ingestion work can run.
+async fn connect_with_retry<T, F, Fut>(
+    mut connect: F,
+    delays: &[Duration],
+) -> Result<T, sqlx::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, sqlx::Error>>,
+{
+    for attempt in 0..=delays.len() {
+        match connect().await {
+            Ok(pool) => return Ok(pool),
+            Err(error) => {
+                if !transient_connection_error(&error) || attempt == delays.len() {
+                    return Err(error);
+                }
+                // Do not log the connection string or server-provided error text.
+                tracing::warn!(
+                    attempt = attempt + 1,
+                    max_attempts = delays.len() + 1,
+                    retry_delay_ms = delays[attempt].as_millis() as u64,
+                    "database startup connection failed transiently; retrying"
+                );
+                tokio::time::sleep(delays[attempt]).await;
+            }
+        }
+    }
+    unreachable!("the final connection attempt always returns")
+}
 
 fn configuration_error(message: impl Into<String>) -> sqlx::Error {
     sqlx::Error::Configuration(message.into().into())
@@ -55,12 +115,22 @@ pub async fn get_pool() -> Result<&'static PgPool, sqlx::Error> {
                         "DB_POOL_MAX_CONNECTIONS must be valid Unicode",
                     )),
                 })?;
-        PgPoolOptions::new()
+        let options = PgPoolOptions::new()
             .max_connections(max_connections(configured_max.as_deref())?)
             .idle_timeout(Duration::from_secs(240))
-            .max_lifetime(Duration::from_secs(1800))
-            .connect(&database_url)
-            .await
+            .max_lifetime(Duration::from_secs(1800));
+        connect_with_retry(
+            || async {
+                tokio::time::timeout(
+                    Duration::from_secs(15),
+                    options.clone().connect(&database_url),
+                )
+                .await
+                .map_err(|_| sqlx::Error::PoolTimedOut)?
+            },
+            &STARTUP_RETRY_DELAYS,
+        )
+        .await
     })
     .await
 }
@@ -68,6 +138,58 @@ pub async fn get_pool() -> Result<&'static PgPool, sqlx::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn startup_recovers_from_eof_before_returning_connection() {
+        let mut calls = 0;
+        let result = connect_with_retry(
+            || {
+                calls += 1;
+                std::future::ready(if calls < 3 {
+                    Err(sqlx::Error::Io(ErrorKind::UnexpectedEof.into()))
+                } else {
+                    Ok(42)
+                })
+            },
+            &[Duration::ZERO; 3],
+        )
+        .await;
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(calls, 3);
+    }
+
+    #[tokio::test]
+    async fn startup_stops_after_four_transient_failures() {
+        let mut calls = 0;
+        let result: Result<(), _> = connect_with_retry(
+            || {
+                calls += 1;
+                std::future::ready(Err(sqlx::Error::Io(ErrorKind::UnexpectedEof.into())))
+            },
+            &[Duration::ZERO; 3],
+        )
+        .await;
+        assert!(matches!(result, Err(sqlx::Error::Io(e)) if e.kind() == ErrorKind::UnexpectedEof));
+        assert_eq!(calls, 4);
+    }
+
+    #[tokio::test]
+    async fn startup_does_not_retry_permanent_errors() {
+        let mut errors = vec![
+            configuration_error("invalid configuration"),
+            sqlx::Error::Io(ErrorKind::PermissionDenied.into()),
+            sqlx::Error::Protocol("invalid protocol".into()),
+        ];
+        while let Some(error) = errors.pop() {
+            let mut error = Some(error);
+            let result: Result<(), _> = connect_with_retry(
+                || std::future::ready(Err(error.take().expect("must not retry"))),
+                &[Duration::ZERO; 3],
+            )
+            .await;
+            assert!(result.is_err());
+        }
+    }
 
     #[test]
     fn pool_size_rejects_invalid_configuration() {

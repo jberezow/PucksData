@@ -25,6 +25,13 @@ are preserved.
 connections while work runs, so leave capacity for ingestion as well. Size each
 process's pool against your database's total connection budget.
 
+Initial database connections retry transient network failures, connection timeouts,
+and temporary server unavailability up to four total attempts. Each attempt has a
+15-second limit, with 1-, 2-, and 4-second pauses between retries (at most about
+67 seconds overall). Configuration, authentication, and other permanent errors
+fail immediately. These retries run before ingestion starts; they do not replay
+database writes. Exhausted retries still exit with an error for monitoring.
+
 `SYNC_INTERVAL_SECS` defaults to `21600` (six hours).
 `PUCKSDATA_CORRECTION_DAYS` optionally sets a correction window of 1–366 days;
 otherwise sync uses three days, widened to fourteen on Sundays (UTC).
