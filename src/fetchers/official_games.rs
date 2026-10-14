@@ -234,6 +234,7 @@ fn validate_boxscore(stats: &mut OfficialGameStats, body: &str) -> Result<(), cr
                 // A listed player with explicitly zero ice time did not participate.
                 // Apply this to skaters as well as unused goalies. Missing TOI
                 // remains required for skaters; do not silently drop them.
+                let is_goalie = group == "goalies";
                 let toi = row["toi"].as_str();
                 let played = match toi {
                     Some("00:00" | "0:00") => false,
