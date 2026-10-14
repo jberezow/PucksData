@@ -231,12 +231,17 @@ fn validate_boxscore(stats: &mut OfficialGameStats, body: &str) -> Result<(), cr
                 if !allowed.insert(id) {
                     return Err("duplicate boxscore player".into());
                 }
+                // A listed player with explicitly zero ice time did not participate.
+                // Apply this to skaters as well as unused goalies. Missing TOI
+                // remains required for skaters; do not silently drop them.
                 let is_goalie = group == "goalies";
-                if !is_goalie
-                    || row["toi"]
-                        .as_str()
-                        .is_some_and(|t| t != "00:00" && t != "0:00")
-                {
+                let toi = row["toi"].as_str();
+                let played = match toi {
+                    Some("00:00" | "0:00") => false,
+                    Some(_) => true,
+                    None => group != "goalies",
+                };
+                if played {
                     expected.insert(id);
                 }
                 let skater = stats.skaters.iter().find(|r| r.player_id == id);
@@ -577,6 +582,30 @@ mod tests {
             let error = parse_reports(&reports).err().unwrap();
             assert!(!error.is::<crate::error::Deferred>());
         }
+    }
+
+    #[test]
+    fn nonparticipating_skater_is_allowed_but_not_required() {
+        let mut boxscore = completed_boxscore();
+        boxscore["playerByGameStats"]["homeTeam"]["forwards"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"playerId":8482742,"toi":"00:00"}));
+        let mut stats = parse_reports(&complete_reports()).unwrap();
+        validate_boxscore(&mut stats, &boxscore.to_string()).unwrap();
+
+        // If the same player has actually played, their official report is mandatory.
+        boxscore["playerByGameStats"]["homeTeam"]["forwards"][1]["toi"] =
+            serde_json::json!("10:03");
+        let error = validate_boxscore(&mut stats, &boxscore.to_string()).unwrap_err();
+        assert!(error.to_string().contains("missing_player_ids=[8482742]"));
+
+        // Missing skater TOI is not proof of nonparticipation.
+        boxscore["playerByGameStats"]["homeTeam"]["forwards"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("toi");
+        assert!(validate_boxscore(&mut stats, &boxscore.to_string()).is_err());
     }
 
     #[test]
