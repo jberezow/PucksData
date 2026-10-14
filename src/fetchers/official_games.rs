@@ -588,7 +588,8 @@ mod tests {
     fn nonparticipating_skater_is_allowed_but_not_required() {
         let mut boxscore = completed_boxscore();
         boxscore["playerByGameStats"]["homeTeam"]["forwards"]
-            .as_array_mut().unwrap()
+            .as_array_mut()
+            .unwrap()
             .push(serde_json::json!({"playerId":8482742,"toi":"00:00"}));
         let mut stats = parse_reports(&complete_reports()).unwrap();
         validate_boxscore(&mut stats, &boxscore.to_string()).unwrap();
@@ -601,7 +602,9 @@ mod tests {
 
         // Missing skater TOI is not proof of nonparticipation.
         boxscore["playerByGameStats"]["homeTeam"]["forwards"][1]
-            .as_object_mut().unwrap().remove("toi");
+            .as_object_mut()
+            .unwrap()
+            .remove("toi");
         assert!(validate_boxscore(&mut stats, &boxscore.to_string()).is_err());
     }
 
