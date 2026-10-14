@@ -263,7 +263,17 @@ fn validate_boxscore(stats: &mut OfficialGameStats, body: &str) -> Result<(), cr
         .chain(stats.goalies.iter().map(|r| r.player_id))
         .collect();
     if expected.is_empty() || !expected.is_subset(&actual) || !actual.is_subset(&allowed) {
-        return Err("official reports disagree with completed boxscore player inventory".into());
+        let mut missing: Vec<_> = expected.difference(&actual).copied().collect();
+        let mut unexpected: Vec<_> = actual.difference(&allowed).copied().collect();
+        missing.sort_unstable();
+        unexpected.sort_unstable();
+        return Err(Box::new(crate::error::Deferred(format!(
+            "official reports disagree with completed boxscore player inventory for game {}: expected={}, actual={}, allowed={}, missing_player_ids={missing:?}, unexpected_player_ids={unexpected:?}",
+            stats.game_id,
+            expected.len(),
+            actual.len(),
+            allowed.len(),
+        ))));
     }
     // Summary teamAbbrevs can include season-wide trades even with a game filter
     // (Guentzel: PIT,CAR in 2023020345). The boxscore identifies the game team.
@@ -567,6 +577,19 @@ mod tests {
             let error = parse_reports(&reports).err().unwrap();
             assert!(!error.is::<crate::error::Deferred>());
         }
+    }
+
+    #[test]
+    fn mismatched_boxscore_inventory_is_deferred_with_player_ids() {
+        let mut stats = parse_reports(&complete_reports()).unwrap();
+        let mut boxscore = completed_boxscore();
+        boxscore["playerByGameStats"]["homeTeam"]["forwards"][0]["playerId"] =
+            serde_json::json!(99);
+        let error = validate_boxscore(&mut stats, &boxscore.to_string()).unwrap_err();
+        assert!(error.is::<crate::error::Deferred>());
+        let message = error.to_string();
+        assert!(message.contains("missing_player_ids=[99]"), "{message}");
+        assert!(message.contains("unexpected_player_ids=[1]"), "{message}");
     }
 
     #[test]
