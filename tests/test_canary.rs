@@ -8,6 +8,13 @@ mod common;
 #[tokio::test]
 #[ignore = "requires live NHL APIs and disposable PostgreSQL"]
 async fn live_api_to_postgres_canary() {
+    // The shared HTTP client's connection tasks must outlive every check.
+    live_seasons_load_into_postgres().await;
+    live_completed_game_captures_sources_and_normalized_snapshots().await;
+    incremental_schedule_skips_cached_games_and_enriches_a_catalog_change().await;
+}
+
+async fn live_seasons_load_into_postgres() {
     let pool = common::test_pool().await;
 
     // This production fetcher calls both api-web.nhle.com and api.nhle.com.
@@ -43,8 +50,6 @@ async fn live_api_to_postgres_canary() {
     assert_eq!(stored, expected, "not every fetched season was persisted");
 }
 
-#[tokio::test]
-#[ignore = "requires live NHL APIs and disposable PostgreSQL"]
 async fn live_completed_game_captures_sources_and_normalized_snapshots() {
     let pool = common::test_pool().await;
     let game_id = 2023020345_i64;
@@ -76,8 +81,6 @@ async fn live_completed_game_captures_sources_and_normalized_snapshots() {
 
 /// Seed a synthetic previously-enriched cache from the live catalog, then verify
 /// the production selector skips unchanged games and fetches a changed one.
-#[tokio::test]
-#[ignore = "requires live NHL APIs and disposable PostgreSQL"]
 async fn incremental_schedule_skips_cached_games_and_enriches_a_catalog_change() {
     let pool = common::test_pool().await;
     let season = 20252026;

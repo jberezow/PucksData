@@ -266,6 +266,12 @@ async fn official_game_snapshot_is_idempotent_and_revisioned() {
 
 #[tokio::test]
 #[ignore = "requires the live NHL stats API"]
+async fn live_official_game_reports() {
+    // Keep pooled HTTP connections on one runtime for both live checks.
+    live_final_game_reports_cover_fantasy_categories().await;
+    live_goalie_goal_is_published_by_summary_report().await;
+}
+
 async fn live_final_game_reports_cover_fantasy_categories() {
     let stats = pucksdata::fetchers::official_games::fetch_official_game_stats(2025030416, 3)
         .await
@@ -277,8 +283,6 @@ async fn live_final_game_reports_cover_fantasy_categories() {
     assert!(stats.goalies.iter().any(|row| row.wins == Some(1)));
 }
 
-#[tokio::test]
-#[ignore = "requires the live NHL stats API"]
 async fn live_goalie_goal_is_published_by_summary_report() {
     let stats = pucksdata::fetchers::official_games::fetch_official_game_stats(2023020345, 2)
         .await
