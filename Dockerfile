@@ -1,5 +1,5 @@
 # Shared cargo-chef base.
-FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm@sha256:5a37e174ceb7ccbebd6d0024049e9308f4de399bbcabbc3c6c649c70486880d5 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm@sha256:b75e76d787d5e11dabafa95eecc9fa1b50c38d5e03a38efb99cacb4e02125a76 AS chef
 WORKDIR /app
 
 # Dependency recipe.
